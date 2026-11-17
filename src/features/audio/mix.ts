@@ -1,0 +1,237 @@
+// The mixing desk and the lasting sounds: buses with their levels, a small reverb, a limiter, the wind in the
+// leaves, water lapping, and the music. Works on any BaseAudioContext, so lab/audio.ts renders the full mix offline.
+//
+//   const mix = createMix(ctx);              mix.steps / sfx / ambience / music: connect sounds here
+//   mix.master.gain.value = 0.7;             volume; nothing after the limiter can clip at ≤ 1
+//   const wind = createWind(ctx, mix.ambience);   wind.update(ctx.currentTime, strength) every frame or so
+//   rain.update(now, rain, nearWater) · night.update(now, crickets, frogs) · music.night(dark, now)
+//
+// Lasting sounds follow the sky by gliding their gains (setTargetAtTime), never by switching.
+import { composer, pitch } from "./music.ts";
+import { noise, rand, SOUNDS } from "./sounds.ts";
+
+/** Bus levels and reverb sends: footsteps sit under the ambience, events read clearly, music stays soft. */
+export const LEVELS = {
+  steps: { gain: 0.25, reverb: 0.08 },
+  sfx: { gain: 0.7, reverb: 0.15 },
+  ambience: { gain: 0.6, reverb: 0.05 },
+  music: { gain: 0.22, reverb: 0.6 },
+};
+
+export function createMix(ctx: BaseAudioContext) {
+  const master = ctx.createGain(), limiter = ctx.createDynamicsCompressor(), reverb = ctx.createConvolver(), wet = ctx.createGain();
+  limiter.threshold.value = -8;
+  limiter.knee.value = 4;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.002;
+  limiter.release.value = 0.2;
+  limiter.connect(master).connect(ctx.destination);
+  // A small glade: 1.4 s of decaying stereo noise, darker towards its end.
+  const length = Math.floor(ctx.sampleRate * 1.4), impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const data = impulse.getChannelData(c);
+    let low = 0;
+    for (let i = 0; i < length; i++) {
+      const k = i / length;
+      low += (Math.random() * 2 - 1 - low) * (0.6 - 0.5 * k);
+      data[i] = low * Math.exp(-5 * k) * 0.5;
+    }
+  }
+  reverb.buffer = impulse;
+  wet.gain.value = 0.5;
+  reverb.connect(wet).connect(limiter);
+  const bus = (level: { gain: number; reverb: number }) => {
+    const gain = ctx.createGain(), send = ctx.createGain();
+    gain.gain.value = level.gain;
+    send.gain.value = level.reverb;
+    gain.connect(limiter);
+    gain.connect(send).connect(reverb);
+    return gain;
+  };
+  const ambience = bus(LEVELS.ambience);
+  /** An event starts at t: the ambience steps back 5 dB for a moment, so a bite or a knock reads over rain and wind. */
+  const duck = (t: number) => {
+    ambience.gain.cancelScheduledValues(t);
+    ambience.gain.setTargetAtTime(LEVELS.ambience.gain * 0.56, t, 0.015);
+    ambience.gain.setTargetAtTime(LEVELS.ambience.gain, t + 0.25, 0.35);
+  };
+  return { master, limiter, duck, steps: bus(LEVELS.steps), sfx: bus(LEVELS.sfx), ambience, music: bus(LEVELS.music) };
+}
+export type Mix = ReturnType<typeof createMix>;
+
+/** How strong the wind sounds for the sky's wind (0 … 1): 1 at a light breeze (0.25), as before the sky. */
+export const windLoudness = (wind: number) => 0.7 + 1.2 * wind;
+
+/** Wind in the leaves: a low stereo rush and a high rustle that swell and fade by themselves, louder and brighter
+ *  with `strength` (the sky's wind; 0.25 a light breeze). */
+export function createWind(ctx: BaseAudioContext, out: AudioNode) {
+  const make = (pan: number, filter: BiquadFilterType, freq: number) => {
+    const source = noise(ctx), f = ctx.createBiquadFilter(), gain = ctx.createGain(), panner = ctx.createStereoPanner();
+    f.type = filter;
+    f.frequency.value = freq;
+    f.Q.value = 0.6;
+    gain.gain.value = 0;
+    panner.pan.value = pan;
+    source.connect(f).connect(gain).connect(panner).connect(out);
+    source.start(ctx.currentTime, Math.random() * 1.5);
+    return { f, gain };
+  };
+  const rush = [make(-0.7, "lowpass", 380), make(0.7, "lowpass", 420)], leaves = [make(-0.5, "bandpass", 2600), make(0.5, "bandpass", 3400)];
+  let swell = 0.4, target = 0.6, change = 0, flutter = 0;
+  return {
+    update(now: number, strength = 0.25) {
+      if (now > change) { target = rand(0.15 + 0.4 * strength, 1); change = now + rand(4, 10); } // strong wind seldom drops
+      if (now < flutter) return;
+      flutter = now + rand(0.12, 0.3);
+      swell += (target - swell) * 0.08;
+      const loud = windLoudness(strength), bright = Math.max(0, strength - 0.25);
+      for (const r of rush) {
+        r.gain.gain.setTargetAtTime(0.16 * loud * swell * rand(0.85, 1.15), now, 1.2);
+        r.f.frequency.setTargetAtTime(250 + 350 * swell + 500 * bright, now, 1.2);
+      }
+      for (const l of leaves) l.gain.gain.setTargetAtTime(0.13 * loud * swell * swell * rand(0.4, 1.3), now, 0.15);
+    },
+  };
+}
+
+/** Water against the shore: a quiet bed and waves now and then. Put `out` in a panner at the nearest shore. */
+export function createLapping(ctx: BaseAudioContext, out: AudioNode) {
+  const source = noise(ctx), f = ctx.createBiquadFilter(), gain = ctx.createGain();
+  f.type = "lowpass";
+  f.frequency.value = 500;
+  gain.gain.value = 0.12;
+  source.connect(f).connect(gain).connect(out);
+  source.start(ctx.currentTime);
+  let next = 0;
+  return {
+    update(now: number) {
+      if (next < now) next = now + 0.05;
+      while (next < now + 0.3) { SOUNDS.lap(ctx, out, next, Math.random()); next += rand(0.7, 1.7); }
+    },
+  };
+}
+
+/** Rain: a hiss on the leaves all around with drops ticking close by, and drops plipping into the pond. `out` is
+ *  around the listener; `water` a panner at the nearest shore. update(now, rain 0 … 1, near 0 … 1: how close the pond). */
+export function createRain(ctx: BaseAudioContext, out: AudioNode, water: AudioNode) {
+  const layer = (to: AudioNode, filter: BiquadFilterType, freq: number, q: number, pan: number) => {
+    const source = noise(ctx), f = ctx.createBiquadFilter(), gain = ctx.createGain(), panner = ctx.createStereoPanner();
+    f.type = filter; f.frequency.value = freq; f.Q.value = q; gain.gain.value = 0; panner.pan.value = pan;
+    source.connect(f).connect(gain).connect(panner).connect(to);
+    source.start(ctx.currentTime, Math.random() * 1.5);
+    return gain;
+  };
+  const hiss = [layer(out, "bandpass", 3600, 0.5, -0.6), layer(out, "bandpass", 4400, 0.5, 0.6)], body = layer(out, "lowpass", 700, 0.7, 0);
+  const pond = layer(water, "bandpass", 1300, 0.6, 0), ticks = ctx.createGain(), plips = ctx.createGain();
+  ticks.connect(out); plips.connect(water);
+  let next = 0, level = 0, near = 0;
+  return {
+    update(now: number, rain: number, nearWater: number) {
+      level = rain; near = nearWater;
+      // Soft enough that a bite or a knock still stands over it (lab/audio.ts: mix("rain")).
+      for (const h of hiss) h.gain.setTargetAtTime(0.045 * rain, now, 1.5);
+      body.gain.setTargetAtTime(0.035 * rain, now, 1.5);
+      pond.gain.setTargetAtTime(0.06 * rain * near, now, 1.5);
+      if (next < now) next = now + 0.05;
+      // Single drops close by, more the harder it rains; none are made while it is dry.
+      while (next < now + 0.2) {
+        if (level > 0.02) {
+          const pan = ctx.createStereoPanner();
+          pan.pan.value = rand(-0.9, 0.9);
+          pan.connect(ticks);
+          SOUNDS.tick(ctx, pan, next, Math.random());
+          if (Math.random() < near) SOUNDS.plip(ctx, plips, next + rand(0, 0.05), Math.random());
+        }
+        next += rand(0.03, 0.09) / Math.max(0.1, level);
+      }
+      ticks.gain.setTargetAtTime(0.6 * Math.sqrt(level), now, 1);
+      plips.gain.setTargetAtTime(0.7 * Math.sqrt(level) * near, now, 1);
+    },
+  };
+}
+
+/** The night chorus: three crickets around, each chirping in its own rhythm, and frogs croaking in bouts at the
+ *  pond. update(now, crickets 0 … 1, frogs 0 … 1); `pond` a panner at the nearest shore. */
+export function createNight(ctx: BaseAudioContext, out: AudioNode, pond: AudioNode) {
+  const crickets = ctx.createGain(), frogs = ctx.createGain();
+  crickets.gain.value = frogs.gain.value = 0;
+  crickets.connect(out); frogs.connect(pond);
+  const singers = [-0.7, 0.1, 0.8].map((p) => {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = p;
+    pan.connect(crickets);
+    return { pan, every: rand(0.42, 0.7), pitch: Math.random(), next: 0 };
+  });
+  let croak = 0, bout = 0, cricketLevel = 0, frogLevel = 0;
+  return {
+    update(now: number, cricket: number, frog: number) {
+      cricketLevel = cricket; frogLevel = frog;
+      crickets.gain.setTargetAtTime(cricket, now, 2);
+      frogs.gain.setTargetAtTime(frog, now, 2);
+      for (const s of singers) {
+        if (s.next < now) s.next = now + rand(0, s.every);
+        while (s.next < now + 0.3) {
+          if (cricketLevel > 0.01) SOUNDS.cricket(ctx, s.pan, s.next, s.pitch);
+          s.next += s.every * rand(0.97, 1.03);
+        }
+      }
+      if (croak < now) croak = now + rand(0.5, 2);
+      while (croak < now + 0.3) {
+        if (frogLevel > 0.01) SOUNDS.frog(ctx, frogs, croak, Math.random());
+        // A bout of a few croaks, then a pause.
+        if (--bout > 0) croak += rand(0.35, 0.6);
+        else { bout = 2 + Math.floor(rand(0, 5)); croak += rand(2, 6); }
+      }
+    },
+  };
+}
+
+/** The music: soft notes that compose themselves, and now and then a low note under them. At night (music.night)
+ *  quieter and darker, and its phrases go down an octave. */
+export function createMusic(ctx: BaseAudioContext, out: AudioNode) {
+  const level = ctx.createGain(), hush = ctx.createGain(), tone = ctx.createBiquadFilter(), next = composer();
+  tone.type = "lowpass";
+  tone.frequency.value = 1800;
+  level.gain.value = 0;
+  tone.connect(level).connect(hush).connect(out);
+  let at = 0, count = 0, on = false, dark = 0, octave = 1;
+  const voice = (freq: number, t: number, length: number, peak: number) => {
+    const gain = ctx.createGain(), end = t + length + 3;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(peak, t + 0.25);
+    gain.gain.setTargetAtTime(0, t + 0.3, length * 0.6);
+    gain.connect(tone);
+    for (const [type, mult, share] of [["sine", 1, 1], ["triangle", 2, 0.12]] as const) {
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq * mult;
+      g.gain.value = share;
+      osc.connect(g).connect(gain);
+      osc.start(t);
+      osc.stop(end);
+    }
+  };
+  return {
+    set(play: boolean, now: number) {
+      on = play;
+      level.gain.setTargetAtTime(play ? 1 : 0, now, 1.2);
+    },
+    /** How dark it is, 0 … 1: glides the level and the tone; the octave changes only where a phrase begins. */
+    night(value: number, now: number) {
+      dark = value;
+      hush.gain.setTargetAtTime(1 - 0.5 * dark, now, 3);
+      tone.frequency.setTargetAtTime(1800 - 1000 * dark, now, 3);
+    },
+    update(now: number) {
+      if (!on) return;
+      if (at < now) at = now + 0.2;
+      while (at < now + 0.5) {
+        if (count % 8 === 0) octave = dark > 0.5 ? 0.5 : 1;
+        const note = next();
+        if (!note.rest) voice(pitch(note.degree) * octave, at, note.length, 0.16);
+        if (count++ % 6 === 0) voice((pitch(note.degree < 4 ? 0 : 3) / 2) * octave, at, 7, 0.1);
+        at += note.length;
+      }
+    },
+  };
+}

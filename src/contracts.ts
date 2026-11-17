@@ -1,0 +1,170 @@
+// What the parts of the game promise each other. Each part lives in its own folder and is built against this file
+// alone, so the parts fit when they meet in main.ts.
+//
+//   src/beaver   the animal: mesh, fur, shirt; takes a Pose                       loadBeaver() → Beaver
+//   src/anim     how it moves: turns a Motion into a Pose, pure maths             createAnimator() → Animator
+//   src/player   who steers it: input, Rapier character, camera; reports Motion   createPlayer(stage, options) → Player
+//   src/world    where it lives: ground, pond, sky, things to carry               createWorld(stage, props?) → World
+//   src/props    what stands around: trees, rocks, sticks, built in Blender       loadProps() → Props
+//
+// Conventions (set in engine.ts): three.js, right-handed, y up, 1 unit = 1 m. The beaver is 1 m tall, stands on
+// y = 0 of its root and faces +z. Physics is Rapier, stepped in fixed steps of STEP seconds by run() in engine.ts.
+import type { Matrix4, Object3D, Quaternion, Vector3 } from "three";
+import type { RAPIER, Stage } from "./engine.ts";
+
+// ---- the beaver ------------------------------------------------------------------------------------------------
+
+/** The rig in assets/beaver.glb (built by tools/blender/build.py). */
+export const BONES = [
+  "hips", "spine", "chest", "head", "tail1", "tail2", "brow_L", "brow_R",
+  "upper_arm_L", "forearm_L", "hand_L", "upper_arm_R", "forearm_R", "hand_R",
+  "thigh_L", "shin_L", "foot_L", "thigh_R", "shin_R", "foot_R",
+] as const;
+export type Bone = (typeof BONES)[number];
+
+/** One bone as a glTF animation channel would hold it: local to its parent, in the glb's own axes.
+ *  rotation is a quaternion [x, y, z, w]; translation is the full local offset, not a difference to rest. */
+export interface BonePose { rotation: [number, number, number, number]; translation?: [number, number, number]; scale?: number }
+/** Bones left out stand in their rest pose. */
+export type Pose = Partial<Record<Bone, BonePose>>;
+
+export interface Beaver {
+  /** Move, turn or parent this. Feet on its y = 0, facing its +z. It throws and takes shadows by itself (its
+   *  shape once, without the fur's many layers). */
+  root: Object3D;
+  /** The right hand; parent a carried thing to it. */
+  hand: Object3D;
+  /** 0 calm … 1 furious: redder, muscular, glowing eyes. */
+  anger: number;
+  /** Wears its T-shirt; false: fur all over. */
+  shirt: boolean;
+  /** Puts every bone where the pose says; bones left out go to rest. */
+  pose(pose: Pose): void;
+  /** Once per frame, after pose(): whatever the look needs (fur density for the size on screen, …). */
+  update(dt: number): void;
+}
+
+/** How fast the beaver goes over flat ground, m/s: walking, and running with Shift held. The player aims for
+ *  these, the animator shapes its stride for them. */
+export const WALK_SPEED = 0.8, RUN_SPEED = 2.0;
+
+// ---- motion: what the body is doing, told by the player, drawn by the animator -----------------------------------
+
+export type Action = "none" | "pickup" | "drop" | "gnaw" | "build";
+
+export interface Motion {
+  /** Speed over the ground, m/s. */
+  speed: number;
+  /** Metres walked on the ground since the start. The stride follows this, not the clock, so feet do not slide
+   *  and stand still at a wall. */
+  distance: number;
+  /** How fast it is turning, radians/s, positive to its left. */
+  turning: number;
+  grounded: boolean;
+  /** Vertical speed, m/s, up is positive. */
+  vertical: number;
+  /** Seconds since it left the ground; 0 on the ground. */
+  airTime: number;
+  /** Seconds since it last touched down; large when that was long ago. */
+  sinceLanding: number;
+  /** How hard it touched down, m/s; with sinceLanding it shapes the dip after a jump. */
+  landingSpeed: number;
+  /** 0 on land … 1 afloat. */
+  swimming: number;
+  /** What the arms and trunk are busy with, and how far along a one-time action is, 0 … 1. */
+  action: Action;
+  actionProgress: number;
+  /** Holds something in its right hand. */
+  carrying: boolean;
+  /** 0 … 1, as Beaver.anger. */
+  anger: number;
+  /** Seconds since the start, for breathing and other idle motion. */
+  time: number;
+}
+
+export interface Animator {
+  /** The pose for this moment. Keeps what it needs to blend from one moment to the next. */
+  pose(motion: Motion, dt: number): Pose;
+}
+
+// ---- the player ------------------------------------------------------------------------------------------------
+
+/** A loose thing with a dynamic Rapier body the beaver can pick up: the world makes them (and binds mesh to
+ *  body with stage.bind), the player carries them. */
+export interface Stick { mesh: Object3D; body: RAPIER.RigidBody }
+
+export interface PlayerOptions {
+  /** Where the feet start. */
+  spawn: Vector3;
+  /** The beaver's right hand, to carry things in; without it nothing can be picked up. */
+  hand?: Object3D;
+  /** Things that can be picked up. */
+  sticks?: Stick[];
+  /** Height of the water's surface; below it the beaver swims. Without it there is no water. */
+  waterLevel?: number;
+}
+
+export interface Player {
+  /** At the feet, turned the way the beaver faces. Add Beaver.root to it. */
+  node: Object3D;
+  /** What the body is doing right now; the same object every frame, updated in place. */
+  motion: Motion;
+  /** Once per physics step, before it (run()'s `fixed`): reads the keys, moves the character. */
+  step(dt: number): void;
+  /** Once per frame (run()'s `frame`): places node between the last two steps, moves stage.camera. */
+  update(dt: number, alpha: number): void;
+}
+
+// ---- the world -------------------------------------------------------------------------------------------------
+
+export const PROP_NAMES = ["tree", "stump", "log", "stick", "rock", "crate", "reed"] as const;
+export type PropName = (typeof PROP_NAMES)[number];
+/** Models to place: per name its variants, each a template to clone (not in any scene). A template stands on
+ *  y = 0 around its own origin, y up, in metres; sticks and logs lie along their z. */
+export type Props = Record<PropName, Object3D[]>;
+
+export interface World {
+  /** A good place for the feet to start. */
+  spawn: Vector3;
+  sticks: Stick[];
+  /** Height of the pond's surface. */
+  waterLevel: number;
+  /** Height of the ground at a place. */
+  heightAt(x: number, z: number): number;
+  /** Once per frame: water, grass in the wind; keeps the sun's shadows around `focus` (the player). */
+  update(dt: number, focus: Vector3): void;
+  /** The trees that can be felled, in a fixed order (the index is the tree's name in saved games). */
+  trees?: WorldTree[];
+  /** The flat building site at the water, and the pond it lies at; y of the site is its ground height. */
+  site?: { x: number; z: number; radius: number; height: number };
+  pond?: { x: number; z: number; radius: number };
+  /** The models the world was built from, to make more of the same. */
+  props?: Props;
+  /** Puts a new loose thing into the world, its body's middle at `at`, its size in metres (sticks and logs lie along
+   *  z). A stick also joins `sticks`, so it can be picked up. */
+  addLoose?(kind: "stick" | "log", variant: number, size: Vector3, at: Vector3, turn: Quaternion, mass: number): Stick;
+  /** Takes a loose thing out of the world: out of `sticks`, its body removed. The mesh stays where it is, for the
+   *  caller to keep or take away. */
+  removeLoose?(thing: Stick): void;
+}
+
+/** A tree standing in the world, which another part may take over (the build feature fells them). */
+export interface WorldTree {
+  /** The foot of the trunk, on the ground. */
+  place: Vector3;
+  /** Trunk radius at knee height, m. */
+  radius: number;
+  /** The template it is drawn from, and where: matrix takes template space into the world. */
+  model: Object3D;
+  matrix: Matrix4;
+  /** No longer drawn by the world; whoever calls this draws it from now on. */
+  hide(): void;
+  /** No longer solid: its trunk collider is removed. */
+  clear(): void;
+}
+
+export type LoadBeaver = () => Promise<Beaver>;
+export type CreateAnimator = () => Animator;
+export type CreatePlayer = (stage: Stage, options: PlayerOptions) => Player;
+export type CreateWorld = (stage: Stage, props?: Props) => Promise<World>;
+export type LoadProps = () => Promise<Props>;
