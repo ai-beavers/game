@@ -220,7 +220,8 @@ export const create: CreateFeature = game => {
   },true);
   dialog.dom.addEventListener("keydown",e => e.stopPropagation());
   window.addEventListener("keyup",e => { if (e.code === "Tab") listOpen = false; });
-  function away() { if (!live && started && !page && !photo() && !(net()?.remotes.size)) open("pause"); }
+  // The bot plays in tiles nobody focuses (stream pages, several per browser): a tour never pauses for a lost focus.
+  function away() { if (!new URLSearchParams(location.search).has("tour") && started && !page && !photo() && !(net()?.remotes.size)) open("pause"); }
   window.addEventListener("blur",away);
   document.addEventListener("visibilitychange",() => { if (document.hidden) away(); });
   events.on("enterWater",() => { swimUntil = played+6; });
