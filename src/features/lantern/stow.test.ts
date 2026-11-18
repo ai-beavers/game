@@ -60,10 +60,10 @@ test("busy after the paw has been to the backpack, the switch still finishes the
   expect(play(s, 3, 0.5)).toEqual({ most: 0, drawn: true, reach: 0 }); // not again after landing
 });
 
-test("busy: an action, the tail slap, in the air, swimming or diving; standing on the ground is not", () => {
+test("busy: an action, the tail slap, in the air, swimming, diving, sitting or crawling; standing on the ground is not", () => {
   const ground = { ...newMotion(), grounded: true };
   expect(busy(ground, false)).toBe(false);
   for (const m of [{ ...ground, action: "gnaw" as const }, { ...ground, actionProgress: 0.4 }, { ...ground, grounded: false },
-    { ...ground, swimming: 1 }]) expect(busy(m, false)).toBe(true);
+    { ...ground, swimming: 1 }, { ...ground, low: "sit" as const }, { ...ground, low: "crawl" as const }]) expect(busy(m, false)).toBe(true);
   expect(busy(ground, true)).toBe(true);
 });

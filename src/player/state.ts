@@ -5,6 +5,7 @@
 //   const act = newAction();     const event = stepAction(act, dt, actPressed, stickInReach);  // "grab" | "release"
 //   const slap = newSlap();      stepSlap(slap, dt, slapPressed, allowed);                      // the tail slap, Q
 //   const dive = newDive();      stepDive(dive, dt, diveHeld, afloat, headUnder);              // diving, C held
+//   const { low, slow } = stepLow(diveHeld, crawlHeld, facts);                                 // sit (C) and crawl (Y)
 //   trackMotion(motion, dt, facts);                                                            // fills motion in place
 import type { Action, Motion } from "../contracts.ts";
 
@@ -92,6 +93,24 @@ export function stepDive(s: Dive, dt: number, held: boolean, afloat: boolean, un
   return s.diving;
 }
 
+// ---- sit and crawl -----------------------------------------------------------------------------------------------
+
+// On land the dive key held sits the beaver (on its haunches, tail flat on the ground) and Y held crawls it (low on
+// all fours, slower than walking). Both last only while held; nothing is kept from one step to the next.
+export type Low = "none" | "sit" | "crawl";
+/** m/s: a crawl goes at about half the walking speed, and never runs. */
+export const CRAWL_SPEED = 0.4;
+export interface LowFacts { grounded: boolean; afloat: boolean; moving: boolean; acting: boolean; jumping: boolean }
+
+/** Once per step. sit: the dive key held; crawl: Y held. Sit holds only standing still (moving, it walks); crawl
+ *  wins over sit; an action (pickup, drop, gnaw, build) or a jump gets it up while it lasts, and it goes low again
+ *  after if the key is still held. The tail slap is no action here: a sitting beaver slaps sitting. slow: the crawl's
+ *  speed, no running. */
+export function stepLow(sit: boolean, crawl: boolean, f: LowFacts): { low: Low; slow: boolean } {
+  const low: Low = !f.grounded || f.afloat || f.acting || f.jumping ? "none" : crawl ? "crawl" : sit && !f.moving ? "sit" : "none";
+  return { low, slow: low === "crawl" };
+}
+
 // ---- motion ------------------------------------------------------------------------------------------------------
 
 /** The Motion with what only this player's own beaver tells: diving (under the surface on purpose). It does not
@@ -116,6 +135,8 @@ export interface StepFacts {
   slap?: number;
   /** Diving (Dive.diving); left out by those that never dive (bots). */
   diving?: boolean;
+  /** Sitting or crawling (stepLow); left out by those that never go low (bots). */
+  low?: Low;
 }
 
 /** Fills every field of motion in place, except anger (which belongs to whoever sets it). Afloat counts as held
@@ -137,6 +158,8 @@ export function trackMotion(m: SwimMotion, dt: number, f: StepFacts): void {
   m.actionProgress = f.act.action === "none" ? f.slap ?? 0 : f.act.progress;
   m.carrying = f.act.carrying;
   if (f.diving !== undefined) m.diving = f.diving;
+  if (f.low === "sit" || f.low === "crawl") m.low = f.low;
+  else delete m.low;
 }
 
 // ---- steering ----------------------------------------------------------------------------------------------------

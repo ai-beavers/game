@@ -44,6 +44,14 @@ _Avoid_: base, house, storage
 A person steering a beaver, or the beaver they steer.
 _Avoid_: user, character
 
+**Sit**:
+The beaver resting upright on its haunches on land, tail flat on the ground, for as long as the player holds it there. Moving gets it up again.
+_Avoid_: crouch, rest, kneel
+
+**Crawl**:
+The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
+_Avoid_: crouch, sneak, prone
+
 **Remote**:
 Another player's beaver as this browser draws it.
 _Avoid_: peer, other client

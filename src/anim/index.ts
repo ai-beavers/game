@@ -7,6 +7,8 @@
 // Layers, each a whole Body, blended by weights that are damped over time, so nothing pops:
 //   ground   gait (stride from motion.distance, planted feet by IK), standing (breathing, weight shift, a look
 //            around, flexing when angry), turning lean, the dip after a landing, anger
+//   low      sit (on its haunches, trunk upright, tail flat on the ground, paws at the chest, still breathing and
+//            looking round) or crawl (low on all fours, the front paws stepping with the hind feet), by motion.low
 //   action   pickup, drop, gnaw, build, by actionProgress; feet stay planted
 //   air      stretched while rising, legs forward while falling
 //   swim     level in the water, hind legs paddle, tail steers; pitched nose down sinking, up rising (motion.vertical)
@@ -190,6 +192,42 @@ function stoop(body: Body, b: number, spot: Vec, fist: number) {
   arm(body, 1, "L", 0.45 - 0.3 * b, 0.5 * b, 0, 0.1, 0.3); // out a little and back, for balance
 }
 
+/** Sitting on its haunches: the hips low, the feet flat ahead, the trunk upright over them, the tail lying flat on
+ *  the ground behind, the front paws together at the chest. The head keeps what ground() gave it (the look round),
+ *  the chest the breath. */
+function sit(body: Body, time: number) {
+  const head = body.turns.head, breath = sin(TAU * time / 3.6);
+  trunk(body, { lean: -0.12, tail_up: SIT_TAIL, tail_sway: 0.05 * sin(TAU * time / 5.3) });
+  body.turns.tail2 = mul(axisAngle(X, SIT_TIP), body.turns.tail2);
+  body.turns.chest = mul(axisAngle(X, 0.03 * breath), body.turns.chest);
+  body.turns.head = mul(axisAngle(X, 0.05), head); // the trunk leans back a little: the head forward against it
+  plantLegs(body, { L: { at: [FOOT_X + 0.03, ANKLE, SIT_FEET], turn: footTurn(1, 0.3, 0) }, R: { at: [-FOOT_X - 0.03, ANKLE, SIT_FEET], turn: footTurn(-1, 0.3, 0) } }, SIT_DROP, [0, 0, -0.03]);
+  const placed = body.fk();
+  for (const [sign, lr] of SIDES) reachArm(body, placed, lr, onChest(placed, [sign * 0.05, -0.13 + 0.004 * breath, 0.15]), [sign, -0.4, -0.4], 0.3);
+}
+const SIT_DROP = 0.1, SIT_FEET = 0.12, SIT_TAIL = -0.2, SIT_TIP = -0.2; // m, m, rad, rad
+
+/** Crawling: the trunk pitched forward and low, the head up to look ahead, the hind feet on the stride as walking,
+ *  the front paws stepping on the ground with them: each paw with the hind foot of the other side, on the same plan
+ *  (so on the same distance walked), so neither slides. */
+function crawl(body: Body, feet: [Step, Step], turning: number) {
+  trunk(body, { lean: CRAWL_LEAN, tail_up: 0.4, tail_sway: soft(-0.06 * turning, 0.35) + 0.15 * feet[0].forward });
+  body.turn("head", [X, -0.85 * CRAWL_LEAN], [Z, soft(0.12 * turning, 0.6)]);
+  const plan = (f: Step, sign: number): Plant => {
+    const q = axisAngle(UP, f.yaw);
+    return { at: rotate(q, [sign * (FOOT_X + 0.03), ANKLE + f.lift, f.z]), turn: mul(q, footTurn(sign, 0.2, f.pitch)) };
+  };
+  plantLegs(body, { L: plan(feet[0], 1), R: plan(feet[1], -1) }, CRAWL_DROP, [0, 0, -0.04]);
+  const placed = body.fk();
+  for (const [sign, lr] of SIDES) {
+    const f = feet[sign > 0 ? 1 : 0], q = axisAngle(UP, f.yaw);
+    reachArm(body, placed, lr, rotate(q, [sign * PAW_X, PAW_Y + 1.5 * f.lift, PAW_Z + f.z]), [sign * 0.4, 0.2, -1], 0.2);
+  }
+}
+/** rad the trunk leans, m the hips go down, and where the finger tips of a front paw stand at the middle of its step. */
+const CRAWL_LEAN = 1.25, CRAWL_DROP = 0.08;
+export const PAW_X = 0.13, PAW_Y = 0.015, PAW_Z = 0.36;
+
 /** Where the right hand picks a thing up and puts it down: on the ground ahead of the feet, a little to the right. */
 export const PICKUP_SPOT: Vec = [-0.1, 0.02, 0.3], DROP_SPOT: Vec = [-0.1, 0.03, 0.36];
 
@@ -269,7 +307,7 @@ export const createAnimator: CreateAnimator = (): Animator => {
   let phase = 0, lastDistance: number | undefined, swimPhase = 0;
   let speed = 0, anger = 0, first = true, wasGrounded = true;
   const turning$ = new Ease(-Infinity, Infinity); // eased, not damped: a damped rate jumps in its first frame
-  const air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease();
+  const sit$ = new Ease(), crawl$ = new Ease(), air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease();
   const pitch$ = new Ease(-Infinity, Infinity);
   let shown: Action = "none", progress = 0, vertical = 0;
   return {
@@ -289,6 +327,7 @@ export const createAnimator: CreateAnimator = (): Animator => {
       if (m.action !== "none") { shown = m.action; progress = m.actionProgress; }
       if (!m.grounded) vertical = m.vertical; // after touchdown the air pose fades out as it was, not as at the top
       const acting = ease(acting$, m.action !== "none" ? 1 : 0, 0.25);
+      const sitting = ease(sit$, m.low === "sit" ? 1 : 0, 0.45), crawling = ease(crawl$, m.low === "crawl" ? 1 : 0, 0.35);
       const pivot = m.grounded ? m.turning : 0, stepping = speed + abs(pivot) * PIVOT;
       const g = gait(Math.min(stepping, max(speed, WALK_SPEED)), anger); // pivoting it walks, quicker, never runs
       // the stride follows the ground walked, not the clock
@@ -323,6 +362,8 @@ export const createAnimator: CreateAnimator = (): Animator => {
       const since = max(0, m.sinceLanding) / 0.07, dip = clamp(0.014 * m.landingSpeed, 0, 0.08) * since * since * exp(2 - 2 * since);
       body.reset();
       ground(body, { speed, pivot, feet, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
+      if (sitting > 0.001) { sit(layer.copy(body), m.time); body.blend(layer, sitting); }
+      if (crawling > 0.001) { crawl(layer.copy(body), feet, turning); body.blend(layer, crawling); }
       if (acting > 0.001) { action(layer.reset(), shown, progress, m.time); body.blend(layer, acting); }
       if (inAir > 0.001) { air(layer.reset(), vertical); body.blend(layer, inAir); }
       if (swimming > 0.001) {

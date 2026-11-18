@@ -1,6 +1,6 @@
 // Tests for the player's pure logic: jump timing, the carry sequence, diving and breath, the Motion bookkeeping. bun test src/player
 import { describe, expect, test } from "bun:test";
-import { BREATH, REFILL, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
+import { BREATH, REFILL, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepLow, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
 
 const dt = 1 / 60;
 
@@ -188,5 +188,36 @@ describe("dive", () => {
     expect(stepDive(s, dt, true, true, false)).toBe(true); // a fresh press at the surface: under again
     for (let i = 0; i * dt < REFILL; i++) stepDive(s, dt, false, true, false);
     expect(s.breath).toBe(BREATH); // all back after REFILL s at the surface
+  });
+});
+
+describe("sit and crawl", () => {
+  const on = { grounded: true, afloat: false, moving: false, acting: false, jumping: false };
+  test("C sits only on land", () => {
+    expect(stepLow(true, false, on)).toEqual({ low: "sit", slow: false });
+    expect(stepLow(true, false, { ...on, grounded: false })).toEqual({ low: "none", slow: false }); // in the air
+    expect(stepLow(true, false, { ...on, grounded: false, afloat: true }).low).toBe("none"); // afloat: C dives instead
+    expect(stepLow(false, false, on).low).toBe("none");
+  });
+  test("moving gets a sitting beaver up: it walks", () => {
+    expect(stepLow(true, false, { ...on, moving: true })).toEqual({ low: "none", slow: false });
+  });
+  test("Y crawls on land, moving or still, slowed; it wins over sit", () => {
+    expect(stepLow(false, true, on)).toEqual({ low: "crawl", slow: true });
+    expect(stepLow(false, true, { ...on, moving: true })).toEqual({ low: "crawl", slow: true });
+    expect(stepLow(true, true, on)).toEqual({ low: "crawl", slow: true });
+    expect(stepLow(true, true, { ...on, moving: true })).toEqual({ low: "crawl", slow: true });
+  });
+  test("an action or a jump gets it up while it lasts; still held, it goes low again after", () => {
+    for (const busy of [{ acting: true }, { jumping: true }]) {
+      expect(stepLow(true, false, { ...on, ...busy })).toEqual({ low: "none", slow: false });
+      expect(stepLow(false, true, { ...on, ...busy })).toEqual({ low: "none", slow: false });
+    }
+    expect(stepLow(true, false, on).low).toBe("sit");
+    expect(stepLow(false, true, on).low).toBe("crawl");
+  });
+  test("afloat it never goes low", () => {
+    for (const grounded of [true, false]) for (const moving of [true, false])
+      expect(stepLow(true, true, { ...on, grounded, moving, afloat: true })).toEqual({ low: "none", slow: false });
   });
 });

@@ -72,6 +72,15 @@ describe("motion", () => {
     const m = { ...newMotion(), speed: 1.234, action: "gnaw" as const, carrying: true, grounded: true, swimming: 0.5 };
     expect(unpackMotion(packMotion(m), newMotion())).toEqual(m);
   });
+  test("a sitting or crawling beaver is seen low by others, and standing again after", () => {
+    const into = newMotion();
+    for (const low of ["sit", "crawl"] as const) {
+      const m = { ...newMotion(), grounded: true, low };
+      expect(unpackMotion(packMotion(m), into).low).toBe(low);
+      expect(parseClient(state({ m: packMotion(m) }))).toBeDefined();
+    }
+    expect(unpackMotion(packMotion(newMotion()), into).low).toBeUndefined();
+  });
 });
 
 describe("hostOf", () => {

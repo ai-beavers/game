@@ -96,6 +96,9 @@ export interface Motion {
    *  backpack). Only the left arm follows it; the right arm, a carried stick and the trunk do not. The lantern
    *  feature writes it into the local player's Motion; the player leaves it alone. Left out: 0 (remotes, bots). */
   reachBack?: number;
+  /** Low on land, held by the player: "sit" on its haunches, tail flat on the ground; "crawl" low on all fours, the
+   *  front paws stepping with the hind feet. Left out: standing (bots never go low). */
+  low?: "sit" | "crawl";
 }
 
 export interface Animator {
