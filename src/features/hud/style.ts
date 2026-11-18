@@ -45,8 +45,10 @@ body.photo #beaver-hud { display: none; }
 #beaver-hud .map canvas { width: 100%; height: 100%; display: block; }
 #beaver-hud .map.large { width: min(72vmin, 560px); height: min(72vmin, 560px);
   right: calc(50% - min(36vmin, 280px)); top: calc(50% - min(36vmin, 280px)); }
-#beaver-hud .map-n { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); font-size: 12px; font-weight: 600;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
+/* north, on the large map only: a small N at the top edge */
+#beaver-hud .map-n { display: none; position: absolute; left: 50%; top: 6px; transform: translateX(-50%); font-size: 14px; font-weight: 600;
+  line-height: 1; color: var(--text); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.6); }
+#beaver-hud .map.large .map-n { display: block; }
 #beaver-hud .side { position: absolute; right: var(--right); top: calc(var(--edge) + env(safe-area-inset-top) + var(--map) + 8px);
   display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 #beaver-hud:has(.map.large) .side { opacity: 0; }

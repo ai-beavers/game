@@ -243,11 +243,18 @@ export const create: CreateFeature = (game) => {
     }],
     ["Map", async () => {
       const map = document.querySelector("#beaver-hud .map") ?? skip("no HUD");
+      const north = map.querySelector<HTMLElement>(".map-n") ?? skip("no north marker");
+      const shown = () => { const r = north.getBoundingClientRect(); return north.checkVisibility() && r.width > 0 && r.height > 0; };
+      expect(!shown(), "north marker on the small map");
       key("KeyM");
       expect(map.classList.contains("large"), "M did not enlarge the map");
+      expect(shown() && north.textContent === "N", "no N on the large map");
+      const m = map.getBoundingClientRect(), n = north.getBoundingClientRect();
+      expect(n.top - m.top < m.height * 0.15 && Math.abs(n.left + n.width / 2 - (m.left + m.width / 2)) < 4, "N is not at the top edge");
       await wait(3);
       key("KeyM");
       expect(!map.classList.contains("large"), "M did not shrink the map");
+      expect(!shown(), "north marker stayed on the small map");
     }],
     ["Photo mode", async () => {
       key("KeyP");
