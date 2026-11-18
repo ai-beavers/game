@@ -25,7 +25,7 @@ import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { TextBlock } from "@babylonjs/gui";
 import { MapDisplay } from "../hud/map-display.ts";
-import { Overlay, onViewport, box } from "../hud/overlay.ts";
+import { Overlay, onViewport, box, hudLayout } from "../hud/overlay.ts";
 import type { Stick } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
 import type { GameEvents } from "../../events.ts";
@@ -618,8 +618,8 @@ export const create: CreateFeature = (game) => {
   label.outlineWidth = 3;
   label.outlineColor = "#182723";
   onViewport(stage,(w,h) => {
-    if (!backing) return overlay.move(label,box(w*0.2,h<500 ? 45 : 8,w*0.6,36));
-    const size = Math.max(18, Math.round(h * 0.03)), at = box((w - Math.min(w - 24, size * 24)) / 2, Math.round(h * 0.025), Math.min(w - 24, size * 24), size * 1.9);
+    if (!backing) return overlay.move(label,hudLayout(stage).caption);
+    const { caption: at, u: size } = hudLayout(stage); // the HUD's top centre and its type (hud/style.ts)
     label.fontSize = size;
     overlay.move(backing, at);
     overlay.move(label, at);

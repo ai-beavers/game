@@ -3,7 +3,8 @@ import { type TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { TextBlock } from "@babylonjs/gui";
 import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { Stage } from "../../engine.ts";
-import { Overlay, box, onViewport, safeArea } from "../hud/overlay.ts";
+import { Overlay, box, floating, hudLayout, measure, onViewport } from "../hud/overlay.ts";
+import { INK, PANEL, QUIET, RADIUS } from "../hud/style.ts";
 import { CHAT_LENGTH } from "./protocol.ts";
 import { place, wrap } from "./tags.ts";
 
@@ -13,7 +14,7 @@ import { place, wrap } from "./tags.ts";
 const SHOW = 8000, SAY = 6000, HEAD = 1.0;
 const NEAR = 16, FAR = 34; // m from the camera: tags fade out between these
 const SPOKEN = 4; // px between a bubble and its beaver's tag
-const BUBBLE = "rgba(246,242,231,0.95)", PILL = "rgba(18,32,31,0.66)", INK = "#182825", QUIET = "#bccbbb";
+const BUBBLE = "rgba(246,242,231,0.95)";
 interface Tag {
   name: string; said: string; node: TransformNode; until: number; behind: boolean; doing: string;
   pill: Rectangle; label: TextBlock; activity: TextBlock; bubble: Rectangle; speech: TextBlock;
@@ -22,44 +23,29 @@ interface Tag {
   at: string; x: number; y: number; distance: number;
 }
 
-const context = document.createElement("canvas").getContext("2d")!, widths = new Map<string, number>();
-/** Width of a text in px as the HUD draws it, kept per text and size. */
-function measure(text: string, size: number, weight = "normal") {
-  const key = weight + size + "|" + text;
-  let width = widths.get(key);
-  if (width === undefined) {
-    if (widths.size > 500) widths.clear();
-    context.font = `${weight} ${size}px system-ui, sans-serif`;
-    widths.set(key, width = context.measureText(text).width);
-  }
-  return width;
-}
+// The tour's live view is a stream nobody plays: no chat row, no chat log; the tags over the beavers stay.
+const live = new URLSearchParams(location.search).get("tour") === "live";
 
 export function createUi(stage: Stage, actions: { send(text: string): void; rename(): void; canChat(): boolean }) {
   const layer = new Overlay(stage, "beaver-net",false,6), tagLayer = new Overlay(stage,"name-tags");
   const tags = new Map<number | "me",Tag>(), lines: { text: string; at: number }[] = [];
   const log = document.createElement("output");
   log.setAttribute("aria-live","polite");
-  let name = "", address = "", statusText = "", typing = false, input: HTMLInputElement | undefined;
-  let messages: TextBlock, status: TextBlock, me: ReturnType<Overlay["button"]>, join: TextBlock;
-  function layout(w: number, h: number) {
+  let name = "", statusText = "", typing = false, input: HTMLInputElement | undefined;
+  let messages: TextBlock, status: TextBlock, me: ReturnType<Overlay["button"]>;
+  // The bottom left of the HUD's layout (hud/style.ts): the chat row at its foot, the log and the connection over it.
+  function layout() {
     const draft = input?.value || "";
     layer.clear();
     layer.dom.append(log);
-    const touch = !!document.getElementById("touch-controls"), narrow = w < 640, {right: R, bottom: B, left: L} = safeArea();
-    // On a touch screen: finger-sized buttons, above the thumbstick's resting place (controls/touch.ts).
-    const rowH = touch ? 44 : 30, bottom = B + (touch ? 145 : 10), x = L+12, width = Math.min(w-24-L-R,narrow ? w*.66 : 350);
-    const y = h-bottom-rowH;
-    me = layer.button("rename",name || "Set name",box(x,y,Math.min(102,width*.42),rowH),actions.rename);
+    const at = hudLayout(stage), {x, y, w: width, h: rowH} = at.chatRow, nameW = Math.min(102,width*.42);
+    me = layer.button("rename",name || "Set name",box(x,y,nameW,rowH),actions.rename);
     me.element.setAttribute("aria-label","Change player name");
-    layer.button("chat-open","Chat",box(x+Math.min(102,width*.42)+5,y,55,rowH),openChat);
-    join = layer.text("join",address,box(x+165,y,Math.max(0,width-150),rowH),11);
-    join.isVisible = !narrow;
-    messages = layer.text("chat-log","",box(x,y-150,width,typing ? 102 : 150),14);
+    layer.button("chat-open","Chat",box(x+nameW+5,y,55,rowH),openChat);
+    const lineH = Math.round(at.small*1.3*1.1);
+    status = layer.label("connection-status",statusText,box(x,at.log.y,width,lineH),at.small);
+    messages = layer.label("chat-log","",box(x,at.log.y+lineH,width,at.log.h-lineH-(typing ? 42 : 0)),at.small);
     messages.textVerticalAlignment = 1; // bottom
-    messages.outlineWidth = 2; messages.outlineColor = "#1c2924";
-    status = layer.text("connection-status",statusText,box(x,y-181,width,30),13);
-    status.outlineWidth = 2; status.outlineColor = "#1c2924";
     input = undefined;
     if (typing) {
       input = layer.field("chat-message",draft,box(x,y-42,width,38),"Message",CHAT_LENGTH);
@@ -73,7 +59,7 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
       input.onblur = () => { queueMicrotask(() => { if (typing && input !== document.activeElement) closeChat(); }); };
     }
   }
-  const rebuild = () => layout(stage.canvas.clientWidth,stage.canvas.clientHeight);
+  const rebuild = () => layout();
   function openChat() {
     if (!actions.canChat() || stage.paused || typing) return;
     typing = true; rebuild();
@@ -127,8 +113,8 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
     get typing() { return typing; },
     tag(id: number | "me", name: string, node: TransformNode) {
       this.untag(id);
-      const bubble = tagLayer.rect("bubble-"+id,box(0,0,0,0),BUBBLE,8), speech = tagLayer.text("said-"+id,"",box(0,0,0,0),14,"center",false);
-      const pill = tagLayer.rect("tag-"+id,box(0,0,0,0),PILL,6), label = tagLayer.text("name-"+id,"",box(0,0,0,0),14,"left");
+      const bubble = tagLayer.rect("bubble-"+id,box(0,0,0,0),BUBBLE,RADIUS), speech = tagLayer.text("said-"+id,"",box(0,0,0,0),14,"center",false);
+      const pill = tagLayer.rect("tag-"+id,box(0,0,0,0),PANEL,RADIUS), label = tagLayer.text("name-"+id,"",box(0,0,0,0),14,"left");
       const activity = tagLayer.text("doing-"+id,"",box(0,0,0,0),11,"left",false);
       speech.color = INK; label.fontWeight = "600"; activity.color = QUIET;
       for (const text of [speech,label,activity]) text.textWrapping = false;
@@ -148,11 +134,12 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
     },
     line: push,
     status(value = "") { statusText = value; status.text = value; },
-    address(value: string) { address = value; join.text = value; },
+    /** The join address is shown on Pause → Players (hud/index.ts), not on the play screen. */
+    address(_value: string) {},
     me(value: string) { name = value; me.caption.text = value || "Set name"; me.element.textContent = me.caption.text; me.element.setAttribute("aria-label","Change player name"); },
     update() {
       const visible = !stage.paused && !document.querySelector("dialog:modal");
-      layer.show(visible); tagLayer.show(visible);
+      layer.show(visible && !live); tagLayer.show(visible);
       if (!visible) { if (typing) closeChat(); return; }
       const now = performance.now(), w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
       messages.text = lines.filter(l => typing || now-l.at<SHOW).slice(-5).map(l => l.text).join("\n");
@@ -181,7 +168,8 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
         for (const c of controls(tag)) c.alpha = alpha;
       }
       shown.sort((a,b) => a.distance-b.distance); // the nearest keeps its place, the others make way above it
-      place(shown,w,h).forEach((p,i) => put(shown[i]!,p.x,p.y));
+      floating.length = 0;
+      place(shown,w,h).forEach((p,i) => { const t = shown[i]!; put(t,p.x,p.y); floating.push(box(p.x,p.y,t.w,t.h)); });
     },
   };
 }

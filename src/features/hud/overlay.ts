@@ -5,12 +5,11 @@ import { Control } from "@babylonjs/gui/2D/controls/control.js";
 import { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
 import type { Stage } from "../../engine.ts";
+import { GOLD, INK, layout, PANEL, PAPER, RADIUS, SHADOW, type Box } from "./style.ts";
 
-type Box = { x: number; y: number; w: number; h: number };
 export const box = (x: number, y: number, w: number, h: number): Box => ({ x, y, w, h });
-const PAPER = "#f6f2e7", INK = "#182825", EDGE = "#88958a";
-export const GOLD = "#f7ca77";
-export const PANEL = "rgba(18,32,31,0.92)";
+export { GOLD, PANEL };
+const EDGE = "#88958a";
 const left = Control.HORIZONTAL_ALIGNMENT_LEFT, top = Control.VERTICAL_ALIGNMENT_TOP;
 type Action = HTMLButtonElement | HTMLInputElement;
 
@@ -75,7 +74,7 @@ export class Overlay {
     return control;
   }
 
-  rect(name: string, r: Box, background = PANEL, radius = 8) {
+  rect(name: string, r: Box, background = PANEL, radius = RADIUS) {
     const panel = this.put(new Rectangle(name), r);
     panel.cornerRadius = radius;
     panel.background = background;
@@ -102,6 +101,52 @@ export class Overlay {
     return text;
   }
 
+  /** A HUD text over the world: the one shadow under it, backed or not. */
+  label(name: string, value: string, r: Box, size: number, align: "left" | "center" = "left", describe = true) {
+    const text = this.text(name, value, r, size, align, describe);
+    text.shadowColor = SHADOW.color; text.shadowBlur = SHADOW.blur;
+    return text;
+  }
+
+  /** A backing sized to its text, which may change every frame: in `slot` against its top or bottom edge, centred
+   *  across it, or anywhere with at(). Hidden while the text is empty. */
+  pill(name: string, slot: Box, size: number, anchor: "top" | "bottom" = "bottom", describe = true) {
+    const back = this.rect(name + "-back", slot, PANEL, 0);
+    const text = this.label(name, "", slot, size, "center", describe);
+    const pad = Math.round(size * 0.6), lineH = Math.round(size * 1.3);
+    back.isVisible = false;
+    let w = 0, h = 0;
+    const pill = {
+      back, text, slot,
+      /** Width and height for a text, wrapped to the slot's width. */
+      measure(value: string) {
+        const room = pill.slot.w - 2 * pad, widths = value.split("\n").map(line => measure(line, size, String(text.fontWeight || "normal")));
+        const lines = widths.reduce((n, lw) => n + Math.max(1, Math.ceil(lw / room)), 0);
+        return { w: Math.min(pill.slot.w, Math.ceil(Math.max(...widths)) + 2 * pad + 4), h: lines * lineH + Math.round(pad * 1.2) };
+      },
+      set(value: string) {
+        if (value === text.text && back.isVisible === !!value) return;
+        text.text = value; back.isVisible = !!value;
+        if (!value) return;
+        ({ w, h } = pill.measure(value));
+        pill.at(pill.slot.x + (pill.slot.w - w) / 2, anchor === "top" ? pill.slot.y : pill.slot.y + pill.slot.h - h);
+      },
+      at: (x: number, y: number) => {
+        x = Math.round(x); y = Math.round(y);
+        this.move(back, box(x, y, w, h)); this.move(text, box(x + pad - 2, y, w - 2 * pad + 4, h));
+        back.cornerRadius = Math.min(RADIUS * 1.6, h / 2);
+      },
+    };
+    return pill;
+  }
+
+  /** An announcement: a pill in gold, hung from the top of its slot. */
+  toast(name: string, slot: Box, size: number) {
+    const toast = this.pill(name, slot, size, "top");
+    toast.text.color = GOLD; toast.text.fontWeight = "600";
+    return toast;
+  }
+
   private native<T extends Action>(element: T, r: Box, label: string, panel: Rectangle) {
     element.setAttribute("aria-label", label);
     element.style.cssText = "position:absolute;pointer-events:auto;opacity:0;touch-action:none;box-sizing:border-box;margin:0;font-size:16px";
@@ -120,7 +165,7 @@ export class Overlay {
   }
 
   button(name: string, value: string, r: Box, click: () => void, primary = false) {
-    const panel = this.rect(name, r, primary ? GOLD : "#324540", Math.min(9, r.h / 2));
+    const panel = this.rect(name, r, primary ? GOLD : "#324540", Math.min(RADIUS, r.h / 2));
     panel.thickness = 1;
     panel.color = EDGE;
     const caption = this.text(name + "-label", value, r, 14, "center",false);
@@ -177,6 +222,29 @@ export function safeArea() {
   const inset = { top: px(s.paddingTop), right: px(s.paddingRight), bottom: px(s.paddingBottom), left: px(s.paddingLeft) };
   probe.remove();
   return inset;
+}
+
+/** Where everything goes on this screen now (style.ts layout): the phone's safe area, the touch controls, live or not. */
+export function hudLayout(stage: Stage) {
+  const live = new URLSearchParams(location.search).get("tour") === "live";
+  return layout(stage.canvas.clientWidth, stage.canvas.clientHeight, safeArea(), { touch: !!document.getElementById("touch-controls"), live });
+}
+
+/** What floats over the world this frame, in screen px (net/ui.ts puts the name tags and bubbles here), so the HUD's
+ *  marker keeps clear of it. */
+export const floating: Box[] = [];
+
+const context = document.createElement("canvas").getContext("2d")!, widths = new Map<string, number>();
+/** Width of a text in px as the HUD draws it, kept per text and size. */
+export function measure(text: string, size: number, weight = "normal") {
+  const key = weight + size + "|" + text;
+  let width = widths.get(key);
+  if (width === undefined) {
+    if (widths.size > 500) widths.clear();
+    context.font = `${weight} ${size}px system-ui, sans-serif`;
+    widths.set(key, width = context.measureText(text).width);
+  }
+  return width;
 }
 
 /** All HUD positions count CSS pixels regardless of the renderer's resolution. */

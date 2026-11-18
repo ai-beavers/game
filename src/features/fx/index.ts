@@ -24,7 +24,7 @@ import type { CreateFeature } from "../../game.ts";
 import { grassOf } from "../../world/grass.ts";
 import { placeAll } from "../../world/place.ts";
 import { groundColor, slopeAt } from "../../world/terrain.ts";
-import { Overlay, box as screenBox, onViewport } from "../hud/overlay.ts";
+import { Overlay, box as screenBox, hudLayout, onViewport } from "../hud/overlay.ts";
 import { createParticles } from "./particles.ts";
 import { advance, blank, FLOOR, KIND, MODE, spawn, type Particle } from "./sim.ts";
 
@@ -428,10 +428,10 @@ export const create: CreateFeature = (game) => {
   // fades) as its tenth of the breath goes. Babylon draws them on the HUD; the overlay's label tells screen readers.
   const BUBBLES = 10, breathRing = new Overlay(stage, "breath", false, 3);
   const dots: ReturnType<Overlay["rect"]>[] = [];
-  onViewport(stage, (w, h) => {
-    breathRing.clear(); dots.length = 0;
+  onViewport(stage, () => {
+    breathRing.clear(); dots.length = 0; const b = hudLayout(stage).breath; // its home in the HUD's bottom centre (hud/style.ts)
     for (let i = 0; i < BUBBLES; i++) {
-      const a = (i / (BUBBLES - 1) - 0.5) * 1.1, x = w / 2 + Math.sin(a) * 90, y = h - 105 - Math.cos(a) * 30;
+      const a = (i / (BUBBLES - 1) - 0.5) * 1.1, x = b.x + b.w / 2 + Math.sin(a) * 90, y = b.y + b.h - 7 - Math.cos(a) * 30;
       const dot = breathRing.rect(`breath-${i}`, screenBox(x - 7, y - 7, 14, 14), "rgba(220,240,240,.18)", 7);
       dot.color = "rgba(240,250,250,.85)"; dot.thickness = 1.5;
       dots.push(dot);
