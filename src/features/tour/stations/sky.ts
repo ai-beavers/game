@@ -1,4 +1,4 @@
-// Sky watch: a day passing, the lantern at night, deer at dusk, rain and fog.
+// Sky watch: a day passing, the lantern at night and from the backpack, deer at dusk, rain and fog.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { deerHours, type Deer } from "../../life/brain.ts";
 import { dayAt } from "../../sky/clock.ts";
@@ -41,6 +41,42 @@ export const skyWatch = (kit: Kit): Station[] => {
         await until(() => light().intensity === 0, 3, `the lantern still shines at noon (${light().intensity.toFixed(2)})`);
       } finally {
         if (!live) { s.setHour(hour); s.running = running; s.setWeather("auto"); }
+      }
+    }, "Sky watch"],
+    // A viewer's wish: by day the lantern rides in the backpack, the left paw empty; at dusk the beaver reaches over its
+    // left shoulder, takes it out and brings it down to hang in the paw; at dawn it puts it back the same way
+    // (src/features/lantern). It sets the clock, so the live tour skips it.
+    ["Lantern from the backpack", async () => {
+      if (live) return skip("the live tour never sets the clock");
+      const s = sky(), { scene } = stage, motion = player.motion;
+      const mesh = (name: string) => scene.getMeshByName(name) ?? skip(`no ${name}`);
+      const drawn = (name: string) => mesh(name).isEnabled();
+      const hour = s.hour, running = s.running;
+      /** Waits until the left paw is at the backpack (Motion.reachBack past 0.8), then until it is back down. */
+      const reachesBack = async (when: string) => {
+        await until(() => (motion.reachBack ?? 0) > 0.8, 3, `the left paw never reached the backpack ${when}`);
+        await until(() => (motion.reachBack ?? 0) === 0, 3, `the left paw stayed at the backpack ${when}`);
+      };
+      try {
+        s.running = false; s.setWeather("fair"); s.setHour(13);
+        await walkTo(world.spawn.x + 2.5, world.spawn.z + 2);
+        await until(() => !drawn("lantern"), 3, "the beaver carries its lantern at noon");
+        expect(drawn("backpack"), "the beaver wears no backpack");
+        s.setHour(23);
+        await reachesBack("at nightfall");
+        expect(drawn("lantern"), "the beaver reached into its backpack at night but brought no lantern");
+        const off = Vector3.Distance(mesh("lantern").getAbsolutePosition(), beaver.leftHand.getAbsolutePosition());
+        expect(off < 0.15, `the lantern came out but hangs ${off.toFixed(2)} m from the beaver's left hand, not in it`);
+        const light = scene.getLightByName("lantern-light") ?? skip("no lantern light");
+        // On low quality the light is off and the glass glows alone.
+        if (light.isEnabled()) await until(() => light.intensity > 0, 3, "the lantern is out but gives no light");
+        await wait(1); // a look at it lit
+        s.setHour(13);
+        await reachesBack("at daybreak");
+        expect(!drawn("lantern"), "the beaver reached back at daybreak but still holds its lantern");
+        expect(drawn("backpack"), "the backpack went with the lantern");
+      } finally {
+        s.setHour(hour); s.running = running; s.setWeather("auto");
       }
     }, "Sky watch"],
     // Dusk: deer come out of the forest's edge to graze (src/features/life); the beaver runs at one, it bounds off into

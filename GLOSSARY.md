@@ -27,8 +27,12 @@ A piece of wood the beaver can carry and build with. Every tree gnawed into wood
 _Avoid_: log, branch, wood item
 
 **Lantern**:
-The light the beaver carries in its left hand, hanging by its handle. It glows from dusk until dawn. The right hand stays free for sticks.
+The light the beaver carries in its left hand, hanging by its handle, while it is dark; by day it rides in the backpack. It glows from dusk until dawn. The right hand stays free for sticks.
 _Avoid_: lamp, torch, light
+
+**Backpack**:
+The small pack the beaver always wears on its back. The lantern is kept in it by day; at dusk the beaver reaches over its shoulder to take the lantern out, and at dawn puts it back.
+_Avoid_: bag, rucksack, satchel
 
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.

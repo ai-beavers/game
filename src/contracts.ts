@@ -86,6 +86,10 @@ export interface Motion {
   anger: number;
   /** Seconds since the start, for breathing and other idle motion. */
   time: number;
+  /** 0 … 1: how far the left paw is on its way to the backpack, over the left shoulder (0 at rest, 1 at the
+   *  backpack). Only the left arm follows it; the right arm, a carried stick and the trunk do not. The lantern
+   *  feature writes it into the local player's Motion; the player leaves it alone. Left out: 0 (remotes, bots). */
+  reachBack?: number;
 }
 
 export interface Animator {
