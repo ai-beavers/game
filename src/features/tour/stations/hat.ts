@@ -1,4 +1,6 @@
 // The felt hat every beaver wears: on the head, small, moving with the head, and off and on through beaver.hat.
+// No player input takes the hat off or turns the head alone, so this station uses the beaver contract directly: it
+// switches beaver.hat and nods the head through beaver.pose, as the hat's issue (#32) asks.
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -6,6 +8,7 @@ import type { Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 const NOD = 0.5; // rad the head is nodded to see the hat go with it
+const SINK = 0.035; // m the rim of the tilted brim may reach down the domed crown of the head
 
 export const hat = (kit: Kit): Station[] => {
   const { beaver, live, wait, expect } = kit;
@@ -23,10 +26,11 @@ export const hat = (kit: Kit): Station[] => {
     for (let p = node.parent; p; p = p.parent) if (p === parent) return true;
     return false;
   };
-  /** The head's width across, m, from the coat's skinned vertices (as posed now) at the height of the eyes and above. */
-  const headWidth = (head: TransformNode) => {
+  /** The skull in the head's frame, from the coat's skinned vertices (as posed now) at the height of the eyes and
+   *  above: its width across, m, and the height of its crown between the ears, m. */
+  const skull = (head: TransformNode) => {
     const toHead = head.getWorldMatrix().clone().invert(), at = new Vector3();
-    let min = Infinity, max = -Infinity;
+    let min = Infinity, max = -Infinity, top = -Infinity;
     for (const mesh of beaver.root.getChildMeshes(false)) {
       if (!mesh.skeleton) continue;
       const data = mesh.getPositionData(true, true), world = mesh.computeWorldMatrix(true);
@@ -37,9 +41,10 @@ export const hat = (kit: Kit): Station[] => {
         if (at.y < 0.08 || Math.abs(at.z) > 0.12) continue; // the skull: above the cheeks, not the snout nor the neck
         min = Math.min(min, at.x);
         max = Math.max(max, at.x);
+        if (Math.abs(at.x) < 0.02) top = Math.max(top, at.y); // between the ears
       }
     }
-    return max - min;
+    return { width: max - min, top };
   };
   const centre = (meshes: AbstractMesh[]) => {
     const sum = new Vector3();
@@ -69,10 +74,10 @@ export const hat = (kit: Kit): Station[] => {
           minX = Math.min(minX, at.x); maxX = Math.max(maxX, at.x); minY = Math.min(minY, at.y);
         }
       }
-      const width = headWidth(head!), hatWidth = maxX - minX;
+      const { width, top } = skull(head!), hatWidth = maxX - minX;
       expect(width > 0.05, `could not measure the head (${width.toFixed(3)} m across)`);
       expect(hatWidth <= width, `the hat is ${hatWidth.toFixed(3)} m across, wider than the head (${width.toFixed(3)} m)`);
-      expect(minY > 0.08, `the hat's foot is ${minY.toFixed(3)} m up the head, not on top of it`);
+      expect(minY > top - SINK, `the hat's foot is ${minY.toFixed(3)} m up the head, under its crown (${top.toFixed(3)} m): not on top of it`);
       expect(Math.abs((minX + maxX) / 2) < 0.03, `the hat sits ${((minX + maxX) / 2).toFixed(3)} m to the side, not between the ears`);
 
       // A nod of the head through the beaver's pose: the hat goes with it and keeps its place on the head. The next

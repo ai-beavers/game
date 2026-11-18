@@ -50,8 +50,8 @@ async function shirtTexture(scene: Scene) {
 // The felt hat: a short crown on a thin brim, a band round the crown's foot. One mesh with its colours in the
 // vertices: one draw call a beaver. In the head bone's space (y up the head and a little forward, z ahead): on top of
 // the head between the ears, tipped back a little and cocked to one side. The brim is narrower than the head.
-const FELT = new Color3(0.075, 0.062, 0.058), BAND = new Color3(0.8, 0.7, 0.52); // charcoal felt, a band the cream of the shirt
-const HAT_AT = new Vector3(0, 0.14, 0.005), HAT_TILT = new Vector3(-0.1, 0, 0.18);
+const FELT = new Color3(0.075, 0.062, 0.058), BAND = new Color3(0.8, 0.7, 0.52); // charcoal felt, a warm cream band to go with the shirt and the chestnut coat
+const HAT_AT = new Vector3(0, 0.18, 0.005), HAT_TILT = new Vector3(-0.1, 0, 0.18);
 
 function makeHat(scene: Scene, head: TransformNode) {
   const part = (name: string, height: number, top: number, bottom: number, y: number, colour: Color3) => {

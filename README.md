@@ -29,7 +29,7 @@ src/contracts.ts   what the parts promise each other; read this first
 src/engine.ts      starts Babylon.js, the HUD and Rapier; steps physics and renders frames
 src/light.ts       daylight: the one light everything is tuned for
 src/main.ts        the game: where the parts meet
-src/beaver/        the animal: mesh, fur, shirt
+src/beaver/        the animal: mesh, fur, shirt, hat
 src/anim/          how it moves: Motion in, Pose out, pure maths
 src/player/        input, Rapier character, camera
 src/world/         ground, pond, sky, things to carry
