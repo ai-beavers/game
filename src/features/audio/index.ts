@@ -11,7 +11,8 @@
 //
 // Follows settings.volume / mute / music, goes quiet while stage.paused. `played` counts every sound started, by
 // name (lab/audio.ts reads it; window.audio.played in the game). The recipes live in sounds.ts, buses and lasting sounds in mix.ts.
-import * as THREE from "three";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { gait } from "../../anim/index.ts";
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
@@ -25,7 +26,7 @@ const clamp = (v: number) => Math.min(1, Math.max(0, v));
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 /** What src/features/net shows of another player (window.net.remotes): where its feet are. */
-interface Remote { node: THREE.Object3D }
+interface Remote { node: TransformNode }
 
 export const create: CreateFeature = (game) => {
   const { stage, world, events, settings, player } = game, motion = player.motion;
@@ -70,7 +71,7 @@ export const create: CreateFeature = (game) => {
 
   /** Starts a sound at a place in the world (none: not placed, as music is); nothing before the first key press or
    *  while paused. */
-  function play(name: SoundName, place: THREE.Vector3 | undefined, amount = 1, bus: "steps" | "sfx" | "ambience" | "music" = "sfx", delay = 0) {
+  function play(name: SoundName, place: Vector3 | undefined, amount = 1, bus: "steps" | "sfx" | "ambience" | "music" = "sfx", delay = 0) {
     if (!live || live.paused || live.ctx.state !== "running") return;
     const out = place ? live.panner(live.mix[bus], place.x, place.y + 0.3, place.z) : live.mix[bus];
     SOUNDS[name](live.ctx, out, live.ctx.currentTime + delay, amount);
@@ -95,7 +96,7 @@ export const create: CreateFeature = (game) => {
 
   // The beaver's work, as the build feature tells it (src/features/build).
   events.on("gnaw", ({ place, progress }) => play("bite", place, progress));
-  events.on("treeFalls", ({ place }) => play("creak", place.clone().setY(place.y + 2)));
+  events.on("treeFalls", ({ place }) => play("creak", place.add(new Vector3(0, 2, 0))));
   events.on("treeLands", ({ place, speed }) => play("crash", place, clamp(speed / 12)));
   events.on("treeSplits", ({ place }) => play("crack", place));
   events.on("stickPlaced", ({ place }) => play("place", place));
@@ -105,7 +106,7 @@ export const create: CreateFeature = (game) => {
 
   // Lasting sounds: paddling, counted in physics steps so it stops with the pause.
   let stroke = 0;
-  const at = player.node.position, camera = stage.camera, forward = new THREE.Vector3(), up = new THREE.Vector3(), here = new THREE.Vector3();
+  const at = player.node.position, camera = stage.camera, forward = new Vector3(), up = new Vector3(), here = new Vector3();
   let bird = rand(2, 6), owl = rand(8, 20);
 
   // Other players: footsteps from how far their feet move (in the stride the animator uses), a splash when they go in.
@@ -116,7 +117,7 @@ export const create: CreateFeature = (game) => {
     for (const r of others.keys()) if (![...remotes.values()].includes(r)) others.delete(r);
     for (const r of remotes.values()) {
       const p = r.node.position, seen = others.get(r);
-      if (!r.node.visible) continue;
+      if (!r.node.isEnabled()) continue;
       if (!seen) { others.set(r, { x: p.x, z: p.z, steps: 0, wet: false }); continue; }
       const moved = Math.hypot(p.x - seen.x, p.z - seen.z), speed = dt > 0 ? moved / dt : 0;
       seen.x = p.x; seen.z = p.z;
@@ -144,9 +145,9 @@ export const create: CreateFeature = (game) => {
       if (!live) return;
       const { ctx, shore, wind, lapping, music, rain, night } = live, now = ctx.currentTime;
       if (live.paused !== stage.paused) { live.paused = stage.paused; apply(); }
-      camera.getWorldPosition(here);
-      camera.getWorldDirection(forward);
-      up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      here.copyFrom(camera.position);
+      forward.copyFrom(camera.getForwardRay().direction);
+      up.copyFrom(camera.getDirection(Vector3.Up()));
       const l = ctx.listener;
       if (l.positionX) {
         l.positionX.value = here.x; l.positionY.value = here.y; l.positionZ.value = here.z;
@@ -176,7 +177,7 @@ export const create: CreateFeature = (game) => {
         bird = rand(4, 11);
         for (let i = 0, n = Math.random() < 0.4 * birds ? 2 : 1; i < n; i++) {
           const angle = rand(0, Math.PI * 2), distance = rand(8, 18);
-          const place = new THREE.Vector3(here.x + Math.cos(angle) * distance, here.y + rand(3, 7), here.z + Math.sin(angle) * distance);
+          const place = new Vector3(here.x + Math.cos(angle) * distance, here.y + rand(3, 7), here.z + Math.sin(angle) * distance);
           play("bird", place, Math.random(), "ambience", i * rand(0.8, 1.6));
         }
       }
@@ -184,7 +185,7 @@ export const create: CreateFeature = (game) => {
       if ((owl -= dt * smooth(0.6, 0.9, dark) * (1 - 0.6 * wet)) <= 0) {
         owl = rand(15, 40);
         const angle = rand(0, Math.PI * 2), distance = rand(14, 24);
-        play("owl", new THREE.Vector3(here.x + Math.cos(angle) * distance, here.y + rand(4, 8), here.z + Math.sin(angle) * distance), 1, "ambience");
+        play("owl", new Vector3(here.x + Math.cos(angle) * distance, here.y + rand(4, 8), here.z + Math.sin(angle) * distance), 1, "ambience");
       }
       listenToOthers(dt);
     },

@@ -1,13 +1,16 @@
 # Beaver
 
-A beaver you steer through a small world in the browser, in third person. three.js (WebGLRenderer) with Rapier
-physics, TypeScript, built and served by Bun.
+A beaver you steer through a small world in the browser, in third person. Babylon.js and Babylon GUI with Rapier
+physics, TypeScript, built and served by Bun. In multiplayer, the Bun server synchronizes players and dam progress over WebSocket.
 
 ```
-bun install
+bun install --frozen-lockfile
 bun dev                      the game on port 5180, for everyone on the network (server.ts); prints the addresses
 bun shot <url> --out shots/x.png      look at a page without a desktop: screenshot + console (tools/shot.ts)
-bun check                    types and tests
+bun run check                typecheck and tests
+/?play&tour=live             watch the bot choose activities around the clearing in real time
+/?play&tour=fast             run the full game tour at 4× speed
+/?play&tour&station=Walk     run only the named station; repeat station for its prerequisites
 /?play&tour                  the beaver plays every feature by itself, round after round, and checks each (src/features/tour)
 bun run tour                 the same as a test without end, headless, 4× fast, on what is committed; failures as clips (tools/tour.ts)
 bun run build                static files in dist/
@@ -17,7 +20,7 @@ bun run build                static files in dist/
 
 ```
 src/contracts.ts   what the parts promise each other; read this first
-src/engine.ts      starts three.js and Rapier, the loop: fixed physics steps, then a picture
+src/engine.ts      starts Babylon.js, the HUD and Rapier; steps physics and renders frames
 src/light.ts       daylight: the one light everything is tuned for
 src/main.ts        the game: where the parts meet
 src/beaver/        the animal: mesh, fur, shirt
@@ -25,6 +28,7 @@ src/anim/          how it moves: Motion in, Pose out, pure maths
 src/player/        input, Rapier character, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
+src/features/      dam building, multiplayer, controls, HUD, wildlife, weather, audio, effects, photo mode and tour
 assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), logo.png
 tools/blender/     the models, built in Blender from code
 ```

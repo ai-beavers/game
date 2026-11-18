@@ -1,4 +1,4 @@
-// How the animals decide: plain numbers, no three.js, so the tests can check the rules alone.
+// How the animals decide: pure simulation over positions and velocities.
 //
 //   const land: Land = { heightAt, water: 0, rim: 14, pond: { x, z, radius } };
 //   const school = makeSchool(land, 10, random);   stepSchool(school, land, threat, dt, random);

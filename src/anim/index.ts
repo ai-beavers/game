@@ -1,5 +1,5 @@
 // How the beaver moves: turns what the body is doing (a Motion, from the player) into a Pose for its 20 bones.
-// Pure maths, no three.js; the pose functions it builds on are build.py's, ported in clips.ts.
+// Pure maths; the pose functions it builds on are build.py's, ported in clips.ts.
 //
 //   const animator = createAnimator();
 //   each frame: beaver.pose(animator.pose(player.motion, dt));

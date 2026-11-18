@@ -1,3 +1,9 @@
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { Ray } from "@babylonjs/core/Culling/ray.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { material } from "../../world/models.ts";
+import { hex } from "../../world/color.ts";
 // The "life" feature: the animals of the clearing that notice the beaver. A school of fish in the pond, songbirds on the
 // ground and on logs, two birds of prey circling high, butterflies over the meadow, dragonflies over the reeds, frogs
 // at the shore and a pair of mallards on the water.
@@ -7,8 +13,7 @@
 //
 // How they decide lives in brain.ts (pure, tested), what they look like in shapes.ts. Here the two meet: once per
 // picture the brains step (not while stage.paused) and every animal's place and pose is written into one
-// InstancedMesh per kind. Fewer animals at lower settings.quality.
-import * as THREE from "three";
+// Babylon thin instance batch per kind. Fewer animals at lower settings.quality.
 import type { CreateFeature, Feature } from "../../game.ts";
 import { seeded } from "../../world/noise.ts";
 import { placeAll } from "../../world/place.ts";
@@ -17,7 +22,7 @@ import {
   circling, makeBirds, makeDucks, makeFlyers, makeFrogs, makeSchool, shoreSpots, stepBirds, stepButterflies, stepDragonflies,
   stepDucks, stepFrogs, stepSchool, type Land, type Perch, type Splash, type Threat,
 } from "./brain.ts";
-import { animalMesh, birdShape, butterflyShape, dragonflyShape, duckShape, fishShape, frogShape, ringMesh } from "./shapes.ts";
+import { animalMesh, birdShape, butterflyShape, dragonflyShape, duckShape, fishShape, frogShape } from "./shapes.ts";
 
 const COUNTS = {
   low: { fish: 5, birds: 3, raptors: 1, butterflies: 3, dragonflies: 2, frogs: 3, ducks: 2 },
@@ -40,32 +45,32 @@ export const create = ((game) => {
   const shore = shoreSpots(land, 30, random).filter((s) => reeds.every((r) => Math.hypot(r.x - s.x, r.z - s.z) > 0.7));
 
   const meshes = {
-    fish: animalMesh(fishShape(), MAX.fish),
-    birds: animalMesh(birdShape(), MAX.birds + MAX.raptors),
-    butterflies: animalMesh(butterflyShape(), MAX.butterflies),
-    dragonflies: animalMesh(dragonflyShape(), MAX.dragonflies),
-    frogs: animalMesh(frogShape(), MAX.frogs),
-    ducks: animalMesh(duckShape(), MAX.ducks),
+    fish: animalMesh(scene, fishShape(), MAX.fish),
+    birds: animalMesh(scene, birdShape(), MAX.birds + MAX.raptors),
+    butterflies: animalMesh(scene, butterflyShape(), MAX.butterflies),
+    dragonflies: animalMesh(scene, dragonflyShape(), MAX.dragonflies),
+    frogs: animalMesh(scene, frogShape(), MAX.frogs),
+    ducks: animalMesh(scene, duckShape(), MAX.ducks),
   };
-  meshes.fish.renderOrder = 2; // after the pond's surface: seen through it
-  for (const m of [meshes.birds, meshes.frogs, meshes.ducks]) m.castShadow = true;
-  for (const m of Object.values(meshes)) { m.receiveShadow = true; scene.add(m); }
-  const rings = ringMesh(RINGS);
-  scene.add(rings);
-
-  // Colours per animal: plain and greyer sparrows, a dark one; brown birds of prey; four kinds of butterfly; blue, green
-  // and red dragonflies.
-  const tint = (mesh: THREE.InstancedMesh, colors: number[], from = 0, count = mesh.count) => {
-    for (let i = 0; i < count; i++) mesh.setColorAt(from + i, new THREE.Color(colors[i % colors.length]!));
+  const rippleMaterial = material(scene, "ripple", 0xb7d6d5);
+  const rings = Array.from({ length: RINGS }, () => {
+    const ring = MeshBuilder.CreateTorus("life-ripple", { diameter: 1, thickness: 0.017, tessellation: 32 }, scene);
+    ring.material = rippleMaterial;
+    ring.isPickable = false;
+    return ring;
+  });
+  const tint = (animal: ReturnType<typeof animalMesh>, colors: number[], from = 0, count = animal.tint.length / 4) => {
+    for (let i = 0; i < count; i++) hex(colors[i % colors.length]!).toArray(animal.tint, (i + from) * 4);
+    animal.mesh.thinInstanceBufferUpdated("tint");
   };
-  tint(meshes.birds, [0xffffff, 0xc8c0b8, 0xffe8d0, 0x6a6058], 0, MAX.birds);
-  tint(meshes.birds, [0x9a8070, 0x806050], MAX.birds, MAX.raptors);
   tint(meshes.butterflies, [0xffe860, 0xff8a28, 0xffffff, 0x7aa0ff]);
   tint(meshes.dragonflies, [0x2a78e0, 0x30b890, 0xd0402a]);
 
   let n = COUNTS[settings.values.quality] ?? COUNTS.high;
   let animals = populate();
   function populate() {
+    tint(meshes.birds, [0xffffff, 0xc8c0b8, 0xffe8d0, 0x6a6058], 0, n.birds);
+    tint(meshes.birds, [0x9a8070, 0x806050], n.birds, n.raptors);
     return {
       school: makeSchool(land, n.fish, random),
       birds: makeBirds(land, n.birds, perches, random),
@@ -84,16 +89,18 @@ export const create = ((game) => {
   const threat: Threat = { x: 0, y: 0, z: 0, speed: 0, swimming: false };
   let time = 0;
 
-  const matrix = new THREE.Matrix4(), place = new THREE.Vector3(), turn = new THREE.Quaternion(), euler = new THREE.Euler(0, 0, 0, "YXZ"), size = new THREE.Vector3();
-  const put = (mesh: THREE.InstancedMesh, i: number, x: number, y: number, z: number, heading: number, pitch = 0, roll = 0, scale = 1,
+  const place = new Vector3(), size = Vector3.One(), turn = Quaternion.Identity(), matrix = Matrix.Identity();
+  const put = (animal: ReturnType<typeof animalMesh>, i: number, x: number, y: number, z: number, heading: number, pitch = 0, roll = 0, scale = 1,
     a: [number, number, number, number] = [0, 0, 0, 0]) => {
-    mesh.setMatrixAt(i, matrix.compose(place.set(x, y, z), turn.setFromEuler(euler.set(pitch, heading, roll)), size.setScalar(scale)));
-    (mesh.userData.anim as THREE.InstancedBufferAttribute).set(a, i * 4);
+    Quaternion.RotationYawPitchRollToRef(heading, pitch, roll, turn);
+    Matrix.ComposeToRef(size.setAll(scale), turn, place.set(x, y, z), matrix);
+    animal.mesh.thinInstanceSetMatrixAt(i, matrix, false);
+    animal.anim.set(a, i * 4);
   };
-  const done = (mesh: THREE.InstancedMesh, count: number) => {
-    mesh.count = count;
-    mesh.instanceMatrix.needsUpdate = true;
-    (mesh.userData.anim as THREE.InstancedBufferAttribute).needsUpdate = true;
+  const done = (animal: ReturnType<typeof animalMesh>, count: number) => {
+    animal.mesh.thinInstanceCount = count;
+    animal.mesh.thinInstanceBufferUpdated("matrix");
+    animal.mesh.thinInstanceBufferUpdated("aAnim");
   };
 
   const feature: Feature & { animals: typeof animals } = {
@@ -125,7 +132,13 @@ export const create = ((game) => {
   };
 
   function draw() {
-    const water = land.water;
+    const water = land.water, camera = scene.activeCamera ?? stage.camera;
+    const sky = scene.getLightByName("skylight");
+    for (const animal of Object.values(meshes)) {
+      animal.mesh.thinInstanceCount = animal.anim.length / 4;
+      animal.material.setFloat("daylight", Math.min(1, sky?.intensity ?? 1))
+        .setVector3("cameraPosition", camera.globalPosition).setFloat("waterLevel", water);
+    }
     animals.school.fish.forEach((f, i) => put(meshes.fish, i, f.x, f.y, f.z, f.heading, 0, 0, 1, [f.phase, 0.006 + f.fear * 0.012, 0, 0]));
     done(meshes.fish, animals.school.fish.length);
 
@@ -150,18 +163,18 @@ export const create = ((game) => {
 
     animals.ducks.forEach((d, i) => {
       const dabble = d.speed < 0.08 ? Math.max(0, Math.sin(d.phase * 0.35 + i * 2)) ** 6 : 0;
-      put(meshes.ducks, i, d.x, water + Math.sin(d.phase * 0.7) * 0.006, d.z, d.heading, Math.sin(d.phase * 0.5) * 0.03 + dabble * 0.15,
+      put(meshes.ducks, i, d.x, water - 0.02 + Math.sin(d.phase * 0.7) * 0.006, d.z, d.heading, Math.sin(d.phase * 0.5) * 0.03 + dabble * 0.15,
         Math.sin(d.phase * 0.37) * 0.03, 1, [d.phase, 0, dabble, i % 2]);
     });
     done(meshes.ducks, animals.ducks.length);
 
-    const age = rings.userData.age as THREE.InstancedBufferAttribute;
-    for (let i = 0; i < RINGS; i++) {
-      const s = ringAt[i]!;
-      rings.setMatrixAt(i, matrix.compose(place.set(s.x, water + 0.004, s.z), turn.identity(), size.setScalar(0.1 + s.size * (0.4 + ringAge[i]! * 0.8))));
-      age.setX(i, ringAge[i]!);
-    }
-    rings.instanceMatrix.needsUpdate = age.needsUpdate = true;
+    rings.forEach((ring, i) => {
+      const at = ringAt[i]!, age = ringAge[i]!;
+      ring.setEnabled(age < 1);
+      ring.position.set(at.x, water + 0.01, at.z);
+      ring.scaling.setAll(0.1 + at.size * (0.4 + age));
+      ring.visibility = 1 - age;
+    });
   }
   draw();
   return feature;
@@ -169,16 +182,12 @@ export const create = ((game) => {
 
 /** Where a bird can sit on things: the top of each, found by looking straight down at what is drawn there; `along`
  *  moves the point along a log. */
-function tops(scene: THREE.Scene, things: { x: number; z: number; turn: number; along?: number }[], land: Land): Perch[] {
-  scene.updateMatrixWorld(true);
-  const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), out: Perch[] = [];
-  const solid = scene.children.filter((o) => !["grass", "water", "ground"].includes(o.name) && !o.name.startsWith("life-"));
+function tops(scene: Scene, things: { x: number; z: number; turn: number; along?: number }[], land: Land): Perch[] {
+  const out: Perch[] = [];
   for (const { x: cx, z: cz, turn, along = 0 } of things) {
     const x = cx + Math.sin(turn) * along, z = cz + Math.cos(turn) * along, ground = land.heightAt(x, z);
-    ray.set(new THREE.Vector3(x, ground + 1.5, z), down);
-    ray.far = 1.4;
-    const hit = ray.intersectObjects(solid, true).find((h) => h.point.y > ground + 0.1 && h.point.y < ground + 1.2);
-    if (hit) out.push({ x, y: hit.point.y, z });
+    const hit = scene.pickWithRay(new Ray(new Vector3(x, ground + 1.5, z), Vector3.Down(), 1.4), mesh => mesh.isEnabled() && mesh.parent?.name === "scenery");
+    if (hit?.pickedPoint) out.push({ x, y: hit.pickedPoint.y, z });
   }
   return out;
 }

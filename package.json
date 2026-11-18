@@ -4,18 +4,19 @@
   "type": "module",
   "scripts": {
     "dev": "bun server.ts",
-    "build": "bun build ./index.html --outdir=dist --minify",
+    "build": "rm -rf ./dist && bun build ./index.html --outdir=dist --minify",
     "shot": "bun tools/shot.ts",
     "tour": "bun tools/tour.ts",
     "check": "tsc --noEmit && bun test"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",
-    "@types/three": "^0.187.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "0.21.0",
-    "three": "0.187.0"
+    "@babylonjs/core": "9.37.0",
+    "@babylonjs/gui": "9.37.0",
+    "@babylonjs/loaders": "9.37.0",
+    "@dimforge/rapier3d-compat": "0.21.0"
   }
 }

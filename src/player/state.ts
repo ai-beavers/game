@@ -1,4 +1,4 @@
-// The player's pure logic, apart from three.js and Rapier so it can be tested alone: when a jump starts (coyote
+// The player's pure logic, independent of rendering and physics so it can be tested alone: when a jump starts (coyote
 // time and jump buffer), the carry sequence (pickup → carrying → drop), and the bookkeeping that fills Motion.
 //
 //   const jump = newJump();      if (jumpStarts(jump, dt, grounded, input.jump, canJump)) vy = JUMP_SPEED;

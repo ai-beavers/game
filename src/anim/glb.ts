@@ -1,4 +1,4 @@
-// Reads a .glb file into its JSON and its accessors, without three.js: used by rest-gen.ts (to write rest.ts) and
+// Reads a .glb file into its JSON and its accessors, for rest-gen.ts (to write rest.ts) and
 // by the tests (to compare the ported pose functions with the clips baked into assets/beaver.glb).
 //
 //   const glb = parseGlb(bytes);  glb.json.nodes …;  glb.read(accessorIndex) → number[][] (one array per element)

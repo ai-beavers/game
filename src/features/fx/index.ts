@@ -13,7 +13,11 @@
 // All of it is one pool of particles (sim.ts) drawn in one call (particles.ts). Fewer particles at lower
 // settings.quality; nothing moves while stage.paused. The pond's level is read each time (it rises behind the dam);
 // what lies on the water follows it.
-import * as THREE from "three";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { type Scene } from "@babylonjs/core/scene.js";
+import { hex } from "../../world/color.ts";
+import { bounds } from "../../world/models.ts";
 import type { CreateFeature } from "../../game.ts";
 import { grassOf } from "../../world/grass.ts";
 import { placeAll } from "../../world/place.ts";
@@ -25,13 +29,13 @@ import { advance, blank, FLOOR, KIND, MODE, spawn, type Particle } from "./sim.t
 const BUDGET = { low: { pool: 500, rate: 0.35 }, medium: { pool: 1200, rate: 0.65 }, high: { pool: 2400, rate: 1 } } as const;
 const CAPACITY = BUDGET.high.pool;
 const MOTES = 90; // at high quality
-const SPRAY = new THREE.Color(0.8, 0.86, 0.88);
-const DUST = new THREE.Color(0.5, 0.42, 0.31), WOOD = new THREE.Color(0.62, 0.42, 0.22), WATER = new THREE.Color(0.72, 0.8, 0.82);
-const LEAF_COLORS = [0x6f7a2a, 0x8c7a2a, 0x9a6a26, 0x5f6b26].map((c) => new THREE.Color(c));
+const SPRAY = new Color3(0.8, 0.86, 0.88);
+const DUST = new Color3(0.5, 0.42, 0.31), WOOD = new Color3(0.62, 0.42, 0.22), WATER = new Color3(0.72, 0.8, 0.82);
+const LEAF_COLORS = [0x6f7a2a, 0x8c7a2a, 0x9a6a26, 0x5f6b26].map((c) => hex(c));
 
-const MUD = new THREE.Color(0.2, 0.14, 0.08);
+const MUD = new Color3(0.2, 0.14, 0.08);
 // A cheerful burst: gold, cream, sky blue, fresh green; brighter than any surface, so they glint even in the evening.
-const CHEER = [0xffd24a, 0xfff2c8, 0x8fd0ff, 0x9be36a, 0xff9a5a].map((c) => new THREE.Color(c).multiplyScalar(1.8));
+const CHEER = [0xffd24a, 0xfff2c8, 0x8fd0ff, 0x9be36a, 0xff9a5a].map((c) => hex(c).scale(1.8));
 /** Rain splashes per second near the camera in full rain, at high quality. */
 const RAIN_SPLASHES = 140;
 
@@ -41,11 +45,11 @@ const clamp = (v: number) => Math.min(1, Math.max(0, v));
 /** What the fx feature lets others do: splash(place, size) in the pond (1: a beaver jumping in), ring(place, size)
  *  on the water (size: metres across at the end). Both lie on the pond's surface as it is now. */
 export interface Fx {
-  splash(place: THREE.Vector3, size?: number): void;
-  ring(place: THREE.Vector3, size?: number): void;
+  splash(place: Vector3, size?: number): void;
+  ring(place: Vector3, size?: number): void;
 }
 /** The fx of a scene, once the fx feature runs (as daylightOf for the light). */
-export const fxOf = (scene: THREE.Scene) => scene.userData.fx as Fx | undefined;
+export const fxOf = (scene: Scene) => scene.metadata.fx as Fx | undefined;
 
 export const create: CreateFeature = (game) => {
   const { stage, world, player, events, settings } = game;
@@ -67,7 +71,7 @@ export const create: CreateFeature = (game) => {
   const many = (n: number) => Math.max(n > 0 ? 1 : 0, Math.round(n * budget.rate));
 
   // ---- what the ground is made of where a foot comes down -------------------------------------------------------
-  const tint = new THREE.Color();
+  const tint = new Color3();
   const surface = (x: number, z: number) => {
     const h = world.heightAt(x, z);
     groundColor(x, z, h, slopeAt(x, z), tint);
@@ -75,15 +79,15 @@ export const create: CreateFeature = (game) => {
     return { bare: green < 1.2, grass: green > 1.3, color: tint };
   };
   /** Dust is the ground's colour, paler: fine, dry and in the air. */
-  const dustColor = (ground: THREE.Color) => new THREE.Color().copy(ground).lerp(DUST, 0.65);
+  const dustColor = (ground: Color3) => Color3.Lerp(ground, DUST, 0.65);
 
-  const forward = new THREE.Vector3(), side = new THREE.Vector3();
+  const forward = new Vector3(), side = new Vector3();
   const facing = () => {
-    forward.set(0, 0, 1).applyQuaternion(player.node.quaternion).setY(0).normalize();
+    forward.set(Math.sin(player.node.rotation.y), 0, Math.cos(player.node.rotation.y));
     side.set(forward.z, 0, -forward.x); // the beaver's left
   };
 
-  function puff(at: THREE.Vector3, color: THREE.Color, n: number, spread: number, big: number, life = 0.9) {
+  function puff(at: Vector3, color: Color3, n: number, spread: number, big: number, life = 0.9) {
     for (let i = 0; i < many(n); i++) {
       const a = random(0, Math.PI * 2), out = random(0.3, 1) * spread, s = random(0.6, 1) * big;
       make({
@@ -95,9 +99,9 @@ export const create: CreateFeature = (game) => {
     }
   }
 
-  function kickGrass(at: THREE.Vector3, ground: THREE.Color) {
+  function kickGrass(at: Vector3, ground: Color3) {
     for (let i = 0; i < many(3); i++) {
-      const blade = Math.random() < 0.6, a = random(0, Math.PI * 2), c = new THREE.Color().copy(ground).multiplyScalar(blade ? 1.3 : 2.2);
+      const blade = Math.random() < 0.6, a = random(0, Math.PI * 2), c = ground.scale(blade ? 1.3 : 2.2);
       make({
         kind: blade ? KIND.blade : KIND.seed, floor: FLOOR.rest, x: at.x, y: at.y + 0.04, z: at.z,
         vx: Math.cos(a) * 0.4 - forward.x * 0.3, vy: random(0.8, 1.4), vz: Math.sin(a) * 0.4 - forward.z * 0.3,
@@ -107,7 +111,7 @@ export const create: CreateFeature = (game) => {
     }
   }
 
-  function drops(at: THREE.Vector3, n: number, up: number, out: number, spread = 0.15) {
+  function drops(at: Vector3, n: number, up: number, out: number, spread = 0.15) {
     for (let i = 0; i < many(n); i++) {
       const a = random(0, Math.PI * 2), r = random(0, spread), o = random(0.3, 1) * out;
       make({
@@ -133,10 +137,10 @@ export const create: CreateFeature = (game) => {
     });
   }
 
-  function chips(at: THREE.Vector3, n: number) {
+  function chips(at: Vector3, n: number) {
     for (let i = 0; i < many(n); i++) {
       const a = random(-1.2, 1.2), shade = random(0.8, 1.25);
-      const dir = new THREE.Vector3().copy(forward).multiplyScalar(-0.3).addScaledVector(side, Math.sin(a) * 1.1);
+      const dir = forward.scale(-0.3).addInPlace(side.scale(Math.sin(a) * 1.1));
       make({
         kind: KIND.chip, floor: FLOOR.rest, x: at.x, y: at.y, z: at.z,
         vx: dir.x * random(0.6, 1.4), vy: random(0.8, 1.8), vz: dir.z * random(0.6, 1.4), gravity: 0.8, drag: 0.6,
@@ -156,12 +160,12 @@ export const create: CreateFeature = (game) => {
   }
 
   // ---- events --------------------------------------------------------------------------------------------------
-  const inWater = (place: THREE.Vector3) => world.heightAt(place.x, place.z) < world.waterLevel - 0.04;
+  const inWater = (place: Vector3) => world.heightAt(place.x, place.z) < world.waterLevel - 0.04;
 
   events.on("footstep", ({ place, side: foot, speed }) => {
     facing();
-    const at = place.clone().addScaledVector(side, foot === "L" ? 0.1 : -0.1).addScaledVector(forward, 0.05);
-    if (inWater(at)) { drops(at.setY(world.waterLevel), 3 + speed * 2, 1.0, 0.3, 0.06); ring(at.x, at.z, 0.08, 0.5, 1.0, 0.35); return; }
+    const at = place.add(side.scale(foot === "L" ? 0.1 : -0.1)).addInPlace(forward.scale(0.05));
+    if (inWater(at)) { at.y = world.waterLevel; drops(at, 3 + speed * 2, 1.0, 0.3, 0.06); ring(at.x, at.z, 0.08, 0.5, 1.0, 0.35); return; }
     const ground = surface(at.x, at.z);
     at.y = world.heightAt(at.x, at.z);
     const run = speed > 1.3, wet = game.sky?.wet ?? 0;
@@ -176,17 +180,17 @@ export const create: CreateFeature = (game) => {
   });
 
   events.on("land", ({ place, speed }) => {
-    if (inWater(place)) { drops(place.clone().setY(world.waterLevel), speed * 6, speed * 0.4, 0.5); ring(place.x, place.z, 0.2, 1.0, 1.4, 0.45); return; }
+    if (inWater(place)) { drops(new Vector3(place.x, world.waterLevel, place.z), speed * 6, speed * 0.4, 0.5); ring(place.x, place.z, 0.2, 1.0, 1.4, 0.45); return; }
     const ground = surface(place.x, place.z), strength = Math.min(1, speed / 6);
     if (strength < 0.15) return;
-    const color = ground.bare ? dustColor(ground.color) : dustColor(ground.color).lerp(DUST, 0.3).multiplyScalar(0.9);
-    puff(place.clone().setY(world.heightAt(place.x, place.z)), color, 6 + strength * 10, 0.8 + strength * 1.8, 0.22 + strength * 0.3, 1.3);
+    const color = ground.bare ? dustColor(ground.color) : Color3.Lerp(dustColor(ground.color), DUST, 0.3).scale(0.9);
+    puff(new Vector3(place.x, world.heightAt(place.x, place.z), place.z), color, 6 + strength * 10, 0.8 + strength * 1.8, 0.22 + strength * 0.3, 1.3);
     if (ground.grass) { facing(); kickGrass(place, ground.color); }
   });
 
   /** A splash in the pond; size 1 is a beaver jumping in hard, 0.2 a fish. Bigger sizes spread wider. */
-  function splash(place: THREE.Vector3, size = 1) {
-    const at = new THREE.Vector3(place.x, world.waterLevel, place.z), hard = Math.min(1.5, size), wide = Math.sqrt(size);
+  function splash(place: Vector3, size = 1) {
+    const at = new Vector3(place.x, world.waterLevel, place.z), hard = Math.min(1.5, size), wide = Math.sqrt(size);
     drops(at, (30 + 40 * hard) * Math.min(1, size + 0.2), 1.2 + hard * 2.2, (0.6 + hard * 0.8) * wide, 0.3 * wide);
     puff(at, SPRAY, (5 + hard * 5) * Math.min(1, size + 0.3), (0.5 + hard * 0.6) * wide, (0.25 + hard * 0.2) * wide, 0.7);
     ring(at.x, at.z, 0.3 * wide, 1.6 * wide, 1.6, 0.6);
@@ -197,7 +201,7 @@ export const create: CreateFeature = (game) => {
     splash,
     ring: (place, size = 1) => ring(place.x, place.z, size * 0.1, size, 0.8 + size * 0.6, 0.45),
   };
-  stage.scene.userData.fx = fx;
+  stage.scene.metadata.fx = fx;
 
   events.on("enterWater", ({ place, speed }) => splash(place, Math.min(1, 0.3 + speed / 4)));
 
@@ -205,7 +209,7 @@ export const create: CreateFeature = (game) => {
   events.on("leaveWater", () => { dripping = 2.5; });
   events.on("drop", ({ place }) => {
     facing();
-    const at = place.clone().addScaledVector(forward, 0.45);
+    const at = place.add(forward.scale(0.45));
     if (inWater(at)) { ring(at.x, at.z, 0.05, 0.5, 1, 0.4); return; }
     at.y = world.heightAt(at.x, at.z);
     puff(at, dustColor(surface(at.x, at.z).color), 3, 0.3, 0.16, 0.8);
@@ -213,15 +217,15 @@ export const create: CreateFeature = (game) => {
 
   // ---- the work: felling, breaking, building (src/features/build) ------------------------------------------------
   /** The crown of a standing tree: the box its model fills, in the world. */
-  const crowns = new Map<number, THREE.Box3>();
+  const crowns = new Map<number, ReturnType<typeof bounds>>();
   const crownOf = (i: number) => {
     let box = crowns.get(i);
     const tree = world.trees?.[i];
-    if (!box && tree) crowns.set(i, box = new THREE.Box3().setFromObject(tree.model).applyMatrix4(tree.matrix));
+    if (!box && tree) crowns.set(i, box = bounds(tree.model, tree.matrix));
     return box;
   };
 
-  function leaves(x: number, y: number, z: number, n: number, spread: number, push: THREE.Vector3, up: number) {
+  function leaves(x: number, y: number, z: number, n: number, spread: number, push: Vector3, up: number) {
     for (let i = 0; i < many(n); i++) {
       const c = LEAF_COLORS[Math.floor(Math.random() * LEAF_COLORS.length)]!, a = random(0, Math.PI * 2), r = random(0, spread);
       make({
@@ -234,31 +238,31 @@ export const create: CreateFeature = (game) => {
   }
 
   // Chips from the bite: on the bark, on the beaver's side of the trunk, flying back and to the sides.
-  const bite = new THREE.Vector3();
+  const bite = new Vector3();
   events.on("gnaw", ({ place, tree, progress }) => {
     facing();
     const feet = player.node.position, away = Math.hypot(feet.x - place.x, feet.z - place.z), radius = world.trees?.[tree]?.radius ?? 0.2;
-    bite.copy(place);
+    bite.copyFrom(place);
     if (away > 0.01) bite.x += ((feet.x - place.x) / away) * Math.min(radius, away), bite.z += ((feet.z - place.z) / away) * Math.min(radius, away);
     chips(bite, 7 + 6 * progress);
     puff(bite, WOOD, 1, 0.2, 0.08, 0.5);
   });
 
-  const push = new THREE.Vector3();
+  const push = new Vector3();
   events.on("treeFalls", ({ tree, direction }) => {
     const box = crownOf(tree);
     if (!box) return;
-    const middle = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-    leaves(middle.x, box.max.y - size.y * 0.3, middle.z, 30, Math.max(size.x, size.z) * 0.4, push.copy(direction).multiplyScalar(0.6), 0.3);
+    const { center: middle, size } = box;
+    leaves(middle.x, box.max.y - size.y * 0.3, middle.z, 30, Math.max(size.x, size.z) * 0.4, direction.scale(0.6), 0.3);
   });
 
   events.on("treeLands", ({ place, tree, speed }) => {
     const s = clamp(speed / 12);
     if (inWater(place)) { splash(place, 0.8 + 1.4 * s); return; }
-    const at = place.clone().setY(world.heightAt(place.x, place.z)), ground = surface(at.x, at.z), wet = game.sky?.wet ?? 0;
+    const at = new Vector3(place.x, world.heightAt(place.x, place.z), place.z), ground = surface(at.x, at.z), wet = game.sky?.wet ?? 0;
     // Dust thrown up all round the crown and higher than its leaves, or the crown hides it.
     const box = crownOf(tree), reach = box ? Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5 : 1.5;
-    const color = dustColor(ground.color).lerp(DUST, 0.3);
+    const color = Color3.Lerp(dustColor(ground.color), DUST, 0.3);
     for (let i = 0; i < many((14 + 26 * s) * (1 - 0.6 * wet)); i++) {
       const a = random(0, Math.PI * 2), r = random(0.4, 1.25) * reach, out = random(0.4, 1.2) * (0.6 + s), big = random(0.6, 1) * (0.5 + 0.6 * s);
       const x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r;
@@ -284,13 +288,14 @@ export const create: CreateFeature = (game) => {
         squash: random(0.18, 0.3), r: WOOD.r * shade * 1.15, g: WOOD.g * shade * 1.1, b: WOOD.b * shade, a: 1,
       });
     }
-    puff(at.setY(world.heightAt(at.x, at.z)), dustColor(surface(at.x, at.z).color), 8, 0.9, 0.3, 1.2);
+    at.y = world.heightAt(at.x, at.z);
+    puff(at, dustColor(surface(at.x, at.z).color), 8, 0.9, 0.3, 1.2);
   });
 
   // A stick into the dam: a splash where it meets the water, a pat of mud where it lies on the bank.
   events.on("stickPlaced", ({ place }) => {
     if (inWater(place) || place.y < world.waterLevel + 0.05) { splash(place, 0.35); return; }
-    const at = place.clone().setY(world.heightAt(place.x, place.z));
+    const at = new Vector3(place.x, world.heightAt(place.x, place.z), place.z);
     puff(at, MUD, 4, 0.4, 0.2, 0.8);
     for (let i = 0; i < many(9); i++) {
       const a = random(0, Math.PI * 2), o = random(0.3, 0.8);
@@ -321,7 +326,7 @@ export const create: CreateFeature = (game) => {
   const motes: Particle[] = [];
   const BOX = 5; // metres across, centred AHEAD metres in front of the camera
   const AHEAD = 3.2;
-  const box = new THREE.Vector3(), look = new THREE.Vector3();
+  const box = new Vector3(), look = new Vector3();
   const fillMotes = () => {
     // Motes shine in the light of day: none float in the rain, few in the night.
     const want = Math.round(MOTES * budget.rate * (1 - (game.sky?.rain ?? 0)) * (1 - 0.8 * (game.sky?.dark ?? 0)));
@@ -340,8 +345,9 @@ export const create: CreateFeature = (game) => {
   };
   const wrap = (v: number, centre: number) => centre + ((((v - centre + BOX / 2) % BOX) + BOX) % BOX) - BOX / 2;
   function moveMotes(dt: number, time: number) {
-    stage.camera.getWorldDirection(look);
-    box.copy(stage.camera.position).addScaledVector(look, AHEAD).y = stage.camera.position.y + 0.2; // eye height: seen against trees, not grass
+    look.copyFrom(stage.camera.getForwardRay().direction);
+    stage.camera.position.addToRef(look.scale(AHEAD), box);
+    box.y = stage.camera.position.y + 0.2; // eye height: seen against trees, not grass
     fillMotes();
     for (const p of motes) {
       const s = p.seed * 60;
@@ -366,11 +372,11 @@ export const create: CreateFeature = (game) => {
       life: 22, fadeIn: 0.8, fadeOut: 3, size: random(0.08, 0.11), grow: 0.09, squash: 0.6, r: c.r, g: c.g, b: c.b, a: 1,
     });
   }
-  drawn.mesh.userData.leaf = leaf; // for the lab: a leaf at a chosen place
+  drawn.mesh.metadata = { leaf }; // for the lab: a leaf at a chosen place
 
   function dropLeaf() {
     const eye = stage.camera.position;
-    stage.camera.getWorldDirection(look);
+    look.copyFrom(stage.camera.getForwardRay().direction);
     // Trees in front of the camera, not too far: a leaf nobody sees is wasted.
     const near = trees.filter((t) => Math.hypot(t.x - eye.x, t.z - eye.z) < 11 && (t.x - eye.x) * look.x + (t.z - eye.z) * look.z > 1);
     if (!near.length) return;
@@ -423,7 +429,7 @@ export const create: CreateFeature = (game) => {
     raining += dt * amount * RAIN_SPLASHES * budget.rate;
     if (raining < 1) return;
     const eye = stage.camera.position;
-    stage.camera.getWorldDirection(look);
+    look.copyFrom(stage.camera.getForwardRay().direction);
     const heading = Math.atan2(look.x, look.z);
     for (; raining >= 1; raining--) {
       // In front of the camera, denser near it: the splashes seen are the ones made.
@@ -464,7 +470,7 @@ export const create: CreateFeature = (game) => {
         }
         for (const p of motes) p.age += dt;
       }
-      drawn.write(pool, stage.camera);
+      drawn.write(pool, stage.scene.activeCamera ?? stage.camera);
     },
   };
 };

@@ -1,4 +1,4 @@
-# Builds the beaver for three.js in Blender from nothing and exports it as glTF: the body, a T-shirt, a rig of the
+# Builds the beaver in Blender from nothing and exports it as glTF: the body, a T-shirt, a rig of the
 # main body parts, the animations, a muscle morph target and the masks the fur shader in beaver.js reads.
 #
 #   blender -b --factory-startup -P build.py -- beaver.glb [--save beaver.blend]

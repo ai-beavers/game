@@ -11,7 +11,7 @@
 //
 // Address parameters, for looking at one situation: ?spawn=x,z puts the beaver there; ?standins uses the world's
 // own stand-in models instead of assets/props.glb; ?anger=0.8.
-import * as THREE from "three";
+
 import { createAnimator } from "./anim/index.ts";
 import { loadBeaver } from "./beaver/index.ts";
 import type { Animator, Beaver, World } from "./contracts.ts";
@@ -48,10 +48,10 @@ export type CreateFeature = (game: Game) => Feature | Promise<Feature>;
 export async function createGame(canvas: HTMLCanvasElement, features: CreateFeature[] = []): Promise<Game> {
   const params = new URLSearchParams(location.search);
   const stage = await start(canvas);
-  const [props, beaver] = await Promise.all([params.has("standins") ? undefined : loadProps(), loadBeaver()]);
+  const [props, beaver] = await Promise.all([params.has("standins") ? undefined : loadProps(stage.scene), loadBeaver(stage.scene)]);
   const world = await createWorld(stage, props);
   const player = createPlayerControls(stage, { spawn: world.spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
-  player.node.add(beaver.root);
+  beaver.root.parent = player.node;
   const spawn = params.get("spawn")?.split(",").map(Number);
   if (spawn?.length === 2) player.teleport(spawn[0]!, world.heightAt(spawn[0]!, spawn[1]!), spawn[1]!);
   player.setAnger(Number(params.get("anger") ?? 0));

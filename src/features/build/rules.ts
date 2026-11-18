@@ -1,4 +1,4 @@
-// The rules of the build feature as plain logic, apart from three.js and Rapier so they can be tested alone: the
+// The rules of the build feature as plain logic, independent of rendering and physics so they can be tested alone: the
 // world state (which trees are gnawed, felled, lying, broken into wood; which sticks are in the dam), the named
 // changes that alone change it, and what follows from it (bites a tree takes, wood it yields, where each stick of
 // the dam goes, the goals).

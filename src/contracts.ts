@@ -1,15 +1,15 @@
 // What the parts of the game promise each other. Each part lives in its own folder and is built against this file
 // alone, so the parts fit when they meet in main.ts.
 //
-//   src/beaver   the animal: mesh, fur, shirt; takes a Pose                       loadBeaver() → Beaver
+//   src/beaver   the animal: mesh, fur, shirt; takes a Pose                       loadBeaver(scene) → Beaver
 //   src/anim     how it moves: turns a Motion into a Pose, pure maths             createAnimator() → Animator
 //   src/player   who steers it: input, Rapier character, camera; reports Motion   createPlayer(stage, options) → Player
 //   src/world    where it lives: ground, pond, sky, things to carry               createWorld(stage, props?) → World
-//   src/props    what stands around: trees, rocks, sticks, built in Blender       loadProps() → Props
+//   src/props    what stands around: trees, rocks, sticks, built in Blender       loadProps(scene) → Props
 //
-// Conventions (set in engine.ts): three.js, right-handed, y up, 1 unit = 1 m. The beaver is 1 m tall, stands on
+// Conventions (set in engine.ts): Babylon.js, right-handed, y up, 1 unit = 1 m. The beaver is 1 m tall, stands on
 // y = 0 of its root and faces +z. Physics is Rapier, stepped in fixed steps of STEP seconds by run() in engine.ts.
-import type { Matrix4, Object3D, Quaternion, Vector3 } from "three";
+import type { Matrix, TransformNode, Quaternion, Vector3 } from "@babylonjs/core";
 import type { RAPIER, Stage } from "./engine.ts";
 
 // ---- the beaver ------------------------------------------------------------------------------------------------
@@ -31,9 +31,9 @@ export type Pose = Partial<Record<Bone, BonePose>>;
 export interface Beaver {
   /** Move, turn or parent this. Feet on its y = 0, facing its +z. It throws and takes shadows by itself (its
    *  shape once, without the fur's many layers). */
-  root: Object3D;
+  root: TransformNode;
   /** The right hand; parent a carried thing to it. */
-  hand: Object3D;
+  hand: TransformNode;
   /** 0 calm … 1 furious: redder, muscular, glowing eyes. */
   anger: number;
   /** Wears its T-shirt; false: fur all over. */
@@ -91,13 +91,13 @@ export interface Animator {
 
 /** A loose thing with a dynamic Rapier body the beaver can pick up: the world makes them (and binds mesh to
  *  body with stage.bind), the player carries them. */
-export interface Stick { mesh: Object3D; body: RAPIER.RigidBody }
+export interface Stick { mesh: TransformNode; body: RAPIER.RigidBody }
 
 export interface PlayerOptions {
   /** Where the feet start. */
   spawn: Vector3;
   /** The beaver's right hand, to carry things in; without it nothing can be picked up. */
-  hand?: Object3D;
+  hand?: TransformNode;
   /** Things that can be picked up. */
   sticks?: Stick[];
   /** Height of the water's surface; below it the beaver swims. Without it there is no water. */
@@ -106,7 +106,7 @@ export interface PlayerOptions {
 
 export interface Player {
   /** At the feet, turned the way the beaver faces. Add Beaver.root to it. */
-  node: Object3D;
+  node: TransformNode;
   /** What the body is doing right now; the same object every frame, updated in place. */
   motion: Motion;
   /** Once per physics step, before it (run()'s `fixed`): reads the keys, moves the character. */
@@ -119,9 +119,9 @@ export interface Player {
 
 export const PROP_NAMES = ["tree", "stump", "log", "stick", "rock", "crate", "reed"] as const;
 export type PropName = (typeof PROP_NAMES)[number];
-/** Models to place: per name its variants, each a template to clone (not in any scene). A template stands on
+/** Models to place: per name its variants, each a disabled template in the game scene. A template stands on
  *  y = 0 around its own origin, y up, in metres; sticks and logs lie along their z. */
-export type Props = Record<PropName, Object3D[]>;
+export type Props = Record<PropName, TransformNode[]>;
 
 export interface World {
   /** A good place for the feet to start. */
@@ -155,16 +155,16 @@ export interface WorldTree {
   /** Trunk radius at knee height, m. */
   radius: number;
   /** The template it is drawn from, and where: matrix takes template space into the world. */
-  model: Object3D;
-  matrix: Matrix4;
+  model: TransformNode;
+  matrix: Matrix;
   /** No longer drawn by the world; whoever calls this draws it from now on. */
   hide(): void;
   /** No longer solid: its trunk collider is removed. */
   clear(): void;
 }
 
-export type LoadBeaver = () => Promise<Beaver>;
+export type LoadBeaver = (scene: import("@babylonjs/core").Scene) => Promise<Beaver>;
 export type CreateAnimator = () => Animator;
 export type CreatePlayer = (stage: Stage, options: PlayerOptions) => Player;
 export type CreateWorld = (stage: Stage, props?: Props) => Promise<World>;
-export type LoadProps = () => Promise<Props>;
+export type LoadProps = (scene: import("@babylonjs/core").Scene) => Promise<Props>;

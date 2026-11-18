@@ -1,5 +1,5 @@
 // Smooth movement between network updates: keeps the last few samples of a list of numbers and gives the values
-// for any moment between them. Pure, no three.js.
+// for any moment between them. Independent of rendering.
 //
 //   const track = new Track({ angles: [3], steps: [6, 7] });   index 3 wraps round 2π, 6 and 7 jump (booleans)
 //   track.push(performance.now(), values);                      on every update

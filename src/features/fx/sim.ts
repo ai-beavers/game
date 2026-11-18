@@ -1,4 +1,4 @@
-// How one particle of the fx feature lives: plain numbers and maths, no three.js, so the tests can check it.
+// How one particle of the fx feature lives: position, velocity, lifetime and surface interactions.
 //
 //   const p = spawn(pool);  Object.assign(p, { kind: KIND.puff, life: 0.8, … });
 //   advance(p, dt, floorAt);          each frame while the world runs

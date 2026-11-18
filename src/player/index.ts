@@ -1,13 +1,15 @@
+import { holdInHand } from "./grip.ts";
 // Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming, the follow camera,
 // and the Motion report the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
-//   player.node.add(beaver.root);
+//   beaver.root.parent = player.node;
 //   run(stage, (dt) => player.step(dt), (dt, alpha) => { player.update(dt, alpha); beaver.pose(animator.pose(player.motion, dt)); });
 //
 // The object returned has a few more fields than Player (see PlayerControls) for labs and tests; anger is set with
 // `player.motion.anger = …` or `setAnger`, the player never changes it.
-import * as THREE from "three";
+import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { RUN_SPEED, WALK_SPEED, type CreatePlayer, type Player, type PlayerOptions, type Stick } from "../contracts.ts";
 import { RAPIER, type Stage } from "../engine.ts";
 import { waterOf } from "../world/water.ts";
@@ -35,17 +37,14 @@ const MAX_FALL = 20;
 const FLOAT_DEPTH = 0.45, HOLD_DEPTH = 0.3;
 // Carrying.
 export const REACH = 0.6, REACH_RADIUS = 0.45; // m in front of the feet, and how far from that point a stick may lie
-const GRIP = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.35, Math.PI / 2, 0, "YXZ")); // across the body, one end up
-const GRIP_SHIFT = new THREE.Vector3(0, 0, 0.12); // along the stick: held a little off its middle
-
 export interface PlayerControls extends Player {
   keys: Keyboard;
   camera: FollowCamera;
   collider: RAPIER.Collider;
   controller: RAPIER.KinematicCharacterController;
   /** Where the feet are after the last step, and the horizontal velocity, m/s. */
-  feet: THREE.Vector3;
-  velocity: THREE.Vector3;
+  feet: Vector3;
+  velocity: Vector3;
   facing: number;
   afloat: boolean;
   /** The water's surface height the player swims by, now (it moves: src/world/water.ts); undefined: no water. */
@@ -97,26 +96,24 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   controller.setCharacterMass(12);
 
   const stickBodies = new Set(sticks.map((s) => s.body));
-  let carried: { stick: Stick; parent: THREE.Object3D | null } | undefined, target: Stick | undefined;
+  let carried: { stick: Stick; parent: TransformNode["parent"] } | undefined, target: Stick | undefined;
   const notCarried = (c: RAPIER.Collider) => !carried || c.parent() !== carried.stick.body;
   const camera = followCamera(stage, (c) => c !== collider && !stickBodies.has(c.parent()!));
   const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion = newMotion();
 
-  const node = new THREE.Object3D();
-  node.name = "player";
-  stage.scene.add(node);
-  const feet = options.spawn.clone(), before = feet.clone(), velocity = new THREE.Vector3();
+  const node = new TransformNode("player", stage.scene);
+  const feet = options.spawn.clone(), before = feet.clone(), velocity = new Vector3();
   let lift = 0; // m the picture still lags behind the last steps up
   let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false;
   let actor: Actor | undefined, aim: number | undefined; // aim: where a lasting action turns the beaver
-  const desired = new THREE.Vector3(), forward = new THREE.Vector3();
+  const desired = new Vector3(), forward = new Vector3();
 
   // The live level: the pond rises with the dam (src/world/water.ts); options.waterLevel alone where there is no pond.
   const waterLevel = () => options.waterLevel === undefined ? undefined : waterOf(stage.scene)?.level ?? options.waterLevel;
 
   const inReach = () => {
     if (!options.hand) return undefined;
-    const front = new THREE.Vector3(Math.sin(facing) * REACH, 0.1, Math.cos(facing) * REACH).add(feet);
+    const front = new Vector3(Math.sin(facing) * REACH, 0.1, Math.cos(facing) * REACH).add(feet);
     let best: Stick | undefined, bestDistance = REACH_RADIUS;
     for (const stick of sticks) {
       const at = stick.body.translation(), d = Math.hypot(at.x - front.x, (at.y - front.y) * 0.5, at.z - front.z);
@@ -156,7 +153,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     stick.body.setEnabled(false); // out of the simulation and out of every query
     stage.unbind(stick.mesh);
     carried = { stick, parent: stick.mesh.parent };
-    options.hand!.add(stick.mesh);
+    stick.mesh.parent = options.hand!;
   };
 
   // Where a dropped stick goes: DROP_AHEAD m in front, across the body; a wall nearer than that stops it short.
@@ -167,14 +164,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const ahead = { x: Math.sin(facing), y: 0, z: Math.cos(facing) }, from = { x: feet.x, y: feet.y + DROP_HEIGHT, z: feet.z };
     const box = stick.body.collider(0)?.shape, flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
     const roomFor = (yaw: number) => {
-      const turn = new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+      const turn = Quaternion.RotationAxis(Vector3.Up(), yaw);
       if (!box) return { turn, room: DROP_AHEAD };
       const hit = physics.castShape(from, turn, ahead, box, 0, DROP_AHEAD, false, flags, undefined, collider, stick.body);
       return { turn, room: hit ? Math.max(0, hit.time_of_impact - 0.02) : DROP_AHEAD };
     };
     let best = roomFor(facing + Math.PI / 2);
     if (best.room < DROP_AHEAD) { const along = roomFor(facing); if (along.room > best.room) best = along; }
-    return { turn: best.turn, at: new THREE.Vector3(from.x + ahead.x * best.room, from.y, from.z + ahead.z * best.room) };
+    return { turn: best.turn, at: new Vector3(from.x + ahead.x * best.room, from.y, from.z + ahead.z * best.room) };
   };
 
   const release = () => {
@@ -182,9 +179,10 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const { stick, parent } = carried;
     carried = undefined;
     const { at, turn } = dropPlace(stick);
-    (parent ?? stage.scene).add(stick.mesh);
-    stick.mesh.position.copy(at);
-    stick.mesh.quaternion.copy(turn);
+    stick.mesh.parent = parent;
+    stick.mesh.scaling.setAll(1);
+    stick.mesh.position.copyFrom(at);
+    stick.mesh.rotationQuaternion!.copyFrom(turn);
     stick.body.setTranslation(at, true);
     stick.body.setRotation(turn, true);
     stick.body.setEnabled(true);
@@ -194,7 +192,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   };
 
   const step = (dt: number) => {
-    before.copy(feet);
+    before.copyFrom(feet);
     facingBefore = facing;
     keys.read(input);
     const pressed = input.act && !actHeld;
@@ -220,7 +218,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // Where it wants to go, relative to the camera; it turns there and walks along its facing.
     forward.set(-Math.sin(camera.yaw), 0, -Math.cos(camera.yaw)); // camera to look point, on the ground
     desired.set(forward.x * input.move.y - forward.z * input.move.x, 0, forward.z * input.move.y + forward.x * input.move.x);
-    const wants = !busy && desired.lengthSq() > 0.01;
+    const wants = !busy && desired.lengthSquared() > 0.01;
     if (wants) facing = turnTowards(facing, Math.atan2(desired.x, desired.z), TURN_RATE * dt);
     const along = wants ? Math.max(0, Math.cos(Math.atan2(desired.x, desired.z) - facing)) * desired.length() : 0;
     const top = afloat ? SWIM_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
@@ -270,23 +268,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     });
   };
 
-  const show = new THREE.Vector3(), held = new THREE.Matrix4(), turn = new THREE.Quaternion(), shift = new THREE.Vector3();
+  const show = new Vector3();
   const update = (dt: number, alpha: number) => {
-    node.position.lerpVectors(before, feet, alpha);
+    Vector3.LerpToRef(before, feet, alpha, node.position);
     lift *= Math.exp(-LIFT_EASE * dt); // a step up shows as a quick rise, not a jump of the whole body
     node.position.y += lift;
     node.rotation.set(0, facingBefore + Math.atan2(Math.sin(facing - facingBefore), Math.cos(facing - facingBefore)) * alpha, 0);
-    camera.update(dt, show.copy(node.position));
-    if (carried && options.hand) {
-      // Held across the body wherever the hand is, whatever the hand bone's own axes are.
-      node.updateWorldMatrix(true, true);
-      const hand = options.hand, mesh = carried.stick.mesh;
-      turn.copy(node.quaternion).multiply(GRIP);
-      shift.copy(GRIP_SHIFT).applyQuaternion(turn);
-      held.compose(hand.getWorldPosition(new THREE.Vector3()).sub(shift), turn, new THREE.Vector3(1, 1, 1));
-      held.premultiply(new THREE.Matrix4().copy(hand.matrixWorld).invert());
-      held.decompose(mesh.position, mesh.quaternion, mesh.scale);
-    }
+    camera.update(dt, show.copyFrom(node.position));
+    if (carried && options.hand) holdInHand(carried.stick.mesh, options.hand, node);
   };
 
   return {
@@ -313,7 +302,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     teleport(x, y, z, turnTo = facing) {
       body.setTranslation({ x, y: y + HEIGHT / 2 + OFFSET, z }, true);
       body.setNextKinematicTranslation({ x, y: y + HEIGHT / 2 + OFFSET, z });
-      feet.set(x, y, z); before.copy(feet);
+      feet.set(x, y, z); before.copyFrom(feet);
       facing = facingBefore = turnTo;
       speed = vy = lift = 0;
     },

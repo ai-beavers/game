@@ -38,13 +38,3 @@ export const CONTROLS: Record<Device, Control[]> = {
 
 /** The cap of the context action on each device. */
 export const USE: Record<Device, string> = { keys: "E", pad: "X", touch: "Use" };
-
-const ROUND = new Set(["A", "B", "X", "Y", "L", "R"]);
-const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-
-/** One key cap as HTML: round for a gamepad's face buttons and sticks, a pill for a touch button. */
-export function cap(device: Device, text: string) {
-  const shape = device === "pad" && ROUND.has(text) ? "round" : device === "touch" ? "pill" : "";
-  return `<kbd class="${shape}">${escape(text)}</kbd>`;
-}
-export const caps = (device: Device, list: string[]) => list.map((c) => cap(device, c)).join(" ");
