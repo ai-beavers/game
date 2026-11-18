@@ -26,7 +26,7 @@ import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import { liveDirector, shotFor, type Station } from "./live.ts";
-import { LODGE, SLOTS } from "../build/rules.ts";
+import { LODGE, REGROW, SLOTS, SPROUT } from "../build/rules.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
@@ -55,10 +55,10 @@ export const create: CreateFeature = (game) => {
   const build = () => (window as { build?: BuildDebug }).build;
 
   // ---- what the tour wants, read once per physics step like any other device ----
-  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false }, aimAt = new Vector3();
+  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false }, aimAt = new Vector3();
   player.keys.add({
     read(into: Input) {
-      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act });
+      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap });
       if (!want.to) return into;
       const d = new Vector3(want.to.x - player.feet.x, 0, want.to.z - player.feet.z);
       if (d.lengthSquared() < 1e-4) return into;
@@ -79,7 +79,7 @@ export const create: CreateFeature = (game) => {
   const until = async (done: () => boolean, limit: number, why: string) => {
     for (let t = 0; !done();) if ((t += await frame()) > limit) throw new Error(why);
   };
-  const tap = async (key: "act" | "jump", hold = 0.15) => { want[key] = true; await wait(hold); want[key] = false; };
+  const tap = async (key: "act" | "jump" | "slap", hold = 0.15) => { want[key] = true; await wait(hold); want[key] = false; };
   const key = (code: string) => {
     window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
     window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
@@ -128,7 +128,7 @@ export const create: CreateFeature = (game) => {
   };
 
   // ---- what happened: counts and the last of each event ----
-  const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced"] as const;
+  const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "tailSlap", "startled"] as const;
   const count = {} as Record<(typeof NAMES)[number], number>, last: Partial<GameEvents> = {};
   for (const name of NAMES) {
     count[name] = 0;
@@ -189,6 +189,39 @@ export const create: CreateFeature = (game) => {
       try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }
       felled = -1;
     }, "Dam work"],
+    // The tree just gone into wood grows back, its clock wound on (build.age): a sapling, half grown, the tree; then
+    // it is gnawed down again and its wood, the same pieces, gathered where it lies.
+    ["Regrow a tree", async () => {
+      const b = needBuild() as BuildDebug & {
+        state: { trees: Record<number, { split?: boolean; grown?: { rest?: unknown } } | undefined> };
+        age(i: number, seconds: number): number | false; saplings: Map<number, unknown>; split(i: number): boolean;
+      };
+      const i = last.treeSplits?.tree, t = () => b.state.trees[i!];
+      if (i === undefined || !t()?.split || t()!.grown) return skip("no tree went into wood this round");
+      const tree = world.trees![i]!, toAge = (seconds: number) => b.age(i, Math.max(0, seconds - (b.age(i, 0) || 0)));
+      // A few steps back on the clearing's side, so the camera over the shoulder sees the stump.
+      const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize(), back = tree.place.add(out.scale(3)), facing = Math.atan2(-out.x, -out.z);
+      player.teleport(back.x, world.heightAt(back.x, back.z), back.z, facing);
+      player.camera.yaw = facing + Math.PI + 0.5;
+      for (const age of [SPROUT + 10, (SPROUT + REGROW) / 2]) {
+        toAge(age);
+        await wait(3);
+        expect(b.saplings.has(i), `no sapling on stump ${i} ${age} s after its wood went`);
+      }
+      toAge(REGROW + 10);
+      await until(() => !!t()?.grown, 3, `tree ${i} never grew back`);
+      await wait(3);
+      const stand = tree.place.add(out.scale(tree.radius + 0.35));
+      await reach("gnaw", (attempt) => attempt ? tree.place : stand);
+      const falls = after("treeFalls");
+      want.act = true;
+      try { await until(falls, 15, `gnawed tree ${i} grown back for 15 s, it still stands`); } finally { want.act = false; }
+      expect(last.treeFalls!.tree === i, `tree ${last.treeFalls!.tree} fell, not ${i}`);
+      await until(() => !!t()?.grown?.rest, 10, `tree ${i} never came to rest again`);
+      const splits = after("treeSplits");
+      b.split(i);
+      expect(splits() && last.treeSplits!.logs + last.treeSplits!.sticks > 0 && !t()?.grown, `tree ${i} grown back gave no wood`);
+    }],
     ["Carry a stick", async () => {
       const sticks = world.sticks.filter((s) => s.body.isEnabled() && s !== player.carrying);
       expect(sticks.length > 0, "no stick lies anywhere");
@@ -234,6 +267,20 @@ export const create: CreateFeature = (game) => {
       const dry = after("leaveWater");
       await walkTo(pond.x + pond.radius + 1.5, pond.z, { arrived: dry, limit: 40 });
       expect(dry(), "swam across, never out again");
+    }, "Pond patrol"],
+    // Out on the pond, the alarm: Q slaps the tail; the crack (tailSlap) must send at least one animal off (startled).
+    ["Tail slap", async () => {
+      if (!pond) return skip("no pond");
+      await walkTo(pond.x - 0.5, pond.z, { near: 0.8, limit: 40 });
+      expect(player.afloat, "out in the pond, yet not afloat");
+      await wait(0.4);
+      const slapped = after("tailSlap"), startled = after("startled");
+      await tap("slap");
+      await until(slapped, 2, "pressed Q afloat, the tail never came down");
+      expect(last.tailSlap!.water, "slapped in the pond, but not on the water");
+      await until(startled, 1, "the tail came down, no animal heard it");
+      expect(last.startled!.count > 0, "the tail came down, no animal fled");
+      await wait(4); // the ducks circle, the fish dart off: something to see
     }, "Pond patrol"],
     ["Animals at the pond", async () => {
       if (!pond) return skip("no pond");
@@ -380,7 +427,7 @@ export const create: CreateFeature = (game) => {
           result = { round: tour.round, station: name, ok: skipped ? "skipped" : false, why: (e as Error).message, seconds: 0 };
           if (!skipped) failed = true;
         }
-        want.act = want.jump = false;
+        want.act = want.jump = want.slap = false;
         result.seconds = +((performance.now() - t0) / 1000).toFixed(1);
         results.push(result);
         if (results.length > 500) results.shift();

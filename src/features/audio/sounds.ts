@@ -154,6 +154,21 @@ const RECIPES = {
     tone(ctx, out, t, { freq: 70, to: 40, decay: 0.15, peak: 0.15 + amount * 0.2 });
     bubbles(ctx, out, t, 7, 0.05, 0.5, 0.12);
   },
+  /** The tail slapped flat on the water, the beaver's alarm: a loud crack like a rifle shot, the deep whump of the
+   *  water hit, spray falling back and bubbles. */
+  slap(ctx, out, t, amount) {
+    burst(ctx, out, t, { filter: "highpass", freq: 1400, attack: 0.001, decay: 0.035, peak: 0.6 + 0.3 * amount });
+    burst(ctx, out, t, { filter: "bandpass", freq: 2600, to: 900, q: 0.9, attack: 0.001, decay: 0.12, peak: 0.45 + 0.2 * amount });
+    tone(ctx, out, t, { freq: 110, to: 42, attack: 0.002, decay: 0.22, peak: 0.45 + 0.15 * amount });
+    burst(ctx, out, t, { at: 0.05, filter: "lowpass", freq: 4000, to: 700, attack: 0.03, decay: 0.6, peak: 0.18 + 0.1 * amount });
+    bubbles(ctx, out, t, 6, 0.1, 0.6, 0.1);
+  },
+  /** The tail slapped on the ground: a soft, dull thump and a puff of grit. */
+  thump(ctx, out, t, amount) {
+    tone(ctx, out, t, { freq: 75, to: 38, attack: 0.003, decay: 0.16, peak: 0.35 + 0.15 * amount });
+    burst(ctx, out, t, { filter: "lowpass", freq: 900, attack: 0.002, decay: 0.09, peak: 0.3 + 0.1 * amount });
+    burst(ctx, out, t, { at: 0.02, filter: "bandpass", freq: 2400, q: 0.7, decay: 0.15, peak: 0.08 });
+  },
   /** One paddle stroke while swimming: a soft swell of water. */
   paddle(ctx, out, t, amount) {
     burst(ctx, out, t, { filter: "bandpass", freq: rand(600, 800), to: 1200, q: 1.1, attack: 0.09, decay: 0.28, peak: 0.2 + amount * 0.25 });

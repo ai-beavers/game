@@ -1,10 +1,11 @@
 // The rules of the build feature as plain logic, independent of rendering and physics so they can be tested alone: the
 // world state (which trees are gnawed, felled, lying, broken into wood; which sticks are in the dam), the named
 // changes that alone change it, and what follows from it (bites a tree takes, wood it yields, where each stick of
-// the dam goes, the goals).
+// the dam goes, the goals). A tree whose wood is gone grows back on its stump (REGROW) and can be felled again.
 //
 //   const state = newState();
 //   apply(state, { type: "bite", tree: 4 });          true when it changed something; the only way to change state
+//   live(state.trees[4])                              the tree standing or lying there now (undefined: only a stump)
 //   bitesToFell(radius) · woodFrom(tree, trunk) · damPlan() · moundHeight(placed) · goals(state) · pondRise(placed)
 //   pondLevel(full, placed): where the pond's surface stands with this many sticks in the dam
 //   lodgeGrow(placed): how far the lodge stands out of the pond (after the dam's SLOTS sticks come LODGE onto it)
@@ -26,6 +27,21 @@ export const BITES_TO_SPLIT = 4;
  *  must stay dry floods. The meadow round the pond lies only 5 to 15 cm above that level: higher would spill. */
 export const POND_RISE = 0.25;
 
+// The forest grows back. The rule: a tree whose wood is gone (split) stands again REGROW seconds later, by the
+// server's clock, and only through a "grow" change, which the server admits no earlier (net/protocol.ts admit, from
+// the time it stamped on the split, kept in its log and file, so a restart with WORLD_FILE does not reset the count).
+// apply() never looks at a clock: a copy takes the grow it is told of. Each copy counts from when it learned of the
+// split by its own clock (state.trees[i].gone), so clocks that differ do not matter, only the message's way there;
+// whoever's count runs out first (plus a few seconds' grace, build/index.ts) asks. One who joined later counts from
+// joining: it asks late, never early. From SPROUT on a sapling shows on the stump, growing to the full tree.
+/** Seconds from a tree's wood going to a tree standing there again: 10 minutes, so felling one matters, and a
+ *  stream sees the clearing fill again within a session. */
+export const REGROW = 600;
+/** Seconds after the wood went when the sapling shows. */
+export const SPROUT = 60;
+/** How far the sapling has grown, 0 … 1 (0: none yet), this many seconds after the wood went. */
+export const growth = (age: number) => Math.max(0, Math.min(1, (age - SPROUT) / (REGROW - SPROUT)));
+
 export interface TreeState {
   /** Bites into the standing trunk. */
   bites: number;
@@ -36,6 +52,11 @@ export interface TreeState {
   /** Bites into the lying tree. */
   splitBites: number;
   split?: boolean;
+  /** When its wood went (split), ms on the clock of whoever keeps this copy (Date.now()). */
+  gone?: number;
+  /** The tree grown back on the stump once its wood went (a "grow" change), as a tree of its own: bitten, felled,
+   *  lying. When it is split in turn, its fall and rest move up here (its wood lies where it lay) and it is gone. */
+  grown?: TreeState;
 }
 
 export interface BuildState {
@@ -54,44 +75,59 @@ export type BuildChange =
   | { type: "bite"; tree: number }
   | { type: "fell"; tree: number; direction: number }
   | { type: "rest"; tree: number; at: [number, number, number]; turn: [number, number, number, number] }
-  | { type: "split"; tree: number }
+  /** at: the server's clock (ms) when it took the split; only the server stamps it (protocol.ts admit). */
+  | { type: "split"; tree: number; at?: number }
+  | { type: "grow"; tree: number }
   | { type: "place"; slot: number; stick: string };
 
 export const newState = (): BuildState => ({ version: 1, trees: {}, dam: [], found: false });
 
 const tree = (s: BuildState, i: number) => (s.trees[i] ??= { bites: 0, splitBites: 0 });
 
+/** The tree that stands or lies on this spot now: the first until its wood is gone, then the one grown back;
+ *  undefined while there is only the stump (and perhaps a sapling). An untouched tree reads as a fresh one. */
+export const live = (t: TreeState | undefined): TreeState | undefined => !t ? { bites: 0, splitBites: 0 } : t.split ? t.grown : t;
+
 /** Applies one change to the state in place. False when it does not fit the state (already done, out of order, a
- *  stick already used): then nothing changed, so a change that arrives twice does no harm. */
-export function apply(s: BuildState, c: BuildChange): boolean {
+ *  stick already used): then nothing changed, so a change that arrives twice does no harm. now: this copy's clock,
+ *  for when a tree's wood went. */
+export function apply(s: BuildState, c: BuildChange, now = Date.now()): boolean {
   switch (c.type) {
     case "find":
       if (s.found) return false;
       s.found = true;
       return true;
     case "bite": {
-      const t = tree(s, c.tree);
-      if (t.fell === undefined) t.bites++;
-      else if (t.rest && !t.split) t.splitBites++;
+      const t = live(tree(s, c.tree));
+      if (t?.fell === undefined) { if (!t) return false; t.bites++; }
+      else if (t.rest) t.splitBites++;
       else return false;
       return true;
     }
     case "fell": {
-      const t = tree(s, c.tree);
-      if (t.fell !== undefined) return false;
+      const t = live(tree(s, c.tree));
+      if (!t || t.fell !== undefined) return false;
       t.fell = c.direction;
       return true;
     }
     case "rest": {
-      const t = tree(s, c.tree);
-      if (t.fell === undefined || t.rest || t.split) return false;
+      const t = live(tree(s, c.tree));
+      if (t?.fell === undefined || t.rest) return false;
       t.rest = { at: c.at, turn: c.turn };
       return true;
     }
     case "split": {
+      const first = tree(s, c.tree), t = live(first);
+      if (!t?.rest) return false;
+      if (t !== first) { Object.assign(first, { bites: t.bites, fell: t.fell, rest: t.rest, splitBites: t.splitBites }); delete first.grown; }
+      first.split = true;
+      first.gone = now;
+      return true;
+    }
+    case "grow": {
       const t = tree(s, c.tree);
-      if (!t.rest || t.split) return false;
-      t.split = true;
+      if (!t.split || t.grown) return false;
+      t.grown = { bites: 0, splitBites: 0 };
       return true;
     }
     case "place":
@@ -105,7 +141,11 @@ export function apply(s: BuildState, c: BuildChange): boolean {
 export function load(text: string | null): BuildState {
   try {
     const s = JSON.parse(text ?? "") as BuildState;
-    if (s?.version === 1 && Array.isArray(s.dam) && typeof s.trees === "object") return { ...newState(), ...s };
+    if (s?.version === 1 && Array.isArray(s.dam) && typeof s.trees === "object") {
+      // Saved before trees grew back: their count starts now.
+      for (const t of Object.values(s.trees)) if (t?.split && typeof t.gone !== "number") t.gone = Date.now();
+      return { ...newState(), ...s };
+    }
   } catch { /* fresh */ }
   return newState();
 }

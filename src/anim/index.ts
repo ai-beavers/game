@@ -10,6 +10,7 @@
 //   action   pickup, drop, gnaw, build, by actionProgress; feet stay planted
 //   air      stretched while rising, legs forward while falling
 //   swim     level in the water, hind legs paddle, tail steers
+//   slap     the tail up and struck down (action "none" with a progress), over all of the above but the carry
 //   carry    the right arm holds the stick in front of the chest, over all of the above
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
 import { WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
@@ -219,6 +220,23 @@ function swim(body: Body, phase: number, turning: number) {
   for (const [sign, lr] of SIDES) reachArm(body, placed, lr, onChest(placed, [sign * 0.07, 0.06, 0.16]), [sign, 0, -1], 0.5); // folded under the chin
 }
 
+/** How far the tail is raised over what the body does at slap progress p, radians: up in the first 38 %, struck down
+ *  past rest by `below` at SLAP_HIT (src/player/state.ts: 0.5), then back. Each piece starts and ends at rest speed,
+ *  so the strike is fast but never jumps. */
+export function slapLift(p: number, below: number) {
+  const UP = 1.1;
+  return p < 0.38 ? UP * smooth(0, 0.38, p) : p < 0.5 ? UP - (UP + below) * smooth(0.38, 0.5, p) : -below * (1 - smooth(0.5, 1, p));
+}
+
+/** The tail slap, over the body as it is: the tail curls up, the tip trailing, then whips down flat onto the water
+ *  (wet 1) or the ground (0); the back rocks with it. Only spine and tail, so the legs go on as they were. */
+function tailSlap(body: Body, p: number, wet: number) {
+  const below = lerp(0.08, 0.3, wet), lift = slapLift(p, below), tip = slapLift(max(0, p - 0.03), below);
+  body.turns.tail1 = mul(axisAngle(X, lift), body.turns.tail1);
+  body.turns.tail2 = mul(axisAngle(X, 0.6 * tip), body.turns.tail2);
+  body.turns.spine = mul(axisAngle(X, -0.08 * lift), body.turns.spine);
+}
+
 export const createAnimator: CreateAnimator = (): Animator => {
   const body = new Body(), layer = new Body();
   const holds = [0, 1].map(() => ({ planted: false, z: 0, yaw: 0, dz: 0, dyaw: 0 }));
@@ -278,6 +296,7 @@ export const createAnimator: CreateAnimator = (): Animator => {
       if (acting > 0.001) { action(layer.reset(), shown, progress, m.time); body.blend(layer, acting); }
       if (inAir > 0.001) { air(layer.reset(), vertical); body.blend(layer, inAir); }
       if (swimming > 0.001) { swim(layer.reset(), swimPhase, turning); body.blend(layer, swimming); }
+      if (m.action === "none" && m.actionProgress > 0) tailSlap(body, m.actionProgress, swimming);
       const holding = carrying * (1 - acting);
       if (holding > 0.001) { // the right hand before the chest, wherever the trunk leans
         layer.copy(body);

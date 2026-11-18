@@ -6,7 +6,8 @@ import { material } from "../../world/models.ts";
 import { hex } from "../../world/color.ts";
 // The "life" feature: the animals of the clearing that notice the beaver. A school of fish in the pond, songbirds on the
 // ground and on logs, two birds of prey circling high, butterflies over the meadow, dragonflies over the reeds, frogs
-// at the shore and a pair of mallards on the water.
+// at the shore and a pair of mallards on the water. A tail slap (the tailSlap event) sends them all off at once
+// (brain.ts: startle); the feature tells how many with the startled event.
 //
 //   createGame(canvas, [create])      on its own (lab/life.html), or in FEATURES with the rest
 //   (await create(game)).animals      the animals' state, for a lab camera; see brain.ts for what each holds
@@ -19,7 +20,7 @@ import { seeded } from "../../world/noise.ts";
 import { placeAll } from "../../world/place.ts";
 import { POND, RIM } from "../../world/terrain.ts";
 import {
-  circling, makeBirds, makeDucks, makeFlyers, makeFrogs, makeSchool, shoreSpots, stepBirds, stepButterflies, stepDragonflies,
+  circling, makeBirds, makeDucks, makeFlyers, makeFrogs, makeSchool, shoreSpots, startle, stepBirds, stepButterflies, stepDragonflies,
   stepDucks, stepFrogs, stepSchool, type Land, type Perch, type Splash, type Threat,
 } from "./brain.ts";
 import { animalMesh, birdShape, butterflyShape, dragonflyShape, duckShape, fishShape, frogShape } from "./shapes.ts";
@@ -35,7 +36,7 @@ const MAX = COUNTS.high, RINGS = 10;
 const BIRD_SIZE = 1.3, RAPTOR_SIZE = 4, BUTTERFLY_SIZE = 1.5, DRAGONFLY_SIZE = 1.3;
 
 export const create = ((game) => {
-  const { stage, world, player, settings } = game, { scene } = stage;
+  const { stage, world, player, settings, events } = game, { scene } = stage;
   const land: Land = { heightAt: world.heightAt, get water() { return world.waterLevel; }, rim: RIM - 2.5, pond: { x: POND.x, z: POND.z, radius: POND.radius } };
   const layout = placeAll(), random = seeded(7);
   const reeds = layout.reed.map(({ x, z }) => ({ x, z }));
@@ -103,6 +104,12 @@ export const create = ((game) => {
     animal.mesh.thinInstanceBufferUpdated("aAnim");
   };
 
+  // A tail slap, this beaver's or another player's: the alarm, heard across the pond, closer by on land.
+  events.on("tailSlap", ({ place, water }) => {
+    const count = startle(animals, land, perches, place, water ? 9 : 4, random, splashes);
+    events.emit("startled", { place, count });
+  });
+
   const feature: Feature & { animals: typeof animals } = {
     get animals() { return animals; },
     update(frame) {
@@ -162,9 +169,9 @@ export const create = ((game) => {
     done(meshes.frogs, animals.frogs.length);
 
     animals.ducks.forEach((d, i) => {
-      const dabble = d.speed < 0.08 ? Math.max(0, Math.sin(d.phase * 0.35 + i * 2)) ** 6 : 0;
-      put(meshes.ducks, i, d.x, water - 0.02 + Math.sin(d.phase * 0.7) * 0.006, d.z, d.heading, Math.sin(d.phase * 0.5) * 0.03 + dabble * 0.15,
-        Math.sin(d.phase * 0.37) * 0.03, 1, [d.phase, 0, dabble, i % 2]);
+      const dabble = d.speed < 0.08 ? Math.max(0, Math.sin(d.phase * 0.35 + i * 2)) ** 6 : 0, bob = (1 - d.wings) * 0.03;
+      put(meshes.ducks, i, d.x, water - 0.02 + d.air + Math.sin(d.phase * 0.7) * 0.006 * (1 - d.wings), d.z, d.heading, Math.sin(d.phase * 0.5) * bob + dabble * 0.15 - 0.15 * d.wings,
+        Math.sin(d.phase * 0.37) * bob, 1, [d.phase, d.wings, dabble, i % 2]);
     });
     done(meshes.ducks, animals.ducks.length);
 

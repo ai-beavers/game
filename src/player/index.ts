@@ -1,5 +1,5 @@
 import { holdInHand } from "./grip.ts";
-// Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming, the follow camera,
+// Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming, the tail slap, the follow camera,
 // and the Motion report the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
@@ -15,7 +15,7 @@ import { RAPIER, type Stage } from "../engine.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { keyboard, newInput, type Keyboard } from "./input.ts";
-import { jumpStarts, newAction, newJump, newMotion, newSteering, steer, stepAction, trackMotion } from "./state.ts";
+import { jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepSlap, trackMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
 export const HEIGHT = 1.0, RADIUS = 0.225;
@@ -98,12 +98,12 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   let carried: { stick: Stick; parent: TransformNode["parent"] } | undefined, target: Stick | undefined;
   const notCarried = (c: RAPIER.Collider) => !carried || c.parent() !== carried.stick.body;
   const camera = followCamera(stage, (c) => c !== collider && !stickBodies.has(c.parent()!));
-  const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion = newMotion(), steering = newSteering();
+  const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion = newMotion(), steering = newSteering(), slap = newSlap();
 
   const node = new TransformNode("player", stage.scene);
   const feet = options.spawn.clone(), before = feet.clone(), velocity = new Vector3();
   let lift = 0; // m the picture still lags behind the last steps up
-  let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false;
+  let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false;
   let actor: Actor | undefined, aim: number | undefined; // aim: where a lasting action turns the beaver
   const desired = new Vector3(), forward = new Vector3();
 
@@ -194,7 +194,9 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     before.copyFrom(feet);
     facingBefore = facing;
     keys.read(input);
-    const pressed = input.act && !actHeld;
+    stepSlap(slap, dt, !!input.slap && !slapHeld, (grounded || afloat) && act.action === "none");
+    slapHeld = !!input.slap;
+    const pressed = input.act && !actHeld && slap.progress === 0; // E waits while the tail is up
     actHeld = input.act;
 
     // The carry sequence.
@@ -228,7 +230,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const depth = level === undefined ? -Infinity : level - feet.y;
     if (!afloat && depth > FLOAT_DEPTH) afloat = true;
     else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02) afloat = false;
-    if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy)) { vy = JUMP_SPEED; grounded = false; }
+    if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
     if (afloat) {
       const toSurface = (depth - HOLD_DEPTH) * 4; // m/s up towards floating depth
       vy += (toSurface - vy) * Math.min(1, 5 * dt);
@@ -262,7 +264,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
 
     trackMotion(motion, dt, {
       moved: Math.hypot(moved.x, moved.z), vertical: (moved.y - stepped) / dt, // a step up is not a leap
-      turning: (facing - facingBefore) / dt, grounded, afloat, act,
+      turning: (facing - facingBefore) / dt, grounded, afloat, act, slap: slap.progress,
     });
   };
 

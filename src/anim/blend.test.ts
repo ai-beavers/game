@@ -63,3 +63,28 @@ test("no bone pops over a scripted minute of play", () => {
   expect(worstTurn).toBeLessThan(0.45);
   expect(worstMove).toBeLessThan(0.015);
 });
+
+// The tail slap (src/player/state.ts: 0.9 s, the strike at half) on land and afloat, standing and on the move: the
+// strike is the fastest thing the tail does, yet each frame stays close to where the last two frames were heading.
+test("the tail slap strikes hard without a pop", () => {
+  for (const [swimming, speed] of [[0, 0], [0, 0.8], [1, 0], [1, 0.5]] as const) {
+    const animator = createAnimator(), dt = 1 / 60;
+    const m: Motion = { speed, distance: 0, turning: 0, grounded: !swimming, vertical: 0, airTime: 0, sinceLanding: 99, landingSpeed: 0,
+      swimming, action: "none", actionProgress: 0, carrying: false, anger: 0, time: 0 };
+    let before: Record<string, Quat> | undefined, last: Record<string, Quat> | undefined, worst = 0, strike = 0;
+    for (let i = 0; i < 60 * 3; i++) {
+      const t = i * dt;
+      m.time = t; m.distance += speed * dt;
+      m.actionProgress = t > 1 && t < 1.9 ? (t - 1) / 0.9 : 0;
+      const turns = seen(animator.pose(m, dt));
+      if (before && last) for (const b of ["hips", "spine", "chest", "head", "tail1", "tail2"] as const) {
+        worst = Math.max(worst, angle(mul(last[b]!, mul(inv(before[b]!), last[b]!)), turns[b]!));
+      }
+      if (last && m.actionProgress > 0) strike = Math.max(strike, angle(last.tail1!, turns.tail1!) / dt);
+      before = last; last = turns;
+    }
+    console.log(`tail slap, swimming ${swimming}, ${speed} m/s: strike ${strike.toFixed(1)} rad/s, worst jump ${worst.toFixed(3)} rad`);
+    expect(strike).toBeGreaterThan(10); // rad/s: a strike, not a wave
+    expect(worst).toBeLessThan(0.2); // measured 0.16 rad afloat, 0.14 on land
+  }
+});

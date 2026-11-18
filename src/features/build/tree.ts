@@ -1,12 +1,15 @@
 import { meshes, vertices, instance, material } from "../../world/models.ts";
 // One tree the build feature has taken over from the world: drawn by itself, with the bite growing into the
 // hourglass a beaver leaves, then falling as a Rapier body (hinged on the cut at first, so it tips slowly, then
-// free), lying, and at last gone into wood. The stump that stays is the props' gnawed stump (stump_1).
+// free), lying, and at last gone into wood. The stump that stays is the props' gnawed stump (stump_1). A tree grown
+// back on that stump is another view of the same tree (regrown): a sapling scaled up to the full tree, then as before.
 //
 //   const m = measure(world.trees[i]);           sizes in the tree's template and in the world, cached
 //   const view = takeTree(stage, world, i);      hides the world's instance, draws its own copy
 //   view.bite(0.4)                               the hourglass 40 % deep (0 … 1)
 //   view.fall(direction)  · view.step(dt) → "landed" | "rest" | undefined  · view.lie(at, turn) · view.dispose()
+//   takeTree(stage, world, i, true)              grown back: view.grow(0.3) a sapling, view.grow(1) the tree, solid
+//   view.unstump()                               the stump goes (a tree stands on it again)
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh.js";
 import { Material } from "@babylonjs/core/Materials/material.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -212,7 +215,7 @@ function notch(root: TransformNode, tree: WorldTree, m: Measure) {
 
 export type TreeView = ReturnType<typeof takeTree>;
 
-export function takeTree(stage: Stage, world: World, index: number) {
+export function takeTree(stage: Stage, world: World, index: number, regrown = false) {
   const { scene, physics } = stage, tree = world.trees![index]!, m = measure(tree);
   tree.hide();
   const root = instance(tree.model, "felled tree");
@@ -225,6 +228,13 @@ export function takeTree(stage: Stage, world: World, index: number) {
   let holder: TransformNode | undefined, body: RAPIER.RigidBody | undefined, hinge: { joint: RAPIER.ImpulseJoint; anchor: RAPIER.RigidBody } | undefined;
   let spin = 0, since = 0, still = 0, landed = false, resting = false;
   let stump: TransformNode | undefined, stumpCollider: RAPIER.Collider | undefined;
+  // The world's trunk collider is gone for a tree grown back: it gets one like it once fully grown.
+  let trunk: RAPIER.Collider | undefined, size = regrown ? -1 : 1;
+  const clear = () => {
+    tree.clear();
+    if (trunk) physics.removeCollider(trunk, true);
+    trunk = undefined;
+  };
 
   /** Moves root under a body at the waist, which carries the trunk and crown colliders. */
   const makeBody = (kind: RAPIER.RigidBodyDesc, at: Vector3, turn: Quaternion) => {
@@ -269,7 +279,7 @@ export function takeTree(stage: Stage, world: World, index: number) {
       if (body) return;
       const w = waist();
       makeBody(RAPIER.RigidBodyDesc.dynamic().setCanSleep(false).setCcdEnabled(true).setLinearDamping(0.05).setAngularDamping(0.3), w, new Quaternion());
-      tree.clear();
+      clear();
       addStump();
       updateNotch(1, true);
       const axis = new Vector3(0, 1, 0).cross(direction).normalize();
@@ -307,7 +317,7 @@ export function takeTree(stage: Stage, world: World, index: number) {
     },
     /** Lies here at once, fixed (a saved game, or another player's tree). */
     lie(at: Vector3, turn: Quaternion) {
-      tree.clear();
+      clear();
       addStump();
       solidStump();
       if (hinge) { physics.removeImpulseJoint(hinge.joint, true); physics.removeRigidBody(hinge.anchor); hinge = undefined; }
@@ -331,11 +341,27 @@ export function takeTree(stage: Stage, world: World, index: number) {
       const along = Vector3.Up().applyRotationQuaternion(new Quaternion(q.x, q.y, q.z, q.w));
       return { from, along, to: from.add(along.scale(m.trunk)) };
     },
+    /** A tree grown back, standing: this much of its full size (0 … 1), scaled about its foot; solid when full. */
+    grow(scale: number) {
+      if (!regrown || body || scale === size) return;
+      size = scale;
+      root.scaling.setAll(m.scale * scale);
+      root.position.copyFrom(tree.place).addInPlace(m.position.subtract(tree.place).scaleInPlace(scale));
+      if (scale >= 1 && !trunk) trunk = physics.createCollider(RAPIER.ColliderDesc.cylinder(1.5, tree.radius)
+        .setTranslation(tree.place.x, tree.place.y + 1.3, tree.place.z).setFriction(0.9)); // as the world's (src/world)
+    },
+    /** The stump goes: a tree grown back stands on it. */
+    unstump() {
+      stump?.dispose();
+      if (stumpCollider) physics.removeCollider(stumpCollider, true);
+      stump = stumpCollider = undefined;
+    },
     /** Only the stump: the trunk and crown are gone (into wood). */
     dispose() {
       addStump();
       solidStump();
       if (hinge) { physics.removeImpulseJoint(hinge.joint, true); physics.removeRigidBody(hinge.anchor); hinge = undefined; }
+      clear();
       if (body) physics.removeRigidBody(body);
       if (holder) { stage.unbind(holder); holder.dispose(); } else root.dispose();
       body = undefined;

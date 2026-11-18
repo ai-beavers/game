@@ -1,6 +1,9 @@
 // Tests for the build feature's rules: state changes, trees, wood, the dam plan, goals. Run: bun test src/features/build
 import { describe, expect, test } from "bun:test";
-import { apply, BITES_TO_SPLIT, bitesToFell, crestHeight, DAM, damPlan, goals, load, LODGE, lodgeGrow, moundHeight, newState, POND_RISE, pondLevel, pondRise, profile, SLOTS, woodFrom } from "./rules.ts";
+import {
+  apply, BITES_TO_SPLIT, bitesToFell, crestHeight, DAM, damPlan, goals, growth, live, load, LODGE, lodgeGrow, moundHeight, newState, POND_RISE, pondLevel, pondRise,
+  profile, REGROW, SLOTS, SPROUT, woodFrom,
+} from "./rules.ts";
 
 describe("changes", () => {
   test("a tree goes bitten, felled, resting, split, in that order only", () => {
@@ -19,6 +22,37 @@ describe("changes", () => {
     expect(apply(s, { type: "split", tree: 2 })).toBe(false);
     expect(apply(s, { type: "bite", tree: 2 })).toBe(false);
   });
+  test("a tree whose wood went grows back, to be felled and split again; its wood then lies where it lay", () => {
+    const s = newState(), fell = (direction: number, at: [number, number, number]) => {
+      expect(apply(s, { type: "bite", tree: 2 })).toBe(true);
+      expect(apply(s, { type: "fell", tree: 2, direction })).toBe(true);
+      expect(apply(s, { type: "rest", tree: 2, at, turn: [0, 0, 0, 1] })).toBe(true);
+      for (let k = 0; k < BITES_TO_SPLIT; k++) apply(s, { type: "bite", tree: 2 });
+    };
+    expect(apply(s, { type: "grow", tree: 2 })).toBe(false); // standing: nothing to grow back
+    fell(1, [1, 0, 1]);
+    expect(apply(s, { type: "grow", tree: 2 })).toBe(false); // lying, not wood yet
+    expect(apply(s, { type: "split", tree: 2 }, 1000)).toBe(true);
+    expect(s.trees[2]!.gone).toBe(1000);
+    expect(live(s.trees[2])).toBeUndefined(); // only the stump
+    expect(apply(s, { type: "bite", tree: 2 })).toBe(false);
+    expect(apply(s, { type: "grow", tree: 2 })).toBe(true); // no clock here: the server's admit checks when
+    expect(apply(s, { type: "grow", tree: 2 })).toBe(false);
+    expect(live(s.trees[2])).toEqual({ bites: 0, splitBites: 0 });
+    fell(2, [5, 0, 5]);
+    expect(s.trees[2]!.fell).toBe(1); // the first fall still says where the first wood came from
+    expect(apply(s, { type: "split", tree: 2 }, 2000)).toBe(true);
+    expect(s.trees[2]).toEqual({ bites: 1, fell: 2, rest: { at: [5, 0, 5], turn: [0, 0, 0, 1] }, splitBites: BITES_TO_SPLIT, split: true, gone: 2000 });
+    expect(goals(s)[2]!.done).toBe(true);
+    expect(live(undefined)).toEqual({ bites: 0, splitBites: 0 }); // never touched: a fresh tree
+  });
+  test("the sapling shows at SPROUT and is full grown at REGROW", () => {
+    expect(growth(0)).toBe(0);
+    expect(growth(SPROUT)).toBe(0);
+    expect(growth((SPROUT + REGROW) / 2)).toBeCloseTo(0.5);
+    expect(growth(REGROW)).toBe(1);
+    expect(growth(REGROW * 9)).toBe(1);
+  });
   test("each stick goes into the dam once, into the next slot, up to SLOTS, then LODGE onto the lodge", () => {
     const s = newState();
     expect(apply(s, { type: "place", slot: 0, stick: "w1" })).toBe(true);
@@ -36,6 +70,11 @@ describe("changes", () => {
     expect(load("{oops")).toEqual(newState());
     expect(load(null)).toEqual(newState());
     expect(load(JSON.stringify({ version: 9 }))).toEqual(newState());
+    // Saved before trees grew back: a tree gone into wood starts its count when loaded.
+    const old = { ...newState(), trees: { 3: { bites: 6, fell: 0, rest: { at: [0, 0, 0], turn: [0, 0, 0, 1] }, splitBites: 4, split: true } } };
+    const before = Date.now(), back = load(JSON.stringify(old));
+    expect(back.trees[3]!.gone).toBeGreaterThanOrEqual(before);
+    expect(back.trees[3]!.gone).toBeLessThanOrEqual(Date.now());
   });
 });
 

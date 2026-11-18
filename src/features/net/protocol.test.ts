@@ -2,7 +2,7 @@
 // and the smoothing between updates.
 import { describe, expect, test } from "bun:test";
 import { newMotion } from "../../player/state.ts";
-import { LODGE, newState, SLOTS, type BuildChange } from "../build/rules.ts";
+import { LODGE, newState, REGROW, SLOTS, type BuildChange } from "../build/rules.ts";
 import {
   admit, bucket, changesOf, clean, clientAddress, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, packMotion, parseChange,
   parseClient, replay, restore, sameWorld, shouldReload, stickId, unpackMotion, woodId,
@@ -156,7 +156,7 @@ describe("build changes", () => {
 
   test("takes every known change, copied field by field", () => {
     const all = [{ type: "find" }, { type: "bite", tree: 3 }, { type: "fell", tree: 3, direction: 1.2 }, rest,
-      { type: "split", tree: 3 }, { type: "place", slot: 0, stick: "t3:4" }, { type: "place", slot: 1, stick: "w12" }];
+      { type: "split", tree: 3 }, { type: "split", tree: 3, at: 1.7e12 }, { type: "grow", tree: 3 }, { type: "place", slot: 0, stick: "t3:4" }, { type: "place", slot: 1, stick: "w12" }];
     expect(build(all)).toEqual({ t: "build", c: all as BuildChange[] });
     expect(build([{ type: "bite", tree: 1, evil: 1 }])).toEqual({ t: "build", c: [{ type: "bite", tree: 1 }] });
     expect(build([{ type: "find" }], "bring")?.t).toBe("bring");
@@ -166,7 +166,7 @@ describe("build changes", () => {
     for (const bad of [{ type: "admin" }, { type: "bite" }, { type: "bite", tree: -1 }, { type: "bite", tree: 999 }, { type: "bite", tree: 1.5 },
       { type: "fell", tree: 1, direction: null }, { type: "fell", tree: 1, direction: 1e6 }, { ...rest, at: [1e9, 0, 0] }, { ...rest, turn: [0, 0, 2, 0] },
       { ...rest, turn: [0, 0, 1] }, { type: "place", slot: SLOTS + LODGE, stick: "w1" }, { type: "place", slot: 0, stick: "<b>" },
-      { type: "place", slot: 0, stick: "w1".repeat(20) }, { type: "place", slot: 0 }, null, 4, "find", ["bite", 1]]) {
+      { type: "place", slot: 0, stick: "w1".repeat(20) }, { type: "place", slot: 0 }, { type: "grow" }, { type: "grow", tree: 99 }, null, 4, "find", ["bite", 1]]) {
       expect(parseChange(bad)).toBeUndefined();
     }
     expect(build([{ type: "admin" }])).toBeUndefined(); // nothing good left
@@ -207,8 +207,8 @@ describe("build changes", () => {
     const changes: BuildChange[] = [{ type: "find" }, ...Array(7).fill({ type: "bite", tree: 2 }), { type: "fell", tree: 2, direction: 1 },
       { type: "rest", tree: 2, at: [1, 2, 3], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree: 2 }), { type: "split", tree: 2 },
       { type: "bite", tree: 5 }, { type: "place", slot: 0, stick: "t2:3" }, { type: "place", slot: 1, stick: "w0" }];
-    const s = replay(changes);
-    expect(replay(changesOf(s))).toEqual(s);
+    const s = replay(changes, 0); // when wood went: on the clock of the copy, here 0
+    expect(replay(changesOf(s), 0)).toEqual(s);
     expect(changesOf(s)).toHaveLength(changes.length);
     expect(sameWorld(s, replay(changesOf(s)))).toBe(true);
     expect(sameWorld(s, replay(changes.slice(0, -1)))).toBe(false);
@@ -216,6 +216,46 @@ describe("build changes", () => {
     touched.trees[9] = { bites: 0, splitBites: 0 }; // touched without effect: the same world
     expect(sameWorld(s, touched)).toBe(true);
     expect(changesOf({ ...newState(), trees: { 1: { bites: 1e9, splitBites: 0 } } })).toHaveLength(MAX_BITES); // a broken save
+  });
+
+  test("a tree grows back only REGROW s after the server took its split, by the server's clock", () => {
+    const world = newState(), t0 = 1.8e12, felled: BuildChange[] = [...Array(MAX_BITES).fill({ type: "bite", tree: 4 }),
+      { type: "fell", tree: 4, direction: 0 }, { type: "rest", tree: 4, at: [0, 0, 0], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree: 4 })];
+    for (const c of felled) admit(world, { ...c }, t0);
+    expect(admit(world, { type: "grow", tree: 4 }, t0)).toBe(false); // not wood yet
+    const split: BuildChange = { type: "split", tree: 4, at: 0 }; // a sender's time counts for nothing
+    expect(admit(world, split, t0)).toBe(true);
+    expect(split).toEqual({ type: "split", tree: 4, at: t0 }); // stamped: the log and its file keep when
+    expect(admit(world, { type: "grow", tree: 4 }, t0 + REGROW * 1000 - 1)).toBe(false); // a moment early
+    expect(admit(world, { type: "grow", tree: 7 }, t0 + REGROW * 1000)).toBe(false); // no wood went there
+    expect(admit(world, { type: "grow", tree: 4 }, t0 + REGROW * 1000)).toBe(true);
+    expect(admit(world, { type: "grow", tree: 4 }, t0 + REGROW * 2000)).toBe(false); // once
+    // The tree grown back takes its bites, falls and breaks again, bounded as the first.
+    let bites = 0;
+    for (let k = 0; k < 50; k++) if (admit(world, { type: "bite", tree: 4 }, t0)) bites++;
+    expect(bites).toBe(MAX_BITES);
+    // As changes and back: the regrown tree, felled again, the same world.
+    const again = [...changesOf(world), { type: "fell", tree: 4, direction: 1 }, { type: "rest", tree: 4, at: [5, 0, 5], turn: [0, 0, 0, 1] }] as BuildChange[];
+    const s = replay(again, 0);
+    expect(s.trees[4]!.grown).toMatchObject({ bites: MAX_BITES, fell: 1 });
+    expect(replay(changesOf(s), 0)).toEqual(s);
+    expect(changesOf(s).filter((c) => c.type === "grow")).toHaveLength(1);
+  });
+
+  test("a kept world keeps when wood went, so a restart does not count the trees anew", () => {
+    const t0 = Date.now() - REGROW * 1000 - 1, grown: BuildChange[] = [...Array(MAX_BITES).fill({ type: "bite", tree: 2 }), { type: "fell", tree: 2, direction: 0 },
+      { type: "rest", tree: 2, at: [0, 0, 0], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree: 2 }), { type: "split", tree: 2, at: t0 }, { type: "grow", tree: 2 }];
+    const back = restore(JSON.stringify({ epoch: "k3x9", build: grown }))!;
+    expect(back.whole).toBe(true);
+    expect(back.world.trees[2]!.gone).toBe(t0);
+    expect(back.world.trees[2]!.grown).toBeDefined();
+    // From before trees grew back (no time on the split), or too soon: the grow is left out, the count starts now.
+    for (const split of [{ type: "split", tree: 2 }, { type: "split", tree: 2, at: Date.now() - 1000 }]) {
+      const old = restore(JSON.stringify({ epoch: "k3x9", build: [...grown.slice(0, -2), split, { type: "grow", tree: 2 }] }))!;
+      expect([old.whole, old.world.trees[2]!.grown]).toEqual([false, undefined]);
+    }
+    const future = restore(JSON.stringify({ epoch: "k3x9", build: [...grown.slice(0, -2), { type: "split", tree: 2, at: 9e13 }] }))!;
+    expect(future.world.trees[2]!.gone).toBeLessThanOrEqual(Date.now()); // not from the future
   });
 
   test("a kept world comes back through the same checks, or not at all", () => {

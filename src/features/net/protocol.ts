@@ -8,7 +8,7 @@
 //
 // Every message is JSON with a type `t`. The server never takes a player id from a client: it adds the sender's own.
 import type { Action, Motion } from "../../contracts.ts";
-import { apply, BITES_TO_SPLIT, bitesToFell, LODGE, newState, SLOTS, type BuildChange, type BuildState } from "../build/rules.ts";
+import { apply, BITES_TO_SPLIT, bitesToFell, live, LODGE, newState, REGROW, SLOTS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
 export const MAX_PLAYERS = 16;
@@ -127,7 +127,8 @@ const point = (v: unknown) => list(v, 3) && num(v[0], -WORLD, WORLD) && num(v[1]
 const place = (v: unknown): v is Place => list(v, 8) && int(v[0], 0, MAX_THINGS - 1) && point(v.slice(1, 4))
   && v.slice(4).every((q) => num(q, -1.01, 1.01));
 
-/** Changes a message may hold: more than a whole world needs (MAX_TREES * 17 + SLOTS + LODGE + 1). */
+/** Changes a message may hold: more than a whole world needs (a tree grown back and felled again about 34, the
+ *  world's 13 trees about 500 with SLOTS + LODGE + 1). */
 export const MAX_CHANGES = 600;
 const EPOCH = /^[a-z0-9]{1,16}$/;
 const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks
@@ -141,7 +142,8 @@ export function parseChange(v: unknown): BuildChange | undefined {
   if (c.type === "place") return int(c.slot, 0, SLOTS + LODGE - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
   if (!int(tree, 0, MAX_TREES - 1)) return;
   switch (c.type) {
-    case "bite": case "split": return { type: c.type, tree };
+    case "bite": case "grow": return { type: c.type, tree };
+    case "split": return num(c.at, 0, 1e14) ? { type: "split", tree, at: c.at } : { type: "split", tree };
     case "fell": return num(c.direction, -10, 10) ? { type: "fell", tree, direction: c.direction } : undefined;
     case "rest": {
       const at = c.at as number[], q = c.turn as number[];
@@ -212,36 +214,47 @@ export function parseClient(text: unknown): ClientMessage | undefined {
 export const MAX_BITES = bitesToFell(Infinity);
 
 /** The server's check of a change against its world: it must fit the world as it is (rules.ts apply: in order, not
- *  twice, a stick not used twice) and no tree takes more bites than any tree needs. Applies it when it passes, so
- *  the list of changes a world holds stays bounded (MAX_TREES * 17 + SLOTS + LODGE + 1). */
-export function admit(world: BuildState, change: BuildChange): boolean {
+ *  twice, a stick not used twice), no tree takes more bites than any tree needs, and a tree grows back only REGROW
+ *  s after its wood went by `now`, the server's clock (rules.ts, the rule). Applies it when it passes; a split it
+ *  takes is stamped with now (change.at, whatever the sender wrote), so the log and its file keep when. Bounded but
+ *  for trees growing back: each adds at most one tree's changes (about 17) every REGROW. */
+export function admit(world: BuildState, change: BuildChange, now = Date.now()): boolean {
+  const t = "tree" in change ? world.trees[change.tree] : undefined;
   if (change.type === "bite") {
-    const t = world.trees[change.tree];
-    if (t && (t.fell === undefined ? t.bites >= MAX_BITES : t.splitBites >= BITES_TO_SPLIT)) return false;
+    const a = live(t);
+    if (a && (a.fell === undefined ? a.bites >= MAX_BITES : a.splitBites >= BITES_TO_SPLIT)) return false;
   }
-  return apply(world, change);
+  if (change.type === "grow" && !(t?.split && now >= (t.gone ?? Infinity) + REGROW * 1000)) return false;
+  if (!apply(world, change, now)) return false;
+  if (change.type === "split") change.at = now;
+  return true;
 }
 
-/** A state as the changes that make it from nothing: replay(changesOf(s)) is s again. */
+/** A state as the changes that make it from nothing: replay(changesOf(s)) is s again (but for when wood went, which
+ *  each copy counts on its own clock). */
 export function changesOf(s: BuildState): BuildChange[] {
   const out: BuildChange[] = s.found ? [{ type: "find" }] : [];
-  for (const [key, t] of Object.entries(s.trees)) {
-    const tree = +key;
+  const felling = (tree: number, t: TreeState) => {
     for (let k = 0; k < Math.min(t.bites, MAX_BITES); k++) out.push({ type: "bite", tree }); // a broken save does not loop
-    if (t.fell === undefined) continue;
+    if (t.fell === undefined) return;
     out.push({ type: "fell", tree, direction: t.fell });
-    if (!t.rest) continue;
+    if (!t.rest) return;
     out.push({ type: "rest", tree, at: t.rest.at, turn: t.rest.turn });
     for (let k = 0; k < Math.min(t.splitBites, BITES_TO_SPLIT); k++) out.push({ type: "bite", tree });
-    if (t.split) out.push({ type: "split", tree });
+  };
+  for (const [key, t] of Object.entries(s.trees)) {
+    felling(+key, t);
+    if (!t.split || !t.rest) continue;
+    out.push({ type: "split", tree: +key });
+    if (t.grown) { out.push({ type: "grow", tree: +key }); felling(+key, t.grown); }
   }
   s.dam.forEach((stick, slot) => out.push({ type: "place", slot, stick }));
   return out;
 }
 
-export function replay(changes: BuildChange[]): BuildState {
+export function replay(changes: BuildChange[], now = Date.now()): BuildState {
   const s = newState();
-  for (const c of changes) apply(s, c);
+  for (const c of changes) apply(s, c, now);
   return s;
 }
 
@@ -252,7 +265,9 @@ export function restore(text: string): { epoch: string; world: BuildState; log: 
   let saved: { epoch?: unknown; build?: unknown };
   try { saved = JSON.parse(text); } catch { return; }
   if (!saved || typeof saved.epoch !== "string" || !EPOCH.test(saved.epoch) || !Array.isArray(saved.build)) return;
-  const world = newState(), log = saved.build.map(parseChange).filter((c): c is BuildChange => !!c && admit(world, c));
+  // A split keeps the time it was taken (none in a file from before trees grew back: from now), a grow is checked now.
+  const world = newState(), at = (c: BuildChange) => Math.min(Date.now(), c.type === "split" ? c.at ?? Infinity : Infinity);
+  const log = saved.build.map(parseChange).filter((c): c is BuildChange => !!c && admit(world, c, at(c)));
   return { epoch: saved.epoch, world, log, whole: log.length === saved.build.length };
 }
 

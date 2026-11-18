@@ -54,7 +54,12 @@ export const create: CreateFeature = game => {
     if (!touch && !live) hud.button("pause","Pause",box(L+12,T+12,68,36),() => open("pause"));
     fps = hud.text("fps","",box(L+(touch ? 12 : 90),T+(touch ? (compact ? 86 : 140) : 12),80,36),13);
     mapSize = large ? Math.min(w-24-L-R,h-62-T-B,390) : compact ? 92 : 126;
-    const mapX = large ? L+(w-L-R-mapSize)/2 : w-R-mapSize-(touch ? 66 : 14), mapY = large ? T+(h-T-B-mapSize)/2 : T+14;
+    const goalW = compact ? Math.min(w/2-16,200) : 224;
+    // The live caption at the top centre (src/features/tour, same sizes): on a small screen the goals and the map go below it.
+    const captionSize = Math.max(18,Math.round(h*.03)), captionW = Math.min(w-24,captionSize*24);
+    const below = (left: number, right: number) => live && right > (w-captionW)/2 && left < (w+captionW)/2 ? Math.round(h*.025+captionSize*1.9)+8 : 0;
+    const mapX = large ? L+(w-L-R-mapSize)/2 : w-R-mapSize-(touch ? 66 : 14);
+    const mapY = large ? T+(h-T-B-mapSize)/2 : Math.max(T+14,below(mapX,w));
     const mapBox = box(mapX,mapY,mapSize,mapSize);
     const toggle = hud.button("map","Map",mapBox,toggleMap);
     toggle.element.className = large ? "map large" : "map";
@@ -70,12 +75,18 @@ export const create: CreateFeature = game => {
     const statusY = large ? T+14 : mapY+mapSize+7;
     skyPanel = hud.rect("weather-panel",box(statusX,statusY,compact ? 110 : 146,27));
     sky = hud.text("weather","",box(statusX,statusY,compact ? 110 : 146,27),13,"center");
-    const goalW = compact ? Math.min(w/2-16,200) : 224;
-    const goalY = T + (touch || live ? 14 : 56), goalH = compact ? 70 : 120;
-    goalPanel = hud.rect("goals-panel",box(L+12,goalY,goalW,goalH));
-    mission = hud.text("goals","",box(L+22,goalY+4,goalW-20,goalH-8),compact ? 12 : 14);
+    const goalY = Math.max(T + (touch || live ? 14 : 56), below(L+12,L+12+goalW));
+    goalPanel = hud.rect("goals-panel",box(L+12,goalY,goalW,1));
+    mission = hud.text("goals","",box(L+22,goalY+8,goalW-20,1),compact ? 12 : 14);
+    // The panel takes the height of its text, however many lines the goals wrap into; a touch screen's fps go below it.
+    mission.resizeToFit = true;
+    mission.onLinesReadyObservable.add(() => {
+      goalPanel.height = mission.heightInPixels+16+"px";
+      if (touch) fps.top = goalY+mission.heightInPixels+22+"px";
+    });
     // On a narrow touch screen the thumbs' controls and the chat (net/ui.ts) fill the bottom: prompt and hints above them.
-    const bottom = B + (touch ? (w < 640 ? 330 : 152) : 58), centerW = Math.min(w-24-L-R,560);
+    // On a small desktop window the centred hints would reach the chat row at the bottom left: they go above it.
+    const bottom = B + (touch ? (w < 640 ? 330 : 152) : compact ? 94 : 58), centerW = Math.min(w-24-L-R,560);
     prompt = hud.text("context","",box((w-centerW)/2,h-bottom-54,centerW,46),18,"center");
     hints = hud.text("input-hints","",box((w-centerW)/2,h-bottom,centerW,48),13,"center");
     note = hud.text("announcement","",box(L+12,Math.max(T+8,h*.25),w-24-L-R,54),20,"center");
@@ -267,7 +278,7 @@ export const create: CreateFeature = game => {
       let dam: MapView["dam"];
       if (b) {
         const {origin,across} = b.dam.frame, dx = -across.z*DAM.length/2, dz = across.x*DAM.length/2;
-        dam = {from:{x:origin.x-dx,z:origin.z-dz},to:{x:origin.x+dx,z:origin.z+dz},built:b.state.dam.length/SLOTS};
+        dam = {from:{x:origin.x-dx,z:origin.z-dz},to:{x:origin.x+dx,z:origin.z+dz},built:Math.min(1,b.state.dam.length/SLOTS)}; // the lodge's sticks come after the dam's in that list
       }
       map.paint({centre:large ? {x:0,z:0} : at, span:large ? 2*EXTENT : 26, beaver:at, facing:player.facing, yaw:player.camera.yaw,
         sticks:world.sticks.filter(s => s.body.isEnabled()).map(s => s.mesh.position), trees:world.trees?.filter((_,i) => b?.state.trees[i]?.fell===undefined).map(t => t.place),

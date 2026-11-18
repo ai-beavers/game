@@ -1,4 +1,4 @@
-// Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, swimming and work (bites,
+// Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the steps and splashes of
 // other players (src/features/net); and a quiet tune that composes itself.
@@ -91,6 +91,8 @@ export const create: CreateFeature = (game) => {
   });
   events.on("enterWater", ({ place, speed }) => play("splash", place, clamp(0.3 + speed / 5)));
   events.on("leaveWater", ({ place }) => play("shake", place, 1, "sfx", 0.2));
+  // A tail slap, this beaver's or another player's (src/features/net/remote.ts emits theirs).
+  events.on("tailSlap", ({ place, water }) => play(water ? "slap" : "thump", place));
   events.on("pickup", ({ place }) => play("pickup", place));
   events.on("drop", ({ place }) => play("drop", place));
 
