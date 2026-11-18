@@ -11,6 +11,8 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader.js";
 import "@babylonjs/loaders/glTF/2.0/Extensions/KHR_materials_specular.js";
+import "@babylonjs/loaders/glTF/2.0/Extensions/EXT_texture_webp.js"; // the textures of both glb files (tools/blender)
+import "@babylonjs/loaders/glTF/2.0/Extensions/KHR_mesh_quantization.js"; // their normals, uvs, weights as integers
 import { createCoat } from "./fur.ts";
 import beaverGlb from "../../assets/beaver.glb" with { type: "file" };
 import logoPng from "../../assets/logo.png" with { type: "file" };
