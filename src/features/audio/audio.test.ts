@@ -85,7 +85,7 @@ const BANDS: [low: number, high: number, names: string[]][] = [
   [-30, -22, ["stepGrass", "stepShore", "stepWater", "paddle"]], // under the ambience
   [-41, -22, ["owl", "deer", "cricket", "frog", "tick", "plip", "bird", "lap"]], // the world around, far off or many
 ];
-const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap"];
+const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap", "underwater"];
 const chrome = existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 
 test.skipIf(!chrome)("every one-shot sits in its loudness band, ends in time, has no DC and never clips", async () => {

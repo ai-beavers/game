@@ -2,7 +2,7 @@
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
 // that src/features/life shows, calling from where they are; the steps and splashes of other players
-// (src/features/net); and a quiet tune that composes itself.
+// (src/features/net); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
@@ -169,6 +169,9 @@ export const create: CreateFeature = (game) => {
         l.setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
       }
       if (live.paused) return;
+      // The camera under the pond's surface (as src/features/post/underwater.ts finds it): everything muffled, the
+      // pond humming; a tail slap on the surface comes down as a thump.
+      live.mix.under(here.y < world.waterLevel && world.heightAt(here.x, here.z) < world.waterLevel, now);
       const pond = water.nearest(here.x, here.z);
       shore.positionX.value = pond.x;
       shore.positionY.value = world.waterLevel;

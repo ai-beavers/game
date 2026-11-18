@@ -120,7 +120,7 @@ export function stepSchool(school: School, land: Land, threat: Threat, dt: numbe
     if (Math.hypot(f.vx, f.vz) > 0.02) f.heading += turnTo(f.heading, headingOf(f.vx, f.vz)) * Math.min(1, dt * 8);
     // Deeper when afraid; never through the floor, never out of the water.
     const floor = land.heightAt(f.x, f.z);
-    const want = land.water - lerp(0.16, 0.4, f.fear) - 0.05 * Math.sin(f.phase * 0.3);
+    const want = land.water - lerp(0.16, 0.4, f.fear) - 0.05 * Math.sin(f.phase * 0.3) - 0.45 * Math.max(0, land.water - floor - 1); // down into the deep basin
     f.y = clamp(lerp(f.y, want, Math.min(1, dt * 2)), floor + 0.08, land.water - 0.08);
     f.phase += dt * (6 + Math.hypot(f.vx, f.vz) * 30);
   }

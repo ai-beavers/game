@@ -106,8 +106,9 @@ export function buildWater({ scene, camera }: Stage) {
 
         // Into the water: the ground shows through where it is shallow, a deep green-blue where a look passes through much.
         float through = waterDepth / max(facing, .25);
-        float murk = min(.8, 1. - exp(-through * 1.5));
-        vec3 deep = mix(vec3(.10,.25,.22), vec3(.03,.11,.14), smoothstep(.2, 1., waterDepth)) * lit;
+        float abyss = smoothstep(1.2, 2.7, waterDepth); // the deep basin: no bed shows through, darker and bluer
+        float murk = min(mix(.8, .94, abyss), 1. - exp(-through * 1.5));
+        vec3 deep = mix(mix(vec3(.10,.25,.22), vec3(.03,.11,.14), smoothstep(.2, 1., waterDepth)), vec3(.012,.05,.085), abyss) * lit;
 
         float glint = pow(max(0., dot(mirrored, toLight)), mix(220., 45., max(rain, night))) * mix(1.6, 2.2, night); // the moon's path is wider and softer
         vec3 shine = lightColor * glint * shadow * step(0., toLight.y);

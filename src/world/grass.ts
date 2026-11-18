@@ -8,7 +8,7 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { Stage } from "../engine.ts";
 import { daylightOf } from "../light.ts";
 import { seeded } from "./noise.ts";
-import { groundColor, heightAt, RIM, SITE, pondRatio, slopeAt } from "./terrain.ts";
+import { BASIN, groundColor, heightAt, RIM, SITE, pondRatio, slopeAt, WATER_LEVEL } from "./terrain.ts";
 
 export const grassOf = (scene: Scene) => scene.metadata.wind as { value: number } | undefined;
 
@@ -37,7 +37,9 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
         float far = length(finalWorld[3].xyz - eye), reach = mix(9., 27., ground.w); // each blade stands up to its own distance, then shrinks away
         vec4 p = finalWorld * vec4(position * smoothstep(reach, reach - 3., far), 1.);
         float tip = position.y * 4., h = tip * 1.4;
-        p.x += tip * (0.02 + wind * 0.09) * sin(p.z * 1.7 + p.x + time * 2.);
+        float tall = length(finalWorld[1].xyz), weed = step(2., tall); // grass is at most 1.3 high, pondweed 4 and more
+        p.x += tip * mix(0.02 + wind * 0.09, 0.05 * tall, weed) * sin(p.z * 1.7 + p.x + time * mix(2., .9, weed));
+        p.z += weed * tip * 0.03 * tall * sin(p.x * 2.3 + time * .7);
         gl_Position = viewProjection * p;
         vec4 fromLight = lightMatrix * p;
         vec3 clip = fromLight.xyz / fromLight.w, uvz = clip * .5 + .5;
@@ -66,6 +68,19 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
     matrices.push(...Matrix.Compose(Vector3.One().scale(0.5 + random() * 0.8), Quaternion.RotationAxis(Vector3.Up(), random()*6.28),
       new Vector3(x, h-0.02, z)).asArray());
     grounds.push(...groundColor(x, z, h, slopeAt(x, z), colour).asArray(), random());
+  }
+  // Pondweed in the deep basin: the same blades, drawn with the meadow, tall and narrow, in tufts on the bed; the
+  // shader sways a tall blade more (below, the water sways it, not the wind; near enough).
+  const weed = new Color3(0.16, 0.3, 0.1);
+  for (let i = 0; i < 40; i++) {
+    const x = BASIN.x + (random() * 2 - 1) * BASIN.along, z = BASIN.z + (random() * 2 - 1) * BASIN.across * 1.4, h = heightAt(x, z);
+    if (h > WATER_LEVEL - 1.2) continue;
+    for (let k = 0; k < 7; k++) {
+      const tall = 4 + random() * 7; // 0.6 … 1.6 m
+      matrices.push(...Matrix.Compose(new Vector3(1.6, tall, 1.6), Quaternion.RotationAxis(Vector3.Up(), random() * 6.28),
+        new Vector3(x + (random() - 0.5) * 0.3, h - 0.05, z + (random() - 0.5) * 0.3)).asArray());
+      grounds.push(...weed.scale(0.7 + random() * 0.5).asArray(), 1);
+    }
   }
   mesh.thinInstanceSetBuffer("matrix", new Float32Array(matrices), 16, true);
   mesh.thinInstanceSetBuffer("ground", new Float32Array(grounds), 4, true);
