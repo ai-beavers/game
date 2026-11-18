@@ -8,7 +8,6 @@
 //   /?play&tour=live                                        real-time activities chosen from the current world
 //   bun run tour                                           the test without end, headless (tools/tour.ts)
 //   bun run tour --once [--station Name ...]               one round as a check: a line per station, exit 0 or 1
-//   ?play&touch&tour=fast&station=Touch controls           the touch station needs touch controls on the page
 //
 // It plays through the keyboard's own way in (player.keys.add): a Source that walks to a place, runs, jumps and
 // holds E, the same Input a person would give, so the real rules decide what happens. Each station ends with a
