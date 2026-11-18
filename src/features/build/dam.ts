@@ -5,13 +5,15 @@ import { instance, material } from "../../world/models.ts";
 // solid to walk on.
 //
 //   const dam = createDam(stage, world);
-//   dam.slot(i)                 where slot i is in the world (position, turn); dam.fit(mesh, i) puts a stick there
-//                               (slots from SLOTS on lie on the lodge, and rise with it)
+//   dam.slot(i)                 where slot i is in the world (position, turn, size); dam.fit(mesh, i) puts a stick there
+//                               (slots from SLOTS on lie on the lodge, and rise with it; from SLOTS + LODGE on they
+//                               are the food cache's, on the pond's bed at dam.cacheAt)
 //   dam.freeze(mesh)            draws a stick mesh (already fitted to its slot) as part of the dam or lodge
 //   dam.shape(placed)           mud and collider for this many sticks
 //   dam.frame                   the dam's own frame: origin on the ground, x across (towards the water), z along
 //   dam.lodge(grow)             the lodge in the pond, grow 0 … 1 (rising out of the water)
 //   dam.hint(i, time)           a glowing stick where slot i is, so the player sees where the next one goes; -1 hides it
+//                               (over the cache its beam reaches up out of the water, seen from the surface)
 import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -19,7 +21,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { World } from "../../contracts.ts";
 import { RAPIER, type Stage } from "../../engine.ts";
 import { fbm, seeded } from "../../world/noise.ts";
-import { DAM, damPlan, LODGE, moundHeight, crestHeight, profile, SLOTS } from "./rules.ts";
+import { CACHE_AT, cachePlan, DAM, damPlan, LODGE, moundHeight, crestHeight, profile, SLOTS, STICKS } from "./rules.ts";
 
 export function createDam(stage: Stage, world: World) {
   const { scene, physics } = stage, site = world.site!, pond = world.pond!;
@@ -32,15 +34,25 @@ export function createDam(stage: Stage, world: World) {
   const plan = damPlan();
 
   const group = new TransformNode("dam", scene);
-  const slot = (i: number) => {
+  /** Laid sticks are drawn a little thicker than carried ones, so 30 of them read as a dam and not as twigs. */
+  const LAID = new Vector3(2, 2, 1.05);
+  /** The cache's sticks are drawn longer, as branches, so the pile reads as a heap of them. */
+  const BRANCH = new Vector3(2, 2, 1.6);
+  const cache = cachePlan(), cacheAt = new Vector3(CACHE_AT.x, world.heightAt(CACHE_AT.x, CACHE_AT.z), CACHE_AT.z);
+  const slot = (i: number): { position: Vector3; quaternion: Quaternion; scaling: Vector3 } => {
+    if (i >= SLOTS + LODGE) { // in the food cache, on the bed
+      const c = cache[i - SLOTS - LODGE]!, at = cacheAt.add(new Vector3(c.x, 0, c.z));
+      at.y = (world.heightAt(at.x, at.z) + cacheAt.y) / 2 + c.y; // half into the slope it leans on: a heap, not a scatter
+      return { position: at, quaternion: Quaternion.RotationYawPitchRoll(c.yaw, -c.pitch, 0), scaling: BRANCH };
+    }
     if (i >= SLOTS) { // on the lodge, where it stands now
       const l = lodgeSlot(i - SLOTS), root = lodgeRoot();
-      return { position: l.position.add(root.position), quaternion: l.quaternion.clone() };
+      return { position: l.position.add(root.position), quaternion: l.quaternion.clone(), scaling: LAID };
     }
     const s = plan[i]!, at = toWorld(s.x, s.z);
     at.y = world.heightAt(at.x, at.z) + s.y;
     const q = turn.clone().multiply(Quaternion.RotationYawPitchRoll(s.yaw, -s.pitch, 0));
-    return { position: at, quaternion: q };
+    return { position: at, quaternion: q, scaling: LAID };
   };
   /** Keeps a stick where it is, as part of the dam; one fitted onto the lodge stays the lodge's, rising with it. */
   const freeze = (thing: TransformNode) => { if (!lodge || thing.parent !== lodge.root) thing.setParent(group); };
@@ -107,15 +119,13 @@ export function createDam(stage: Stage, world: World) {
     const collider = hull ? physics.createCollider(hull.setFriction(0.9)) : undefined;
     return { root, collider };
   }
-  /** Laid sticks are drawn a little thicker than carried ones, so 30 of them read as a dam and not as twigs. */
-  const LAID = new Vector3(2, 2, 1.05);
-  /** Puts a stick mesh at its slot, as thick as it is drawn in the dam. */
+  /** Puts a stick mesh at its slot, as thick as it is drawn there. */
   const fit = (mesh: TransformNode, i: number) => {
     const to = slot(i);
     mesh.position.copyFrom(to.position);
     mesh.rotationQuaternion = to.quaternion;
-    mesh.scaling.copyFrom(LAID);
-    if (i >= SLOTS) mesh.setParent(lodgeRoot()); // keeps where it is now, and rises with the lodge from here on
+    mesh.scaling.copyFrom(to.scaling);
+    if (i >= SLOTS && i < SLOTS + LODGE) mesh.setParent(lodgeRoot()); // keeps where it is now, and rises with the lodge from here on
   };
 
   // The hint: a stick of light where the next one goes, breathing, and a faint beam above it, so the place is seen
@@ -135,10 +145,14 @@ export function createDam(stage: Stage, world: World) {
   hintRoot.setEnabled(false);
   const ALONG_Z = Quaternion.RotationAxis(new Vector3(1, 0, 0), Math.PI / 2); // a cylinder stands on y; sticks lie along z
   const hint = (i: number, time: number) => {
-    hintRoot.setEnabled(i >= 0 && i < SLOTS + LODGE);
-    if (i < 0 || i >= SLOTS + LODGE) return;
+    hintRoot.setEnabled(i >= 0 && i < STICKS);
+    if (i < 0 || i >= STICKS) return;
     const to = slot(i), breath = 0.5 + 0.5 * Math.sin(time * 4);
     hintRoot.position.copyFrom(to.position).y += 0.06 + 0.04 * breath;
+    // On the bed the beam reaches 0.6 m out of the water, so the place shows from the surface.
+    const tall = Math.max(1, (world.waterLevel + 0.6 - hintRoot.position.y) / 1.6);
+    beam.scaling.y = tall;
+    beam.position.y = 0.8 * tall;
     to.quaternion.multiplyToRef(ALONG_Z, rod.rotationQuaternion!);
     glow.alpha = 0.45 + 0.45 * breath;
     haze.alpha = 0.3 + 0.2 * breath;
@@ -148,7 +162,6 @@ export function createDam(stage: Stage, world: World) {
     frame: { origin, turn, across },
     slot,
     fit,
-    laid: LAID,
     freeze,
     shape,
     /** Where the next stick goes, for facing it. */
@@ -161,6 +174,8 @@ export function createDam(stage: Stage, world: World) {
       lodge.collider?.setTranslation(lodge.root.position);
     },
     lodgeAt,
+    /** The middle of the food cache, on the bed. */
+    cacheAt,
     hint,
   };
 }
