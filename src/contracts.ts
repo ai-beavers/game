@@ -45,6 +45,8 @@ export interface Beaver {
   /** Move, turn or parent this. Feet on its y = 0, facing its +z. It throws and takes shadows by itself (its
    *  shape once, without the fur's many layers). */
   root: TransformNode;
+  /** Between the eyes, on the head bone: where the beaver sees from (the first-person view). */
+  eyes: TransformNode;
   /** The right hand; parent a carried thing to it. */
   hand: TransformNode;
   /** The left hand (the beaver's own left, its +x side). The lantern hangs below it; read where it is rather than

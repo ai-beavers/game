@@ -20,6 +20,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Node } from "@babylonjs/core/node.js";
 import type { CreateFeature } from "../../game.ts";
 import { daylightOf, LANTERN_REACH } from "../../light.ts";
+import { OWN_LAYER } from "../../player/camera.ts";
 import { smoothstep } from "../../world/noise.ts";
 import { makeBackpack } from "./backpack.ts";
 import { busy, newStow, stepStow } from "./stow.ts";
@@ -51,7 +52,7 @@ export const create: CreateFeature = ({ stage, beaver, player, settings, sky }) 
   frame.material = frameMat;
   frame.parent = glass;
   glass.rotationQuaternion = null;
-  makeBackpack(scene, beaver.chest);
+  const pack = makeBackpack(scene, beaver.chest);
   const stow = newStow(sky.dark), motion = player.motion;
   const paw = beaver.leftHand, chain: TransformNode[] = [];
   for (let n: Node | null = paw; n; n = n.parent) if (n instanceof TransformNode) chain.unshift(n);
@@ -64,7 +65,9 @@ export const create: CreateFeature = ({ stage, beaver, player, settings, sky }) 
     glass.rotation.y = Math.atan2(ahead.x, ahead.z);
     glass.computeWorldMatrix(true);
   };
+  // Worn by the player's own beaver: out of the first-person view's picture, the light shines on.
   for (const mesh of [glass, frame]) mesh.isPickable = false;
+  for (const mesh of [glass, frame, pack]) mesh.layerMask = OWN_LAYER;
   const light = new PointLight("lantern-light", Vector3.Zero(), scene);
   light.parent = glass;
   light.diffuse.copyFrom(WARM);

@@ -21,7 +21,7 @@ export const CONTROLS: Record<Device, Control[]> = {
     { caps: ["Q"], what: "Slap the tail" }, { caps: ["C"], what: "Hold to sit (dive, swimming)" },
     { caps: ["Y"], what: "Hold to crawl" },
     { caps: ["Drag"], what: "Look around" }, { caps: ["Wheel"], what: "Zoom" },
-    { caps: ["M"], what: "Map" }, { caps: ["Tab"], what: "Players", net: true },
+    { caps: ["V"], what: "First / third person" }, { caps: ["M"], what: "Map" }, { caps: ["Tab"], what: "Players", net: true },
     { caps: ["Enter"], what: "Chat", net: true }, { caps: ["P"], what: "Photo mode" }, { caps: ["Esc"], what: "Pause" },
   ],
   pad: [
