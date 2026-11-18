@@ -3,6 +3,7 @@
 //
 //   http://localhost:5180/?play&tour                       in a browser: watch it
 //   bun shot "http://localhost:5180/?play&tour" --wait 240000 --out shots/tour.png        headless, filmed, logged
+//   ?play&tour&station=Map                                 play only the named station (repeat station for prerequisites)
 //   ?tour=fast                                             the test: FAST times real time, long ways hopped over
 //   bun run tour                                           the test without end, headless (tools/tour.ts)
 //
@@ -38,7 +39,8 @@ interface BuildDebug {
 class Skip extends Error {}
 
 export const create: CreateFeature = (game) => {
-  const mode = new URLSearchParams(location.search).get("tour");
+  const params = new URLSearchParams(location.search);
+  const mode = params.get("tour");
   if (mode === null) return {};
   const { player, world, stage, events, beaver } = game, fast = mode === "fast";
   if (fast) stage.timeScale = FAST;
@@ -264,6 +266,14 @@ export const create: CreateFeature = (game) => {
     }],
   ];
 
+  // A feature run may request prerequisite stations followed by the new behavior.
+  const requested = params.getAll("station");
+  const itinerary = requested.length ? requested.map(name => {
+    const station = stations.find(([candidate]) => candidate === name);
+    if (!station) throw new Error("Unknown tour station: " + name);
+    return station;
+  }) : stations;
+
   // ---- on screen: where the tour is ----
   const label = document.createElement("div");
   label.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;"
@@ -284,9 +294,9 @@ export const create: CreateFeature = (game) => {
       tour.round++;
       player.teleport(world.spawn.x, world.heightAt(world.spawn.x, world.spawn.z), world.spawn.z);
       let ok = 0, failed = false;
-      for (const [n, [name, run]] of stations.entries()) {
+      for (const [n, [name, run]] of itinerary.entries()) {
         tour.station = name;
-        label.textContent = `Tour · round ${tour.round} · ${n + 1}/${stations.length} · ${name}`;
+        label.textContent = `Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
         const t0 = performance.now();
         errors.length = 0;
         let result: (typeof results)[number];
@@ -314,7 +324,7 @@ export const create: CreateFeature = (game) => {
         }
         await wait(PAUSE);
       }
-      console.log(`[tour] round ${tour.round}: ${ok}/${stations.length} ok`);
+      console.log(`[tour] round ${tour.round}: ${ok}/${itinerary.length} ok`);
       // Its own saved game: start it anew once there is nothing left to build with or into.
       const b = build();
       if (b && (b.state.dam.length >= SLOTS || world.trees!.every((_, i) => b.state.trees[i]?.fell !== undefined))) {
