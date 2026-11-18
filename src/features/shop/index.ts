@@ -24,9 +24,13 @@ const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.shop.tour
 export const SHOP = { x: -9.5, z: 8.5 };
 const FACING = Math.atan2(0 - SHOP.x, 2 - SHOP.z);
 const NEAR = 28; // m: within this the creatures move and the screens scroll
+// Cost per frame: the bulbs' and lamps' colours and the ball's turn (a few numbers); a canvas texture uploaded a few
+// times a second, the mirror ball's (at night) and each laptop screen's (near). settings.quality low uploads none.
 
 export const create: CreateFeature = async (game) => {
-  const { stage, world, player, beaver, events } = game;
+  const { stage, world, player, beaver, events, settings } = game;
+  let lively = true;
+  stage.scene.onDisposeObservable.add(settings.on(({ quality }) => { lively = quality !== "low"; }));
   const shop = buildShop(stage, world, { ...SHOP, facing: FACING });
   const crowd = workers(stage, shop.root);
   let state: ShopState = load(localStorage.getItem(KEY));
@@ -89,8 +93,8 @@ export const create: CreateFeature = async (game) => {
   return {
     update(dt) {
       const moving = stage.paused ? 0 : dt, feet = player.feet, inside = shop.inside(feet);
-      shop.update(moving, game.sky?.dark ?? 0, inside);
-      if (Math.hypot(feet.x - SHOP.x, feet.z - SHOP.z) < NEAR) { crowd.update(moving); keeper?.update(moving); }
+      shop.update(moving, game.sky?.dark ?? 0, inside, lively);
+      if (Math.hypot(feet.x - SHOP.x, feet.z - SHOP.z) < NEAR) { crowd.update(moving, lively); keeper?.update(moving); }
       if (hud.isOpen && !atCounter()) hud.close(); // walked away
       hud.update(dt);
     },

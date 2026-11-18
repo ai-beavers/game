@@ -38,6 +38,8 @@ export type RGB = [number, number, number];
 export interface Look { shirt: RGB; hat: RGB }
 /** The look every beaver has unless told otherwise. */
 export const DEFAULT_LOOK: Look = { shirt: [1, 1, 1], hat: [0.075, 0.062, 0.058] };
+/** The shirt's cream as printed, which the look's shirt colour tints: warm, to sit with the chestnut coat. */
+export const SHIRT_CREAM = "#f1e8d6";
 
 export interface Beaver {
   /** Move, turn or parent this. Feet on its y = 0, facing its +z. It throws and takes shadows by itself (its

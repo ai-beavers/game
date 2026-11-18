@@ -299,7 +299,8 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     local,
     /** Inside the walls. */
     inside: (p: { x: number; z: number }) => Math.hypot(p.x - spot.x, p.z - spot.z) < RADIUS + 0.1,
-    update(dt: number, dark: number, isInside: boolean) {
+    /** lively false (settings.quality low): the mirror ball's tiles are not redrawn, it only turns. */
+    update(dt: number, dark: number, isInside: boolean, lively: boolean) {
       time += dt;
       if (shown === isInside) { shown = !isInside; for (const n of roofParts) n.setEnabled(shown); }
       const night = Math.min(1, Math.max(0, (dark - 0.08) / 0.4));
@@ -315,7 +316,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
         ball.rotation.y = time * 0.6;
         beamRoot.rotation.y = spin += dt * (0.4 + 0.5 * night);
         beams.forEach((m, c) => { m.alpha = night * (0.07 + 0.03 * Math.sin(time * 2 + c)); });
-        if (night > 0 && Math.floor(time * 3) !== Math.floor((time - dt) * 3)) tiles.draw(Math.floor(time * 3));
+        if (lively && night > 0 && Math.floor(time * 3) !== Math.floor((time - dt) * 3)) tiles.draw(Math.floor(time * 3));
       }
     },
   };

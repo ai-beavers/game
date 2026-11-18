@@ -6,13 +6,14 @@
 // a gamepad (hud/nav.ts: A presses, B is Escape) and touch work as for every menu. The panel is a modal dialog: the
 // pause menu leaves it alone, Escape closes it; keys that walk still reach the game, so walking away closes it too.
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { SHIRT_CREAM, type RGB } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { box, GOLD, hudLayout, onViewport, Overlay, PANEL } from "../hud/overlay.ts";
-import { QUIET } from "../hud/style.ts";
+import { GLOW, PAPER, QUIET } from "../hud/style.ts";
 import { OUTFITS, type Outfit, type OutfitId, type ShopState } from "./rules.ts";
 
-const PRINT = new Color3(0.945, 0.91, 0.84); // the shirt's cream (src/beaver), which the Outfit's colour tints
-const swatch = (c: [number, number, number], base = Color3.White()) => new Color3(c[0] * base.r, c[1] * base.g, c[2] * base.b).toHexString();
+const PRINT = Color3.FromHexString(SHIRT_CREAM); // which the Outfit's colour tints
+const swatch = (c: RGB, base = Color3.White()) => new Color3(c[0] * base.r, c[1] * base.g, c[2] * base.b).toHexString();
 export const experienceText = (n: number) => `✦ ${n} Experience`;
 
 export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(id: OutfitId): void; close(): void }) {
@@ -48,8 +49,8 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
     panel.rect("shop-card", box(x, y, width, height));
     const title = panel.text("shop-title", "The Shopkeeper", box(left, y + 6, inner * 0.6, row), Math.min(24, row * 0.6, inner / 13));
     title.fontFamily = "Georgia, serif"; title.fontWeight = "bold"; title.textWrapping = false;
-    const xp = panel.text("shop-experience", experienceText(s.experience), box(left + inner * 0.5, y + 6, inner * 0.5, row), size);
-    xp.color = GOLD; xp.fontWeight = "600"; xp.textHorizontalAlignment = 1; // right
+    const shown = panel.text("shop-experience", experienceText(s.experience), box(left + inner * 0.5, y + 6, inner * 0.5, row), size);
+    shown.color = GOLD; shown.fontWeight = "600"; shown.textHorizontalAlignment = 1; // right
     panel.text("shop-line", "Outfits for your beaver, paid in Experience. Yours to keep.", box(left, y + row, inner, row * 0.8), Math.max(11, size - 2)).color = QUIET;
     let cy = y + row * 1.9;
     for (const o of OUTFITS) {
@@ -66,12 +67,12 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
     const sw = Math.round(r.h * 0.7), dim = dear ? 0.4 : 1;
     const shirt = panel.rect(`shop-${o.id}-shirt`, box(r.x, r.y + (r.h - sw) / 2, sw, sw), swatch(o.shirt, PRINT), 4);
     const hat = panel.rect(`shop-${o.id}-hat`, box(r.x + sw * 0.55, r.y + (r.h - sw) / 2 - 2, sw * 0.55, sw * 0.4), swatch(o.hat), 3);
-    hat.thickness = 1; hat.color = "#f6f2e7";
+    hat.thickness = 1; hat.color = PAPER;
     shirt.alpha = hat.alpha = dim;
     const name = panel.text(`shop-${o.id}-name`, o.name, box(r.x + sw + 10, r.y, r.w * 0.35, r.h), size);
     name.fontWeight = "600"; name.alpha = dim;
     const price = panel.text(`shop-${o.id}-price`, owned ? "Owned" : o.price ? `✦ ${o.price}` : "Free", box(r.x + sw + 10 + r.w * 0.33, r.y, r.w * 0.3, r.h), Math.max(11, size - 2));
-    price.color = owned ? QUIET : dear ? "#c98e8e" : GOLD; price.alpha = dear ? 0.7 : 1;
+    price.color = owned || dear ? QUIET : GOLD; price.alpha = dear ? 0.7 : 1;
     const bw = Math.min(118, r.w * 0.3), bx = r.x + r.w - bw;
     const label = wearing ? `Wearing ${o.name}` : owned ? `Wear ${o.name}` : `Buy ${o.name} for ${o.price} Experience`;
     const button = panel.button(`shop-${o.id}-button`, wearing ? "Wearing" : owned ? "Wear" : "Buy", box(bx, r.y + 2, bw, r.h - 4),
@@ -103,7 +104,7 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
       readout.show(hudShown());
       // A stick just built in: the readout lights up a moment, so the player sees what earned it.
       flash = Math.max(0, flash - dt * 1.5);
-      pill.back.background = flash > 0 ? "rgba(120,86,24,0.85)" : PANEL;
+      pill.back.background = flash > 0 ? GLOW : PANEL;
       pill.text.scaleX = pill.text.scaleY = 1 + 0.15 * flash;
     },
   };

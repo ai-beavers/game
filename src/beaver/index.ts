@@ -18,13 +18,13 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { createCoat } from "./fur.ts";
 import beaverGlb from "../../assets/beaver.glb" with { type: "file" };
 import logoPng from "../../assets/logo.png" with { type: "file" };
-import { BONES, DEFAULT_LOOK, type LoadBeaver, type Look, type RGB } from "../contracts.ts";
+import { BONES, DEFAULT_LOOK, SHIRT_CREAM, type LoadBeaver, type Look, type RGB } from "../contracts.ts";
 
 async function shirtTexture(scene: Scene) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1024;
   const paint = canvas.getContext("2d")!;
-  paint.fillStyle = "#f1e8d6"; // warm cream: sits with the chestnut coat, not glaring white
+  paint.fillStyle = SHIRT_CREAM; // not glaring white
   paint.fillRect(0, 0, 1024, 1024);
   paint.fillStyle = "rgba(0, 0, 0, 0.035)"; // the weave
   for (let y = 0; y < 1024; y += 4) paint.fillRect(0, y, 1024, 2);

@@ -9,6 +9,7 @@ import { hex as colorFromHex } from "../../world/color.ts";
 //
 // North up, fixed: up on the map is +z, the way the camera looks at the start, so right is -x.
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { GOLD } from "./style.ts";
 
 /** Half the width of the mapped square around the middle of the clearing, m, and metres per pixel. */
 export const EXTENT = 22;
@@ -138,7 +139,7 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
         const [x, y] = at(view.shop), r = Math.max(5 * unit, 2.9 * k);
         g.beginPath();
         g.arc(x, y, r, 0, Math.PI * 2);
-        g.fillStyle = "#5a2d78"; g.strokeStyle = "#f7ca77";
+        g.fillStyle = "#5a2d78"; g.strokeStyle = GOLD;
         g.fill(); g.stroke();
         g.beginPath();
         g.arc(x, y, Math.max(1.8 * unit, r * 0.3), 0, Math.PI * 2);

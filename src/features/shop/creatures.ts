@@ -201,13 +201,14 @@ export function workers(stage: Stage, parent: TransformNode) {
   });
   let time = 0;
   return {
-    update(dt: number) {
+    /** lively false (settings.quality low): the paws still type, the screens' code stands still. */
+    update(dt: number, lively: boolean) {
       time += dt;
       for (const c of crowd) {
         // Typing: the paws tap in turn, quick and small, with a pause now and then to think.
         const think = Math.sin(time * 0.5 + c.phase) > 0.75;
         c.paws.forEach((paw, s) => { paw.position.y = c.y + (think ? 0.02 : Math.max(0, Math.sin(time * 18 + c.phase + s * Math.PI)) * 0.025); });
-        if ((c.wait -= dt) <= 0) { c.wait = c.every; if (!think) c.screen.draw(); }
+        if ((c.wait -= dt) <= 0) { c.wait = c.every; if (!think && lively) c.screen.draw(); }
       }
     },
   };

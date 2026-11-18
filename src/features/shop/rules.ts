@@ -8,15 +8,17 @@
 //
 // The state is plain JSON, kept in localStorage beside the build feature's saved game.
 
+import { DEFAULT_LOOK, type RGB } from "../../contracts.ts";
+
 export type OutfitId = "classic" | "moss" | "sunset" | "disco";
 /** An Outfit: a matching shirt colour and hat colour, linear RGB 0 … 1, and its price in Experience. */
-export interface Outfit { id: OutfitId; name: string; price: number; shirt: [number, number, number]; hat: [number, number, number] }
+export interface Outfit { id: OutfitId; name: string; price: number; shirt: RGB; hat: RGB }
 
 /** The look every beaver has before it buys anything: free, always owned. Its colours are the beaver's own
- *  (src/beaver: the cream shirt as printed, the charcoal felt hat). */
+ *  (DEFAULT_LOOK: the cream shirt as printed, the charcoal felt hat). */
 export const DEFAULT: OutfitId = "classic";
 export const OUTFITS: readonly Outfit[] = [
-  { id: "classic", name: "Classic", price: 0, shirt: [1, 1, 1], hat: [0.075, 0.062, 0.058] },
+  { id: "classic", name: "Classic", price: 0, ...DEFAULT_LOOK },
   { id: "moss", name: "Moss", price: 10, shirt: [0.3, 0.55, 0.26], hat: [0.12, 0.26, 0.1] },
   { id: "sunset", name: "Sunset", price: 25, shirt: [1, 0.42, 0.12], hat: [0.5, 0.1, 0.06] },
   { id: "disco", name: "Disco", price: 50, shirt: [0.85, 0.2, 0.75], hat: [0.95, 0.68, 0.12] },

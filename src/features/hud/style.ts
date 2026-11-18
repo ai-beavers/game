@@ -16,6 +16,8 @@ export interface Inset { top: number; right: number; bottom: number; left: numbe
 export const PAPER = "#f6f2e7", INK = "#182825", GOLD = "#f7ca77", QUIET = "#bccbbb";
 /** Every HUD backing: panels, pills, toasts, the menu card, the name tags. */
 export const PANEL = "rgba(18,32,31,0.8)";
+/** A backing lit up a moment, for a number that just went up (the Experience). */
+export const GLOW = "rgba(120,86,24,0.85)";
 export const RADIUS = 10;
 /** The one shadow under HUD text, backed or not. */
 export const SHADOW = { color: "rgba(5,12,12,0.85)", blur: 4 };

@@ -31,7 +31,7 @@ export const shopping = (kit: Kit): Station[] => {
       if (OUTFITS.every((o) => shop.state.owned.includes(o.id))) shop.reset();
       const pick = OUTFITS.filter((o) => !shop.state.owned.includes(o.id)).sort((a, b) => a.price - b.price)[0]!;
       if (shop.state.experience < pick.price) shop.give(pick.price - shop.state.experience);
-      const had = shop.state.experience, wearing = shop.state.wearing, lookBefore = beaver.look;
+      const had = shop.state.experience, lookBefore = beaver.look;
 
       // Over land to the doorway (hopped over in the fast tour); live, a look at the sign on the way in.
       const door = shop.door(1.6);
@@ -63,7 +63,8 @@ export const shopping = (kit: Kit): Station[] => {
       button(`Wear ${classic.name}`)?.click();
       await until(() => same(beaver.look, { shirt: classic.shirt, hat: classic.hat }), 2, "Wear on the default look did not bring its colours back");
       expect(experience() === had - pick.price, "wearing the default look cost Experience");
-      expect(wearing === DEFAULT || shop.state.wearing === DEFAULT, "the default is not worn after choosing it");
+      expect(shop.state.wearing === DEFAULT && !!button(`Wearing ${classic.name}`), "the default is not worn after choosing it");
+      expect(!!button(`Wear ${pick.name}`), `${pick.name} is not kept to wear again after taking it off`);
       key("Escape");
       await until(() => !panel()?.open, 2, "Escape did not close the shop panel");
       expect(!kit.stage.paused, "Escape on the shop panel opened the pause menu as well");
