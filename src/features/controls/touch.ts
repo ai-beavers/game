@@ -6,7 +6,7 @@
 //   pad.show(visible);                        once per frame: hidden for the photo mode and the pause menu
 //
 // Touches on the canvas are taken here (camera.ts leaves them alone); mouse and pen still go to the camera.
-import { Overlay, box, onViewport } from "../hud/overlay.ts";
+import { Overlay, box, onViewport, safeArea } from "../hud/overlay.ts";
 import type { Game } from "../../game.ts";
 import type { Input, Source } from "../../player/input.ts";
 import { deadZone, stickSpeed } from "./pad.ts";
@@ -25,13 +25,18 @@ export function touchControls(game: Game, pause: () => void) {
     overlay.move(knob,box(x+kx-20,y+ky-20,40,40));
     base.alpha = stickId >= 0 ? 1 : 0.5;
   }
-  const rest = () => place(Math.max(70,canvas.clientWidth*0.14),canvas.clientHeight-Math.max(84,canvas.clientHeight*0.14));
+  let inset = safeArea();
+  // At rest the stick waits in the bottom left corner, inside the safe area and below the chat row (net/ui.ts).
+  const rest = () => place(inset.left+70,canvas.clientHeight-inset.bottom-56);
   const setRun = (on: boolean) => {
     running = on;
     run.element.setAttribute("aria-pressed",String(on));
     run.panel.background = on ? "#738756" : "#344b42";
   };
-  onViewport(game.stage, (w,h) => {
+  onViewport(game.stage, (width,height) => {
+    inset = safeArea();
+    // Buttons under the right thumb, clear of the notch, the rounded corners and the home bar.
+    const w = width-inset.right, h = height-inset.bottom;
     overlay.clear();
     held.jump = held.act = tapped.jump = tapped.act = false;
     base = overlay.rect("thumbstick",box(0,0,112,112),"rgba(20,42,35,.45)",56);
@@ -54,7 +59,7 @@ export function touchControls(game: Game, pause: () => void) {
     run = overlay.button("run","Run",box(w-71,h-149,54,54),() => setRun(!running));
     run.panel.cornerRadius = 27;
     setRun(false);
-    overlay.button("pause","Pause",box(w-59,10,50,44),pause);
+    overlay.button("pause","Pause",box(w-59,inset.top+10,50,44),pause);
   });
   // Looking: one finger turns, two pinch.
   const looks = new Map<number, { x: number; y: number }>();
@@ -106,7 +111,10 @@ export function touchControls(game: Game, pause: () => void) {
     rest();
   };
   // No page zoom by pinch or double tap on Safari, whatever the viewport says.
-  for (const type of ["gesturestart", "gesturechange", "dblclick"]) document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  // No menu on a long press either, except in a text field (paste).
+  for (const type of ["gesturestart", "gesturechange", "dblclick", "contextmenu"]) document.addEventListener(type, (e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }, { passive: false });
+  // The phone's keyboard pans the page to show the name or chat field; when it closes, back to the top.
+  visualViewport?.addEventListener("resize", () => { if (!(document.activeElement instanceof HTMLInputElement)) scrollTo(0, 0); });
 
   const source: Source & { show(on: boolean): void } = {
     read(into: Input): Input {

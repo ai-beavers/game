@@ -8,7 +8,7 @@ import type { Remote } from "../net/remote.ts";
 import { CONTROLS, DEVICE_NAMES, USE, type Device } from "./devices.ts";
 import { MapDisplay } from "./map-display.ts";
 import { EXTENT, type MapView } from "./map.ts";
-import { box, onViewport, Overlay } from "./overlay.ts";
+import { box, onViewport, Overlay, safeArea } from "./overlay.ts";
 import { skyLabel } from "./sky.ts";
 
 interface NetView { connected: boolean; me: number; host: number; remotes: Map<number, Remote> }
@@ -48,10 +48,11 @@ export const create: CreateFeature = game => {
     hud.dom.append(readers);
     const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
     const compact = w < 650 || h < 530;
-    if (!touch) hud.button("pause","Pause",box(12,12,68,36),() => open("pause"));
-    fps = hud.text("fps","",box(touch ? 12 : 90,touch ? (compact ? 86 : 140) : 12,80,36),13);
-    mapSize = large ? Math.min(w-24,h-62,390) : compact ? 92 : 126;
-    const mapX = large ? (w-mapSize)/2 : w-mapSize-(touch ? 66 : 14), mapY = large ? (h-mapSize)/2 : 14;
+    const {top: T, right: R, bottom: B, left: L} = safeArea(); // all 0 on a desktop
+    if (!touch) hud.button("pause","Pause",box(L+12,T+12,68,36),() => open("pause"));
+    fps = hud.text("fps","",box(L+(touch ? 12 : 90),T+(touch ? (compact ? 86 : 140) : 12),80,36),13);
+    mapSize = large ? Math.min(w-24-L-R,h-62-T-B,390) : compact ? 92 : 126;
+    const mapX = large ? L+(w-L-R-mapSize)/2 : w-R-mapSize-(touch ? 66 : 14), mapY = large ? T+(h-T-B-mapSize)/2 : T+14;
     const mapBox = box(mapX,mapY,mapSize,mapSize);
     const toggle = hud.button("map","Map",mapBox,toggleMap);
     toggle.element.className = large ? "map large" : "map";
@@ -63,19 +64,20 @@ export const create: CreateFeature = game => {
     toggle.element.onblur = () => { map.focused = false; map.markAsDirty(); };
     north = hud.text("map-north","N",box(mapX,mapY+3,mapSize,23),15,"center");
     north.fontWeight = "bold"; north.shadowBlur = 3; north.shadowColor = "black"; north.isVisible = large;
-    const statusX = w - (touch ? 66 : 14) - (compact ? 110 : 146);
-    const statusY = large ? 14 : mapY+mapSize+7;
+    const statusX = w - R - (touch ? 66 : 14) - (compact ? 110 : 146);
+    const statusY = large ? T+14 : mapY+mapSize+7;
     skyPanel = hud.rect("weather-panel",box(statusX,statusY,compact ? 110 : 146,27));
     sky = hud.text("weather","",box(statusX,statusY,compact ? 110 : 146,27),13,"center");
     const goalW = compact ? Math.min(w/2-16,200) : 224;
-    const goalY = touch ? 14 : 56, goalH = compact ? 70 : 120;
-    goalPanel = hud.rect("goals-panel",box(12,goalY,goalW,goalH));
-    mission = hud.text("goals","",box(22,goalY+4,goalW-20,goalH-8),compact ? 12 : 14);
-    const bottom = touch ? 152 : 58, centerW = Math.min(w-24,560);
+    const goalY = T + (touch ? 14 : 56), goalH = compact ? 70 : 120;
+    goalPanel = hud.rect("goals-panel",box(L+12,goalY,goalW,goalH));
+    mission = hud.text("goals","",box(L+22,goalY+4,goalW-20,goalH-8),compact ? 12 : 14);
+    // On a narrow touch screen the thumbs' controls and the chat (net/ui.ts) fill the bottom: prompt and hints above them.
+    const bottom = B + (touch ? (w < 640 ? 330 : 152) : 58), centerW = Math.min(w-24-L-R,560);
     prompt = hud.text("context","",box((w-centerW)/2,h-bottom-54,centerW,46),18,"center");
     hints = hud.text("input-hints","",box((w-centerW)/2,h-bottom,centerW,48),13,"center");
-    note = hud.text("announcement","",box(12,Math.max(8,h*.25),w-24,54),20,"center");
-    players = hud.text("players-list","",box(12,58,w-24,Math.max(50,h-128)),17,"center");
+    note = hud.text("announcement","",box(L+12,Math.max(T+8,h*.25),w-24-L-R,54),20,"center");
+    players = hud.text("players-list","",box(L+12,T+58,w-24-L-R,Math.max(50,h-128-T-B)),17,"center");
     for (const block of [prompt,hints,note,players]) {
       block.shadowBlur = 4; block.shadowColor = "#0b1814"; block.outlineWidth = 2; block.outlineColor = "#1c2824";
     }
@@ -114,10 +116,11 @@ export const create: CreateFeature = game => {
     if (!page) return;
     const oldFocus = document.activeElement instanceof HTMLElement && dialog.dom.contains(document.activeElement) ? document.activeElement.getAttribute("aria-label") : null;
     dialog.clear();
-    const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
-    const width = Math.min(w-20,470), rows = {start:7,pause:6,settings:10,controls:10,players:6}[page];
-    const row = Math.min(44, Math.max(21,(h-44)/(rows+1))), height = Math.min(h-12,(rows+1)*row+20);
-    const x = (w-width)/2, y = (h-height)/2, inset = width < 340 ? 12 : 22, left = x+inset, inner = width-inset*2;
+    const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight, {left: L, right: R} = safeArea();
+    const width = Math.min(w-20-L-R,470), rows = {start:7,pause:6,settings:10,controls:10,players:6}[page];
+    // Rows of 48 px buttons for fingers where there is room (44 px is the smallest comfortable target).
+    const row = Math.min(touch ? 52 : 44, Math.max(21,(h-44)/(rows+1))), height = Math.min(h-12,(rows+1)*row+20);
+    const x = L+(w-L-R-width)/2, y = (h-height)/2, inset = width < 340 ? 12 : 22, left = x+inset, inner = width-inset*2;
     dialog.rect("shade",box(0,0,w,h),"rgba(8,17,18,0.55)",0);
     dialog.rect("menu-card",box(x,y,width,height));
     const title = { start:"Beaver Dam", pause:"Paused", settings:"Settings", controls:"Controls", players:"Players" }[page];
@@ -130,7 +133,7 @@ export const create: CreateFeature = game => {
     const msg = (name: string, text: string) => dialog.text(name,text,nextRow(),Math.min(14,row*.52));
     const back = () => open("pause");
     if (page === "start") {
-      msg("intro","Gnaw trees, carry sticks and build a dam together.");
+      msg("intro",touch ? "Gnaw trees, carry sticks, build a dam. Left thumb walks, right thumb looks around." : "Gnaw trees, carry sticks and build a dam together.");
       msg("name-label","Your name");
       const input = dialog.field("hud-start-name", startName, nextRow(), "Your name", NAME_LENGTH);
       input.oninput = () => { startName = input.value; };
