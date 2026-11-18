@@ -21,20 +21,25 @@ import { hex } from "../../world/color.ts";
 import type { CreateFeature, Feature } from "../../game.ts";
 import { seeded } from "../../world/noise.ts";
 import { placeAll } from "../../world/place.ts";
-import { POND, RIM } from "../../world/terrain.ts";
+import { BASIN, CELL, POND, RIM, SIZE, heightAt } from "../../world/terrain.ts";
 import {
   circling, deerHours, makeBirds, makeDeer, makeDucks, makeFlyers, makeFrogs, makeOwl, makeSchool, owlHours, shoreSpots, startle, stepBirds,
   stepButterflies, stepDeer, stepDragonflies, stepDucks, stepFrogs, stepOwl, stepSchool, type Land, type Perch, type Splash, type Threat,
 } from "./brain.ts";
-import { animalMesh, birdShape, butterflyShape, deerShape, dragonflyShape, duckShape, fishShape, frogShape, owlShape } from "./shapes.ts";
+import { makeDeep, startleDeep, stepDeep, type Bed } from "./deep.ts";
+import {
+  animalMesh, bedShape, bigFishShape, birdShape, butterflyShape, deerShape, dragonflyShape, duckShape, fishShape, frogShape, minnowShape, owlShape, striderShape,
+} from "./shapes.ts";
 import { sunAt } from "../sky/clock.ts";
 import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 import type { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import type { DepthRenderer } from "@babylonjs/core/Rendering/depthRenderer.js";
 
 const COUNTS = {
-  low: { fish: 5, birds: 3, raptors: 1, butterflies: 3, dragonflies: 2, frogs: 3, ducks: 2, deer: 2 },
-  medium: { fish: 8, birds: 4, raptors: 1, butterflies: 5, dragonflies: 3, frogs: 4, ducks: 2, deer: 3 },
-  high: { fish: 12, birds: 6, raptors: 2, butterflies: 8, dragonflies: 5, frogs: 5, ducks: 2, deer: 4 },
+  low: { fish: 5, birds: 3, raptors: 1, butterflies: 3, dragonflies: 2, frogs: 3, ducks: 2, deer: 2, school: 14, carp: 1, crayfish: 1, mussels: 4, snails: 2, striders: 3 },
+  medium: { fish: 8, birds: 4, raptors: 1, butterflies: 5, dragonflies: 3, frogs: 4, ducks: 2, deer: 3, school: 22, carp: 1, crayfish: 2, mussels: 6, snails: 3, striders: 5 },
+  high: { fish: 12, birds: 6, raptors: 2, butterflies: 8, dragonflies: 5, frogs: 5, ducks: 2, deer: 4, school: 32, carp: 2, crayfish: 2, mussels: 8, snails: 4, striders: 8 },
 };
 const MAX = COUNTS.high, RINGS = 10;
 // Somewhat larger than life, so they read at play distance: a songbird of 22 cm (a smaller one hides in the grass),
@@ -43,10 +48,17 @@ const BIRD_SIZE = 1.3, RAPTOR_SIZE = 4, BUTTERFLY_SIZE = 1.5, DRAGONFLY_SIZE = 1
 // A roe deer a metre at the shoulder; an owl drawn large like the birds of prey, 1.3 m: both read on a stream at the
 // forest's edge, 20 m off.
 const DEER_SIZE = 1.35, OWL_SIZE = 3.4;
+// Down in the basin: a school of 11 cm fish, a pike of 75 cm, a carp of 50; the small things on the bed and the striders a little larger than
+// life, so they read on a stream.
+const MINNOW_SIZE = 1.3, PIKE_SIZE = 0.75, CARP_SIZE = 0.5, CRAYFISH_SIZE = 1.3, MUSSEL_SIZE = 1.2, SNAIL_SIZE = 1.4, STRIDER_SIZE = 1.8;
+const NEAR_POND = 10; // m from the pond's edge: closer than this, the pond's own animals are stepped and drawn
 
 export const create = ((game) => {
   const { stage, world, player, settings, events } = game, { scene } = stage;
   const land: Land = { heightAt: world.heightAt, get water() { return world.waterLevel; }, rim: RIM - 2.5, pond: { x: POND.x, z: POND.z, radius: POND.radius } };
+  // The basin's animals walk and lie on the ground as it is drawn (its triangles), not on the smooth heights: on the
+  // steep slope the two differ by centimetres, and a mussel would vanish into it.
+  const bedLand: Land = { heightAt: drawnHeight, get water() { return world.waterLevel; }, rim: land.rim, pond: land.pond };
   const layout = placeAll(), random = seeded(7);
   const reeds = layout.reed.map(({ x, z }) => ({ x, z }));
   // Logs, stumps and rocks stand out of the grass: where songbirds like to sit, and where they are seen.
@@ -63,6 +75,19 @@ export const create = ((game) => {
     ducks: animalMesh(scene, duckShape(), MAX.ducks),
     deer: animalMesh(scene, deerShape(), MAX.deer),
     owl: animalMesh(scene, owlShape(), 1),
+    minnows: animalMesh(scene, minnowShape(), MAX.school),
+    bigfish: animalMesh(scene, bigFishShape(), 1 + MAX.carp),
+    bed: animalMesh(scene, bedShape(), MAX.crayfish + MAX.mussels + MAX.snails),
+    striders: animalMesh(scene, striderShape(), MAX.striders),
+  };
+  // The deep basin as its animals know it: the sunken log's top along it, the rocks on its bed, the weed's tufts (the
+  // tallest blades of the meadow's batch, src/world/grass.ts).
+  const sunken = layout.sunkenLog[0];
+  const bed: Bed = {
+    basin: { x: BASIN.x, z: BASIN.z, r: BASIN.along },
+    log: sunken ? tops(scene, [-0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9].map((along) => ({ ...sunken, along })), land) : [],
+    rocks: layout.bedRock.map((r) => ({ x: r.x, z: r.z, r: 0.45 * r.scale })),
+    weed: weedTufts(scene),
   };
   // The trunks the deer walk round, and branches for the owl: at the top of the nearest far trees, so it sits against
   // the sky, on a branch of its own that sticks out of the crown towards the clearing.
@@ -100,6 +125,7 @@ export const create = ((game) => {
       ducks: makeDucks(land, n.ducks, random),
       deer: makeDeer(land, n.deer, random),
       owl: makeOwl(random),
+      deep: makeDeep(bedLand, bed, n, random),
     };
   }
   settings.on((values) => {
@@ -109,7 +135,7 @@ export const create = ((game) => {
 
   const splashes: Splash[] = [], ringAge: number[] = Array(RINGS).fill(1), ringAt: Splash[] = Array.from({ length: RINGS }, () => ({ x: 0, z: 0, size: 0 }));
   const threat: Threat = { x: 0, y: 0, z: 0, speed: 0, swimming: false };
-  let time = 0;
+  let time = 0, nearPond = false, onBed = false;
   // The calls to sound, newest last (src/features/audio takes them); a few at most, should no one take them.
   const heard: { name: "owl" | "deer"; x: number; y: number; z: number }[] = [], call = (name: "owl" | "deer", at: { x: number; y: number; z: number }) => {
     heard.push({ name, x: at.x, y: at.y, z: at.z });
@@ -134,7 +160,7 @@ export const create = ((game) => {
 
   // A tail slap, this beaver's or another player's: the alarm, heard across the pond, closer by on land.
   events.on("tailSlap", ({ place, water }) => {
-    const count = startle(animals, land, perches, place, water ? 9 : 4, random, splashes);
+    const count = startle(animals, land, perches, place, water ? 9 : 4, random, splashes) + (water ? startleDeep(animals.deep, bedLand, bed, place, 9, random) : 0);
     events.emit("startled", { place, count });
   });
 
@@ -145,6 +171,10 @@ export const create = ((game) => {
         const at = player.node.position, speed = Math.hypot(player.velocity.x, player.velocity.z);
         // Faster than any beaver runs: a teleport (the tour hops), not a charge.
         Object.assign(threat, { x: at.x, y: at.y, z: at.z, speed: speed > 5 ? 0 : speed, swimming: player.motion.swimming > 0.5 });
+        // The basin's animals only with a player near the pond; the small things on its bed only when someone looks
+        // at it from under the water.
+        nearPond = Math.hypot(at.x - POND.x, at.z - POND.z) < POND.radius + NEAR_POND;
+        onBed = nearPond && (player.diving || !!(scene.metadata.underwater as { on: boolean } | undefined)?.on);
         // Small steps, so a slow frame does not throw a fish out of the pond.
         for (let left = frame; left > 1e-4; left -= 1 / 30) {
           const dt = Math.min(left, 1 / 30);
@@ -156,6 +186,7 @@ export const create = ((game) => {
           stepFrogs(animals.frogs, land, shore, threat, dt, random, splashes);
           stepDucks(animals.ducks, land, threat, dt, random, splashes);
           stepLarger(dt);
+          if (nearPond) stepDeep(animals.deep, bedLand, bed, threat, dt, random, onBed);
           for (let i = 0; i < RINGS; i++) ringAge[i] = Math.min(1, ringAge[i]! + dt / (0.6 + ringAt[i]!.size * 1.6));
           while (splashes.length) {
             const oldest = ringAge.indexOf(Math.max(...ringAge));
@@ -227,11 +258,7 @@ export const create = ((game) => {
     meshes.deer.mesh.setEnabled(deer.length > 0);
     meshes.owl.mesh.setEnabled(owl.state !== "away");
     if (deer.length || owl.state !== "away") {
-      for (const animal of [meshes.deer, meshes.owl]) {
-        animal.material.setVector3("cameraPosition", camera.globalPosition);
-        if (sun) animal.material.setVector3("sunDirection", sun.direction).setColor3("sunColor", sun.diffuse.scale(sun.intensity * 0.45));
-        if (skylight) animal.material.setColor3("skyColor", skylight.diffuse.scale(skylight.intensity * 0.6)).setColor3("groundColor", skylight.groundColor.scale(skylight.intensity * 0.6));
-      }
+      for (const animal of [meshes.deer, meshes.owl]) light(animal);
       deer.forEach((d, i) => {
         // Level with the slope it stands on; nose up as it takes off in a bound.
         const ahead = 0.4 * DEER_SIZE, sx = Math.sin(d.heading) * ahead, sz = Math.cos(d.heading) * ahead;
@@ -248,6 +275,8 @@ export const create = ((game) => {
       meshes.owl.mesh.thinInstanceBufferUpdated("aMore");
     }
 
+    drawDeep();
+
     rings.forEach((ring, i) => {
       const at = ringAt[i]!, age = ringAge[i]!;
       ring.setEnabled(age < 1);
@@ -256,9 +285,74 @@ export const create = ((game) => {
       ring.visibility = 1 - age;
     });
   }
+  function light(animal: ReturnType<typeof animalMesh>) {
+    const camera = scene.activeCamera ?? stage.camera;
+    animal.material.setVector3("cameraPosition", camera.globalPosition).setFloat("waterLevel", land.water);
+    if (sun) animal.material.setVector3("sunDirection", sun.direction).setColor3("sunColor", sun.diffuse.scale(sun.intensity * 0.45));
+    if (skylight) animal.material.setColor3("skyColor", skylight.diffuse.scale(skylight.intensity * 0.6)).setColor3("groundColor", skylight.groundColor.scale(skylight.intensity * 0.6));
+  }
+
+  // Under water every animal goes into the depth map posed as it is drawn (shapes.ts: depth), so the water's fog lies
+  // on it by its own distance. The map is the under-water pass's (src/features/post), there once that feature runs.
+  let depthPass = -1;
+  // Above or under the surface goes by the camera that draws the picture, as it stands for it.
+  scene.onBeforeCameraRenderObservable.add((camera) => {
+    for (const animal of [meshes.minnows, meshes.bigfish]) animal.material.setVector3("cameraPosition", camera.globalPosition);
+  });
+  function drawDeep() {
+    if (depthPass < 0) {
+      const camera = stage.camera, map = (scene as unknown as { _depthRenderer?: Record<string, DepthRenderer> })._depthRenderer?.[camera.id]?.getDepthMap();
+      if (map) { depthPass = map.renderPassId; for (const animal of Object.values(meshes)) animal.mesh.setMaterialForRenderPass(depthPass, animal.depth); }
+    }
+    const { school, hunter, carp, crayfish, mussels, snails, striders } = animals.deep, water = land.water;
+    for (const animal of [meshes.minnows, meshes.bigfish, meshes.striders]) animal.mesh.setEnabled(nearPond);
+    meshes.bed.mesh.setEnabled(onBed);
+    if (!nearPond) return;
+    for (const animal of [meshes.minnows, meshes.bigfish, meshes.striders, meshes.bed]) light(animal);
+    // Rolled into the turn, so the flank catches the light.
+    school.fish.forEach((f, i) => put(meshes.minnows, i, f.x, f.y, f.z, f.heading, -f.pitch, Math.max(-0.7, Math.min(0.7, -f.turn * 0.25)), MINNOW_SIZE,
+      [f.phase, 0.004 + f.fear * 0.005, 0, 0]));
+    done(meshes.minnows, school.fish.length);
+    const still = hunter.state === "lurk" || hunter.state === "hide";
+    put(meshes.bigfish, 0, hunter.x, hunter.y, hunter.z, hunter.heading, -hunter.pitch, 0, PIKE_SIZE, [hunter.phase, 0.01 + Math.min(hunter.speed, 2) * 0.02, still ? 1 : 0.3, 0]);
+    meshes.bigfish.more.fill(0, 0, 4);
+    carp.forEach((g, i) => {
+      put(meshes.bigfish, i + 1, g.x, g.y, g.z, g.heading, g.pitch, 0, CARP_SIZE, [g.phase, 0.015 + g.speed * 0.05, g.state === "graze" ? 0.6 : 0.3, 0]);
+      meshes.bigfish.more.set([1, 0, 0, 0], (i + 1) * 4);
+    });
+    done(meshes.bigfish, 1 + carp.length);
+    meshes.bigfish.mesh.thinInstanceBufferUpdated("aMore");
+    striders.forEach((s, i) => put(meshes.striders, i, s.x, water + 0.002, s.z, s.heading, 0, 0, STRIDER_SIZE, [s.phase, s.stroke, 0, 0]));
+    done(meshes.striders, striders.length);
+    if (!onBed) return;
+    let k = 0;
+    const kind = (w: number) => meshes.bed.more.set([0, 0, 0, w], k++ * 4);
+    for (const c of crayfish) { put(meshes.bed, k, c.x, c.y, c.z, c.heading, 0, 0, CRAYFISH_SIZE, [c.phase, c.raise, c.walk, 0]); kind(0); }
+    for (const m of mussels) { put(meshes.bed, k, m.x, m.y - 0.012, m.z, m.heading, m.tilt, 0, MUSSEL_SIZE, [0, m.open, 0, 0]); kind(1); }
+    for (const s of snails) { put(meshes.bed, k, s.x, s.y, s.z, s.heading, 0, 0, SNAIL_SIZE, [s.phase, s.hide, 0, 0]); kind(2); }
+    done(meshes.bed, k);
+    meshes.bed.mesh.thinInstanceBufferUpdated("aMore");
+  }
   draw();
   return feature;
 }) satisfies CreateFeature;
+
+/** The ground's height as its mesh draws it (src/world/terrain.ts buildTerrain: a grid of CELL, two triangles a cell). */
+function drawnHeight(x: number, z: number) {
+  const fx = (x + SIZE / 2) / CELL, fz = (z + SIZE / 2) / CELL, i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+  const at = (a: number, b: number) => heightAt(-SIZE / 2 + (i + a) * CELL, -SIZE / 2 + (j + b) * CELL);
+  return u + v < 1 ? at(0, 0) + (at(1, 0) - at(0, 0)) * u + (at(0, 1) - at(0, 0)) * v : at(1, 1) + (at(0, 1) - at(1, 1)) * (1 - u) + (at(1, 0) - at(1, 1)) * (1 - v);
+}
+
+/** The tufts of pondweed: the meadow's blades that stand taller than any grass, one point per tuft. */
+function weedTufts(scene: Scene) {
+  const out: { x: number; z: number }[] = [];
+  for (const { m } of (scene.getMeshByName("grass") as Mesh | null)?.thinInstanceGetWorldMatrices() ?? []) {
+    const x = m[12]!, z = m[14]!;
+    if (Math.hypot(m[4]!, m[5]!, m[6]!) > 2 && out.every((w) => Math.hypot(w.x - x, w.z - z) > 0.4)) out.push({ x, z });
+  }
+  return out;
+}
 
 /** Where a bird can sit on things: the top of each, found by looking straight down at what is drawn there; `along`
  *  moves the point along a log. */
