@@ -72,6 +72,15 @@ describe("motion", () => {
     const m = { ...newMotion(), speed: 1.234, action: "gnaw" as const, carrying: true, grounded: true, swimming: 0.5 };
     expect(unpackMotion(packMotion(m), newMotion())).toEqual(m);
   });
+  test("a sitting or crawling beaver is seen low by others, and standing again after", () => {
+    const into = newMotion();
+    for (const low of ["sit", "crawl"] as const) {
+      const m = { ...newMotion(), grounded: true, low };
+      expect(unpackMotion(packMotion(m), into).low).toBe(low);
+      expect(parseClient(state({ m: packMotion(m) }))).toBeDefined();
+    }
+    expect(unpackMotion(packMotion(newMotion()), into).low).toBeUndefined();
+  });
 });
 
 describe("hostOf", () => {
@@ -289,6 +298,21 @@ describe("build changes", () => {
     expect(broken.log).toEqual(changes);
     expect(broken.whole).toBe(false);
     for (const bad of ["", "{\"epoch\":", "null", "[]", '{"epoch":"K!","build":[]}', '{"epoch":"k3","build":{}}', '{"build":[]}']) expect(restore(bad)).toBeUndefined();
+  });
+
+  test("the server takes a stick traded once, and never one both traded and built in", () => {
+    expect(parseChange({ type: "trade", stick: "t3:4", evil: 1 })).toEqual({ type: "trade", stick: "t3:4" });
+    for (const bad of [{ type: "trade" }, { type: "trade", stick: "<b>" }, { type: "trade", stick: 4 }]) expect(parseChange(bad)).toBeUndefined();
+    const world = newState();
+    expect(admit(world, { type: "trade", stick: "w5" })).toBe(true);
+    expect(admit(world, { type: "trade", stick: "w5" })).toBe(false); // the second of two at once
+    expect(admit(world, { type: "place", slot: 0, stick: "w5" })).toBe(false);
+    expect(admit(world, { type: "place", slot: 0, stick: "w6" })).toBe(true);
+    expect(admit(world, { type: "trade", stick: "w6" })).toBe(false);
+    // As changes and back, and through the server's file.
+    expect(replay(changesOf(world))).toEqual(replay([{ type: "trade", stick: "w5" }, { type: "place", slot: 0, stick: "w6" }]));
+    const back = restore(JSON.stringify({ epoch: "k3x9", build: changesOf(world) }))!;
+    expect([back.whole, back.world.traded]).toEqual([true, ["w5"]]);
   });
 
   test("sticks have the same id everywhere, inside the range a place may name", () => {

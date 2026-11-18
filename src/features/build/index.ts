@@ -9,6 +9,10 @@
 //
 //   import { create as build } from "./features/build/index.ts";     createGame(canvas, [build])
 //
+// A stick paid in at the trading post (src/features/trade) leaves the world through this feature too: buildOf(scene).trade
+// commits it as a "trade" change, and traded sticks stay out of the world as those in the dam do, until their tree
+// grows back.
+//
 // Everything that changes the world lives in one plain state object (rules.ts), changed only by named changes
 // through commit(): those are saved in localStorage ("beaver.build") and told to others as the event "buildChange"
 // (remote false); a change from another player comes back in the same event with remote true.
@@ -27,8 +31,10 @@ import type { CreateFeature } from "../../game.ts";
 import type { Offer } from "../../player/index.ts";
 import { waterOf } from "../../world/water.ts";
 import {
-  apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, DAM, goals, growth, live, load, LODGE, lodgeGrow, pondLevel, pondRise, REGROW, SLOTS, STICKS, woodFrom,
+  apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, type BuildState, DAM, goals, growth, live, load, LODGE, lodgeGrow, pondLevel, pondRise, REGROW, SLOTS, STICKS, used,
+  woodFrom,
 } from "./rules.ts";
+import type { Scene } from "@babylonjs/core/scene.js";
 import { fxOf } from "../fx/index.ts";
 import { createDam } from "./dam.ts";
 import { goalsPanel } from "./panel.ts";
@@ -40,11 +46,23 @@ const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.build.tou
 // the state, because physics moves it every step (no named change) and each player's copy rolls its own way.
 const LOOSE_KEY = `${KEY}.loose`;
 const KEEP_EVERY = 3; // s between keeping where the loose wood lies
-const BUILD_TIME = 1.3; // s for laying one stick; it leaves the hand half way
+/** s for laying one stick; it leaves the hand half way. The trade feature lays a stick on a pile in the same time. */
+export const BUILD_TIME = 1.3;
 const FLIGHT = 0.45; // s from the hand to its place
 const REACH = 0.6; // m from the beaver's body to the bark it can gnaw
 const GRACE = 5; // s past REGROW before this copy asks for a tree back: the server's count may have started later
 const SAPLING = 0.15; // of the full tree's size, when the sapling shows
+
+/** What the build feature lends other features (the trade feature): its world state, and a stick to take out of the
+ *  world as a "trade" change. */
+export interface BuildHandle {
+  readonly state: BuildState;
+  /** The stick, just handed over from the hand (Player.handOver), leaves the world for everyone: committed as a
+   *  "trade" change. Its mesh stays where it is, for the caller to move and keep. False: it could not be traded; it has
+   *  left the world all the same. */
+  trade(stick: Stick): boolean;
+}
+export const buildOf = (scene: Scene) => scene.metadata?.build as BuildHandle | undefined;
 
 export const create: CreateFeature = (game) => {
   const { world, stage, player, events } = game;
@@ -83,8 +101,11 @@ export const create: CreateFeature = (game) => {
     const m = measure(world.trees![i]!), flat = new Vector3(line.along.x, 0, line.along.z).normalize(), side = new Vector3(-flat.z, 0, flat.x);
     let logs = 0, sticks = 0;
     woodFrom(i, m.trunk, m.radius).forEach((piece, k) => {
-      const id = `t${i}:${k}`, old = byName.get(id);
-      if (piece.kind === "stick" && state.dam.includes(id)) return;
+      const id = `t${i}:${k}`;
+      if (piece.kind === "stick" && used(state, id)) return;
+      let old = byName.get(id);
+      // A stick traded away and back with its tree grown again (rules.ts "grow"): its old thing has left the world, a new one comes.
+      if (old && piece.kind === "stick" && !world.sticks.includes(old) && old !== player.carrying) old = undefined;
       const at = line.from.add(flat.scale(piece.along)).add(side.scale(piece.side));
       at.y = world.heightAt(at.x, at.z) + piece.thickness / 2 + 0.03;
       const turn = pose(flat, piece.turn);
@@ -100,6 +121,16 @@ export const create: CreateFeature = (game) => {
       if (piece.kind === "stick") sticks++; else logs++;
     });
     return { logs, sticks };
+  };
+
+  /** Takes the stick of this name out of the world for good (traded), its mesh with it; one in a hand leaves it. */
+  const tradeAway = (id: string) => {
+    const stick = byName.get(id);
+    if (!stick) return;
+    if (world.sticks.includes(stick)) removeLoose(stick);
+    if (stick === player.carrying) player.handOver();
+    names.delete(stick); // its body is gone: nothing to keep of it
+    stick.mesh.dispose();
   };
 
   /** A stick mesh for a name, taken out of the world (it is going into the dam). */
@@ -155,6 +186,8 @@ export const create: CreateFeature = (game) => {
       events.emit("treeSplits", { place, tree: c.tree, logs, sticks });
     } else if (c.type === "grow") {
       regrow(c.tree);
+    } else if (c.type === "trade") {
+      if (!handed) tradeAway(c.stick); // handed: the trade feature has the mesh
     } else if (c.type === "place") {
       const slot = state.dam.length - 1, mesh = handed ?? stickMesh(c.stick);
       if (handed) {
@@ -197,6 +230,7 @@ export const create: CreateFeature = (game) => {
       const g = t.split && t.grown; // grown back: standing (bites drawn by update()), or felled again
       if (g) { const back = regrow(i); if (g.fell !== undefined) lay(back, g.fell, g.rest); } // saplings: update()
     }
+    for (const id of state.traded) tradeAway(id); // the world's own sticks traded; a tree's were never laid out
     lodgeShown = lodgeGrow(state.dam.length);
     if (lodgeShown > 0) dam.lodge(lodgeShown); // first: the sticks on it are put where it stands
     state.dam.forEach((id, slot) => {
@@ -213,7 +247,7 @@ export const create: CreateFeature = (game) => {
   type Lying = Record<string, [number, number, number, number, number, number, number]>;
   const keepLying = () => {
     const lying: Lying = {};
-    for (const [thing, id] of names) if (!state.dam.includes(id) && thing !== player.carrying && thing.body.isEnabled()) {
+    for (const [thing, id] of names) if (!used(state, id) && thing !== player.carrying && thing.body.isEnabled()) {
       const t = thing.body.translation(), q = thing.body.rotation();
       lying[id] = [t.x, t.y, t.z, q.x, q.y, q.z, q.w];
     }
@@ -223,7 +257,7 @@ export const create: CreateFeature = (game) => {
     const lying = JSON.parse(localStorage.getItem(LOOSE_KEY) ?? "{}") as Lying;
     for (const [id, pose] of Object.entries(lying)) {
       const thing = byName.get(id), [x, y, z, qx, qy, qz, qw] = pose;
-      if (!thing || state.dam.includes(id) || pose.length !== 7 || !pose.every(Number.isFinite)) continue;
+      if (!thing || used(state, id) || pose.length !== 7 || !pose.every(Number.isFinite)) continue;
       thing.body.setTranslation({ x, y, z }, true);
       thing.body.setRotation({ x: qx, y: qy, z: qz, w: qw }, true);
       thing.mesh.position.set(x, y, z);
@@ -337,6 +371,19 @@ export const create: CreateFeature = (game) => {
     if (t?.rest) return Math.min(1, (t.splitBites + timer) / BITES_TO_SPLIT);
     return Math.min(1, ((t?.bites ?? 0) + timer) / bitesToFell(measure(world.trees![i]!).radius));
   };
+
+  // ---- for the trade feature ----------------------------------------------------------------------------------------
+  const handle: BuildHandle = {
+    get state() { return state; },
+    trade(stick) {
+      const id = names.get(stick);
+      if (world.sticks.includes(stick)) removeLoose(stick);
+      names.delete(stick);
+      if (!id || used(state, id)) return false; // out of the world all the same: the caller lets its mesh go
+      return commit({ type: "trade", stick: id }, false, stick.mesh);
+    },
+  };
+  stage.scene.metadata.build = handle;
 
   // ---- debug --------------------------------------------------------------------------------------------------------
   const standAt = (i: number) => {

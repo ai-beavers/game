@@ -41,17 +41,23 @@ export function stickId(name: string): number | undefined {
 
 export const ACTIONS: Action[] = ["none", "pickup", "drop", "gnaw", "build"];
 const BIG = 1e7; // s or m: more than any session reaches
-/** Field, lowest, highest; booleans travel as 0 / 1, the action as its index in ACTIONS. */
+/** How low the beaver is (Motion.low), as its index: 0 standing (left out), 1 sitting, 2 crawling. */
+export const LOWS = [undefined, "sit", "crawl"] as const;
+/** Field, lowest, highest; booleans travel as 0 / 1, the action as its index in ACTIONS, low as its index in LOWS. */
 const MOTION: [keyof Motion, number, number][] = [
   ["speed", 0, 30], ["distance", -BIG, BIG], ["turning", -100, 100], ["grounded", 0, 1], ["vertical", -100, 100],
   ["airTime", 0, BIG], ["sinceLanding", 0, BIG], ["landingSpeed", 0, 100], ["swimming", 0, 1],
   ["action", 0, ACTIONS.length - 1], ["actionProgress", 0, 1], ["carrying", 0, 1], ["anger", 0, 1], ["time", 0, BIG],
+  ["low", 0, LOWS.length - 1],
 ];
+
+const LOW_AT = MOTION.findIndex(([key]) => key === "low");
 
 export function packMotion(m: Motion): number[] {
   return MOTION.map(([key]) => {
     const v = m[key];
     if (key === "action") return ACTIONS.indexOf(v as Action);
+    if (key === "low") return LOWS.indexOf(v as Motion["low"]);
     if (typeof v === "boolean") return v ? 1 : 0;
     return Math.round((v as number) * 1000) / 1000;
   });
@@ -60,6 +66,7 @@ export function packMotion(m: Motion): number[] {
 export function unpackMotion(list: number[], into: Motion): Motion {
   MOTION.forEach(([key], i) => {
     const v = list[i]!;
+    if (key === "low") { const low = LOWS[Math.round(v)]; if (low) into.low = low; else delete into.low; return; }
     (into as unknown as Record<string, unknown>)[key] = key === "action" ? ACTIONS[v] : key === "grounded" || key === "carrying" ? v > 0.5 : v;
   });
   return into;
@@ -134,7 +141,7 @@ const place = (v: unknown): v is Place => list(v, 8) && int(v[0], 0, MAX_THINGS 
  *  world's 13 trees about 520 with the STICKS of dam, lodge and cache and the find). */
 export const MAX_CHANGES = 600;
 const EPOCH = /^[a-z0-9]{1,16}$/;
-const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks
+const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks (placed or traded)
 const turn = (v: unknown) => list(v, 4) && v.every((q) => num(q, -1.01, 1.01));
 
 /** One build change, checked and copied field by field; undefined when it is not one. */
@@ -142,6 +149,7 @@ export function parseChange(v: unknown): BuildChange | undefined {
   if (!v || typeof v !== "object") return;
   const c = v as Record<string, unknown>, tree = c.tree;
   if (c.type === "find") return { type: "find" };
+  if (c.type === "trade") return typeof c.stick === "string" && STICK.test(c.stick) ? { type: "trade", stick: c.stick } : undefined;
   if (c.type === "place") return int(c.slot, 0, STICKS - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
   if (!int(tree, 0, MAX_TREES - 1)) return;
   switch (c.type) {
@@ -188,7 +196,7 @@ export function parseClient(text: unknown): ClientMessage | undefined {
       const { p, f, c, u } = m, motion = m.m;
       if (!point(p) || !num(f, -1e4, 1e4) || !int(c, -1, MAX_THINGS - 1)) return;
       if (!list(motion, MOTION.length) || !MOTION.every(([, lo, hi], i) => num(motion[i], lo, hi))) return;
-      if (!int(motion[9], 0, ACTIONS.length - 1)) return;
+      if (!int(motion[9], 0, ACTIONS.length - 1) || !int(motion[LOW_AT], 0, LOWS.length - 1)) return;
       if (u !== undefined && !(list(u, 4) && int(u[0], 0, MAX_THINGS - 1) && num(u[1], -1, 1) && num(u[2], -1, 1) && num(u[3], 0, 5))) return;
       return { t: "state", p: p as [number, number, number], f, m: motion as number[], c, ...(u ? { u: u as [number, number, number, number] } : {}) };
     }
@@ -217,7 +225,7 @@ export function parseClient(text: unknown): ClientMessage | undefined {
 export const MAX_BITES = bitesToFell(Infinity);
 
 /** The server's check of a change against its world: it must fit the world as it is (rules.ts apply: in order, not
- *  twice, a stick not used twice), no tree takes more bites than any tree needs, and a tree grows back only REGROW
+ *  twice, a stick not used twice: neither built in twice, traded twice, nor both), no tree takes more bites than any tree needs, and a tree grows back only REGROW
  *  s after its wood went by `now`, the server's clock (rules.ts, the rule). Applies it when it passes; a split it
  *  takes is stamped with now (change.at, whatever the sender wrote), so the log and its file keep when. The log
  *  stays bounded as trees grow back because the server compacts it. */
@@ -252,6 +260,7 @@ export function changesOf(s: BuildState): BuildChange[] {
     if (t.grown) { out.push({ type: "grow", tree: +key }); felling(+key, t.grown); }
   }
   s.dam.forEach((stick, slot) => out.push({ type: "place", slot, stick }));
+  for (const stick of s.traded) out.push({ type: "trade", stick }); // after the grows that brought the others back
   return out;
 }
 

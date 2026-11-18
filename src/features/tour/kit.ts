@@ -36,7 +36,7 @@ export class Skip extends Error {}
 export function skip(why: string): never { throw new Skip(why); }
 const fmt = (v: Vector3) => `${v.x.toFixed(1)}, ${v.z.toFixed(1)}`;
 
-const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "damFinished", "tailSlap", "startled"] as const;
+const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "damFinished", "tailSlap", "startled", "goodTraded"] as const;
 export type EventName = (typeof NAMES)[number];
 
 /** The tour's helpers: everything a station needs besides the game's own modules. */
@@ -53,7 +53,7 @@ export interface Kit {
   /** The stations named in the address (?station=Name, repeated), in order; empty for the whole tour. */
   requested: string[];
   /** What the tour holds down, read once per physics step: where to walk (to; side: a step aside), run, the keys. */
-  want: { to: Vector3 | undefined; side: number; run: number; jump: boolean; act: boolean; slap: boolean; dive: boolean };
+  want: { to: Vector3 | undefined; side: number; run: number; jump: boolean; act: boolean; slap: boolean; dive: boolean; crawl: boolean };
   /** What the beaver works on, for the live picture: a tree, the dam, a deer. Write it as kit.subject. */
   subject: (() => { x: number; z: number }) | undefined;
   /** No wood left in the saved game (set by fetchStick): the round loop starts it anew. */
@@ -112,11 +112,11 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   const build = () => (window as { build?: BuildDebug }).build;
 
   // ---- what the tour wants, read once per physics step like any other device ----
-  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false, dive: false };
+  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false, dive: false, crawl: false };
   let subject: (() => { x: number; z: number }) | undefined; // what the beaver works on, for the live picture: a tree, the dam, a deer
   player.keys.add({
     read(into: Input) {
-      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap, dive: want.dive });
+      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap, dive: want.dive, crawl: want.crawl });
       if (!want.to) return into;
       const d = new Vector3(want.to.x - player.feet.x, 0, want.to.z - player.feet.z);
       if (d.lengthSquared() < 1e-4) return into;

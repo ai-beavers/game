@@ -24,6 +24,7 @@ interface BuildView {
 }
 const net = () => (window as { net?: NetView }).net;
 const build = () => (window as { build?: BuildView }).build;
+const shop = () => (window as { shop?: { place: { x: number; z: number } } }).shop;
 type Page = "start" | "pause" | "players" | "settings" | "controls";
 // The line under the goal at hand: what to do for it, with this device's button.
 const HOW: Record<Goal["id"], (p: { press: string; hold: string }) => string> = {
@@ -399,7 +400,7 @@ export const create: CreateFeature = game => {
       }
       map.paint({centre:large ? {x:0,z:0} : at, span:large ? 2*EXTENT : 26, beaver:at, facing:player.facing, yaw:player.camera.yaw,
         sticks:world.sticks.filter(s => s.body.isEnabled()).map(s => s.mesh.position), trees:world.trees?.filter((_,i) => b?.state.trees[i]?.fell===undefined).map(t => t.place),
-        dam, level:world.waterLevel, lodge:b && b.state.dam.length>=SLOTS ? b.dam.lodgeAt : undefined,
+        dam, level:world.waterLevel, lodge:b && b.state.dam.length>=SLOTS ? b.dam.lodgeAt : undefined, shop:shop()?.place,
         players:n ? [...n.remotes.values()].filter(r => r.node.isEnabled()).map(r => ({x:r.feet.x,z:r.feet.z,name:r.name})) : [] },mapSize);
     },
   };

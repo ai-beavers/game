@@ -1,5 +1,5 @@
 // Touch controls: a stick that appears under the left thumb, dragging on the right half turns the camera, two
-// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run, slap the tail, dive while held) plus small pause and
+// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run, slap the tail, dive while held: sit on land) plus small pause and
 // photo buttons at the top right.
 //
 //   const pad = touchControls(game, pause, photo);   builds the overlay and listens on the canvas; pause() opens the

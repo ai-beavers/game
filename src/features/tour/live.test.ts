@@ -59,10 +59,19 @@ test("the beaver says why it does what it does, by the hour, the weather and wha
   expect(reason("Sky watch", at({ hour: 9, weather: "rain" }))).toContain("Rain");
   expect(reason("Dam work", at({ carrying: true }))).toContain("stick");
   expect(reason("A new thing", at({}))).toBe("A new thing"); // no line of its own: its name
-  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat"];
+  expect(reason("Trading", at({ day: Date.parse("2026-12-20") }))).toBe("Wood to spare. Let's go shopping!");
+  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping"];
   for (const hour of [3, 9, 12.5, 19.5, 23]) for (const weather of ["fair", "rain", "fog"]) for (const activity of activities)
     for (const day of [undefined, Date.parse("2026-11-19")]) // one row of the caption, new or not
       expect(reason(activity, at({ hour, weather, day })).length).toBeLessThanOrEqual(40);
+});
+
+test("sitting and crawling: a reason of its own, new on the day it came, filmed from the side", () => {
+  expect(reason("Sit and crawl", at({})).length).toBeLessThan(40);
+  expect(reason("Sit and crawl", at({}))).toContain("sit");
+  expect(fresh("Sit and crawl", at({ day: Date.parse("2026-11-18") }))).toBe(true);
+  expect(fresh("Sit and crawl", at({ day: Date.parse("2026-11-25") }))).toBe(false);
+  expect(Math.abs(shotFor("Sit and crawl", false).side)).toBeGreaterThan(1); // not hidden behind its back
 });
 
 test("the beaver is curious about a new activity for a week, and says so", () => {
@@ -72,6 +81,7 @@ test("the beaver is curious about a new activity for a week, and says so", () =>
   expect(fresh("Wears a hat", at(day("2026-11-17")))).toBe(false); // a clock that is behind
   expect(fresh("Wears a hat", at({}))).toBe(false); // no date known
   expect(fresh("Dam work", at(day("2026-11-20")))).toBe(false);
+  expect(fresh("Trading", at(day("2026-11-24")))).toBe(true); // the trading post came 2026-11-18
   expect(weight("Wears a hat", at(day("2026-11-20")))).toBeGreaterThan(weight("Dam work", at(day("2026-11-20"))));
   expect(reason("Wears a hat", at(day("2026-11-20")))).toBe("New! Let me try: Wears a hat");
   const hat: Station = ["Wears a hat", play];

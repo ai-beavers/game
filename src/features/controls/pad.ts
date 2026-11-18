@@ -4,7 +4,7 @@
 //   const { x, y } = deadZone(axes[0], axes[1]);    radial dead zone, rescaled so a push just past it starts at 0
 //   padInput(gamepad, input);                       fills input from a standard-mapping gamepad
 //
-// Standard mapping: left stick moves, A jumps (rises under water), X acts, B held dives, RB slaps the tail, LB, a trigger or a click on the left
+// Standard mapping: left stick moves, A jumps (rises under water), X acts, B held sits (on land) or dives (swimming), RB slaps the tail, LB, a trigger or a click on the left
 // stick runs; the d-pad moves too.
 import type { Input } from "../../player/input.ts";
 
@@ -51,7 +51,7 @@ export function padInput(pad: PadLike, into: Input): Input {
   into.jump = down(pad, BUTTON.a);
   into.act = down(pad, BUTTON.x);
   into.slap = down(pad, BUTTON.rb);
-  into.dive = down(pad, BUTTON.b); // B, as crouch in most games
+  into.dive = down(pad, BUTTON.b); // B: sits on land, dives swimming (src/player)
   return into;
 }
 

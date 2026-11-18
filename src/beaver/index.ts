@@ -18,13 +18,13 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { createCoat } from "./fur.ts";
 import beaverGlb from "../../assets/beaver.glb" with { type: "file" };
 import logoPng from "../../assets/logo.png" with { type: "file" };
-import { BONES, type LoadBeaver } from "../contracts.ts";
+import { BONES, DEFAULT_LOOK, SHIRT_CREAM, type LoadBeaver, type Look, type RGB } from "../contracts.ts";
 
 async function shirtTexture(scene: Scene) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1024;
   const paint = canvas.getContext("2d")!;
-  paint.fillStyle = "#f1e8d6"; // warm cream: sits with the chestnut coat, not glaring white
+  paint.fillStyle = SHIRT_CREAM; // not glaring white
   paint.fillRect(0, 0, 1024, 1024);
   paint.fillStyle = "rgba(0, 0, 0, 0.035)"; // the weave
   for (let y = 0; y < 1024; y += 4) paint.fillRect(0, y, 1024, 2);
@@ -50,7 +50,7 @@ async function shirtTexture(scene: Scene) {
 // The felt hat: a short crown on a thin brim, a band round the crown's foot. One mesh with its colours in the
 // vertices: one draw call a beaver. In the head bone's space (y up the head and a little forward, z ahead): on top of
 // the head between the ears, tipped back a little and cocked to one side. The brim is narrower than the head.
-const FELT = new Color3(0.075, 0.062, 0.058), BAND = new Color3(0.8, 0.7, 0.52); // charcoal felt, a warm cream band to go with the shirt and the chestnut coat
+const FELT = Color3.FromArray(DEFAULT_LOOK.hat), BAND = new Color3(0.8, 0.7, 0.52); // charcoal felt, a warm cream band to go with the shirt and the chestnut coat
 const HAT_AT = new Vector3(0, 0.18, 0.005), HAT_TILT = new Vector3(-0.1, 0, 0.18);
 
 function makeHat(scene: Scene, head: TransformNode) {
@@ -79,7 +79,16 @@ function makeHat(scene: Scene, head: TransformNode) {
   hat.isPickable = false;
   hat.receiveShadows = true; // and so it throws them, as every part of the beaver does (src/light.ts)
   hat.onDisposeObservable.addOnce(() => felt.dispose());
-  return hat;
+  // The felt's vertices (not the band's), to colour them for an Outfit.
+  const colours = Float32Array.from(hat.getVerticesData(VertexBuffer.ColorKind)!);
+  hat.setVerticesData(VertexBuffer.ColorKind, colours, true); // updatable from here on
+  const isFelt = (i: number) => Math.abs(colours[i * 4]! - FELT.r) < 1e-3 && Math.abs(colours[i * 4 + 1]! - FELT.g) < 1e-3;
+  const feltAt = Array.from({ length: colours.length / 4 }, (_, i) => i).filter(isFelt);
+  const colourFelt = (c: RGB) => {
+    for (const i of feltAt) colours.set(c, i * 4);
+    hat.updateVerticesData(VertexBuffer.ColorKind, colours);
+  };
+  return { hat, colourFelt };
 }
 
 /** A node on the head bone between the middles of the eyes (meshes on the head bone): where the beaver sees from. */
@@ -109,7 +118,10 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   const shirtMat = asset.meshes.find(m => m.name === "shirt")!.material as PBRMaterial;
   shirtMat.albedoTexture = print;
   for (const part of asset.meshes) part.receiveShadows = true;
-  const hat = makeHat(scene, nodes.get("head")!);
+  const { hat, colourFelt } = makeHat(scene, nodes.get("head")!);
+  const printed = shirtMat.albedoColor.clone();
+  const copy = (l: Look): Look => ({ shirt: [...l.shirt], hat: [...l.hat] });
+  let look = copy(DEFAULT_LOOK);
   const eyes = between(scene, nodes.get("head")!, [nodes.get("eye_L")!, nodes.get("eye_R")!]);
   const bones = BONES.map(name => {
     const node = nodes.get(name);
@@ -146,6 +158,17 @@ export const loadBeaver: LoadBeaver = async (scene) => {
     set shirt(on) { shirt.setEnabled(on); fur.coat.dressed = on; },
     get hat() { return hat.isEnabled(false); },
     set hat(on) { hat.setEnabled(on); },
+    get look() { return copy(look); },
+    set look(next) {
+      look = copy(next);
+      shirtMat.albedoColor.set(printed.r * look.shirt[0], printed.g * look.shirt[1], printed.b * look.shirt[2]);
+      colourFelt(look.hat);
+    },
+    get coat(): RGB { return [calm.r, calm.g, calm.b]; },
+    set coat(c) {
+      calm.set(...c);
+      Color3.LerpToRef(calm, red, anger, material.albedoColor);
+    },
     pose(pose) {
       for (const { name, node, rotation, position, scale } of bones) {
         const p = pose[name];

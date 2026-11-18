@@ -1,6 +1,6 @@
 import { holdInHand, holdInView } from "./grip.ts";
-// Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming and diving, the tail
-// slap, the follow camera, and the Motion report the animator draws from.
+// Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming and diving, sitting
+// and crawling, the tail slap, the follow camera, and the Motion report the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
 //   beaver.root.parent = player.node;
@@ -16,7 +16,7 @@ import { RAPIER, type Stage } from "../engine.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { keyboard, newInput, type Keyboard } from "./input.ts";
-import { BREATH, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
+import { BREATH, CRAWL_SPEED, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
 export const HEIGHT = 1.0, RADIUS = 0.225;
@@ -72,10 +72,12 @@ export interface PlayerControls extends Player {
   offer(): Offer | undefined;
 }
 
-/** What the context key would do: pick up, drop, gnaw (a standing tree), split (gnaw a lying tree into wood), build. */
-export interface Offer { action: "pickup" | "drop" | "gnaw" | "build" | "split"; text: string }
+/** What the context key would do: pick up, drop, gnaw (a standing tree), split (gnaw a lying tree into wood), build,
+ *  trade (pay the stick at the trading post), use (talk to someone: the Shopkeeper, src/features/shop). */
+export interface Offer { action: "pickup" | "drop" | "gnaw" | "build" | "split" | "trade" | "use"; text: string }
 
-/** Lasting actions another part runs with the context key (src/features/build: gnaw, build). */
+/** Lasting actions another part runs with the context key (src/features/build: gnaw, build; src/features/trade: pay
+ *  a stick). Several parts share the key through firstOf (actors.ts). */
 export interface Actor {
   /** On a press of the context key that picks nothing up: an action to start here (instead of dropping what is
    *  carried), and which way to turn for it (radians, as facing), or undefined. */
@@ -228,12 +230,15 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // Where it wants to go, relative to the camera; it turns there and walks along its facing.
     forward.set(-Math.sin(camera.yaw), 0, -Math.cos(camera.yaw)); // camera to look point, on the ground
     desired.set(forward.x * input.move.y - forward.z * input.move.x, 0, forward.z * input.move.y + forward.x * input.move.x);
-    const wants = !busy && desired.lengthSquared() > 0.01;
-    const top = afloat ? SWIM_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
+    const moving = desired.lengthSquared() > 0.01, wants = !busy && moving;
+    // On land the dive key sits and Y crawls, while held (sitting the beaver does not move: moving gets it up).
+    const { low, slow } = stepLow(!!input.dive, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0 });
+    const top = afloat ? SWIM_SPEED : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
     const [accel, brake] = afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
     steering.facing = facing; steering.speed = speed;
     steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
     facing = steering.facing; speed = steering.speed;
+    if (low === "sit") speed = 0; // sitting, it does not slide on: it stops where it sat down
 
     // Up and down: jump, gravity, or floating at the surface.
     const level = waterLevel();
@@ -282,7 +287,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
 
     trackMotion(motion, dt, {
       moved: Math.hypot(moved.x, moved.z), vertical: (moved.y - stepped) / dt, // a step up is not a leap
-      turning: (facing - facingBefore) / dt, grounded, afloat, act, slap: slap.progress, diving,
+      turning: (facing - facingBefore) / dt, grounded, afloat, act, slap: slap.progress, diving, low,
     });
   };
 
