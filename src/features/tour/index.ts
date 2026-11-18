@@ -26,7 +26,7 @@ import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import { liveDirector, shotFor, type Station } from "./live.ts";
-import { LODGE, SLOTS } from "../build/rules.ts";
+import { LODGE, REGROW, SLOTS, SPROUT } from "../build/rules.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
@@ -189,6 +189,39 @@ export const create: CreateFeature = (game) => {
       try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }
       felled = -1;
     }, "Dam work"],
+    // The tree just gone into wood grows back, its clock wound on (build.age): a sapling, half grown, the tree; then
+    // it is gnawed down again and its wood, the same pieces, gathered where it lies.
+    ["Regrow a tree", async () => {
+      const b = needBuild() as BuildDebug & {
+        state: { trees: Record<number, { split?: boolean; grown?: { rest?: unknown } } | undefined> };
+        age(i: number, seconds: number): number | false; saplings: Map<number, unknown>; split(i: number): boolean;
+      };
+      const i = last.treeSplits?.tree, t = () => b.state.trees[i!];
+      if (i === undefined || !t()?.split || t()!.grown) return skip("no tree went into wood this round");
+      const tree = world.trees![i]!, toAge = (seconds: number) => b.age(i, Math.max(0, seconds - (b.age(i, 0) || 0)));
+      // A few steps back on the clearing's side, so the camera over the shoulder sees the stump.
+      const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize(), back = tree.place.add(out.scale(3)), facing = Math.atan2(-out.x, -out.z);
+      player.teleport(back.x, world.heightAt(back.x, back.z), back.z, facing);
+      player.camera.yaw = facing + Math.PI + 0.5;
+      for (const age of [SPROUT + 10, (SPROUT + REGROW) / 2]) {
+        toAge(age);
+        await wait(3);
+        expect(b.saplings.has(i), `no sapling on stump ${i} ${age} s after its wood went`);
+      }
+      toAge(REGROW + 10);
+      await until(() => !!t()?.grown, 3, `tree ${i} never grew back`);
+      await wait(3);
+      const stand = tree.place.add(out.scale(tree.radius + 0.35));
+      await reach("gnaw", (attempt) => attempt ? tree.place : stand);
+      const falls = after("treeFalls");
+      want.act = true;
+      try { await until(falls, 15, `gnawed tree ${i} grown back for 15 s, it still stands`); } finally { want.act = false; }
+      expect(last.treeFalls!.tree === i, `tree ${last.treeFalls!.tree} fell, not ${i}`);
+      await until(() => !!t()?.grown?.rest, 10, `tree ${i} never came to rest again`);
+      const splits = after("treeSplits");
+      b.split(i);
+      expect(splits() && last.treeSplits!.logs + last.treeSplits!.sticks > 0 && !t()?.grown, `tree ${i} grown back gave no wood`);
+    }],
     ["Carry a stick", async () => {
       const sticks = world.sticks.filter((s) => s.body.isEnabled() && s !== player.carrying);
       expect(sticks.length > 0, "no stick lies anywhere");
