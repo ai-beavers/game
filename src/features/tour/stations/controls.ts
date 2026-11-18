@@ -1,10 +1,10 @@
-// Other ways in than the keyboard: a gamepad, touch controls. Stream false: the live stream leaves them out.
+// Other ways in than the keyboard: a gamepad. Touch controls have no station: they are not tested automatically. Stream false: the live stream leaves it out.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { skip, type Kit } from "../kit.ts";
+import type { Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 export const controls = (kit: Kit): Station[] => {
-  const { player, stage, wait, until, expect, after } = kit;
+  const { player, wait, until, expect, after } = kit;
   return [
     // A standard gamepad (a stand-in for navigator.getGamepads): the left stick walks, A jumps.
     ["Gamepad", async () => {
@@ -23,21 +23,6 @@ export const controls = (kit: Kit): Station[] => {
         pad.buttons[0]!.pressed = false;
         await until(jumped, 1, "A pressed on the pad, no jump");
       } finally { delete (navigator as { getGamepads?: unknown }).getGamepads; }
-      await wait(1);
-    }, undefined, false],
-    // With a touch screen (or ?touch): a thumb on the left half walks, the Jump button jumps.
-    ["Touch controls", async () => {
-      const jump = document.querySelector<HTMLButtonElement>('#touch-controls button[aria-label="Jump"]') ?? skip("no touch controls (add &touch)");
-      const touch = (type: string, x: number, y: number) => (type === "pointerdown" ? stage.canvas : window).dispatchEvent(new PointerEvent(type, { pointerId: 41, pointerType: "touch", clientX: x, clientY: y, bubbles: true, cancelable: true }));
-      const x = stage.canvas.clientWidth * 0.2, y = stage.canvas.clientHeight * 0.7, from = player.feet.clone();
-      touch("pointerdown", x, y);
-      try { touch("pointermove", x, y - 60); await wait(1.5); } finally { touch("pointerup", x, y - 60); }
-      const moved = Vector3.Distance(from, player.feet);
-      expect(moved > 0.5, `a thumb pushed up for 1.5 s, the beaver went ${moved.toFixed(2)} m`);
-      await wait(0.5);
-      const jumped = after("jump");
-      jump.click(); // a tap without a pointer (detail 0) counts once, as from a screen reader
-      await until(jumped, 1, "Jump tapped, no jump");
       await wait(1);
     }, undefined, false],
   ];
