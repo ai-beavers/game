@@ -26,7 +26,7 @@ import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import { liveDirector, type Station } from "./live.ts";
-import { SLOTS } from "../build/rules.ts";
+import { LODGE, SLOTS } from "../build/rules.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
@@ -37,7 +37,8 @@ const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is 
 /** What the build feature puts on window for tools (src/features/build/index.ts); only the part the tour needs. */
 interface BuildDebug {
   state: { dam: string[]; trees: Record<number, { fell?: number; split?: boolean; rest?: unknown } | undefined> };
-  dam: { frame: { origin: Vector3; across: Vector3 } };
+  dam: { frame: { origin: Vector3; across: Vector3 }; lodgeAt: Vector3 };
+  fill(n: number): number;
   views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined }>;
   reset(): void;
 }
@@ -206,6 +207,23 @@ export const create: CreateFeature = (game) => {
       await tap("act");
       await until(placed, 3, "pressed E at the dam, no stick placed");
     }, "Dam work"],
+    // After the dam: swim the stick out to the lodge. Run alone (station=Carry a stick&station=Build the lodge) it
+    // finishes the tour's own dam first, so the lodge is there; in the whole tour it waits for a full dam.
+    ["Build the lodge", async () => {
+      const b = needBuild();
+      if (b.state.dam.length < SLOTS) {
+        if (!requested.includes("Build the lodge")) return skip("the dam is not finished yet");
+        b.fill(SLOTS);
+      }
+      if (b.state.dam.length >= SLOTS + LODGE) return skip("the lodge is finished");
+      if (!player.carrying) return skip("nothing in the hand to build with");
+      const { lodgeAt, frame } = b.dam, from = lodgeAt.subtract(frame.across.scale(1.7));
+      await reach("build", (attempt) => attempt ? lodgeAt : from);
+      const placed = after("stickPlaced"), n = b.state.dam.length;
+      await tap("act");
+      await until(placed, 3, "pressed E at the lodge, no stick placed");
+      expect(b.state.dam.length === n + 1, `the lodge holds ${b.state.dam.length - SLOTS} sticks, not ${n + 1 - SLOTS}`);
+    }],
     ["Swim", async () => {
       if (!pond) return skip("no pond");
       const wet = after("enterWater");

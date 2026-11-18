@@ -2,7 +2,7 @@
 // and the smoothing between updates.
 import { describe, expect, test } from "bun:test";
 import { newMotion } from "../../player/state.ts";
-import { newState, SLOTS, type BuildChange } from "../build/rules.ts";
+import { LODGE, newState, SLOTS, type BuildChange } from "../build/rules.ts";
 import {
   admit, bucket, changesOf, clean, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, packMotion, parseChange, parseClient,
   replay, sameWorld, stickId, unpackMotion, woodId,
@@ -134,7 +134,7 @@ describe("build changes", () => {
   test("leaves out what is unknown, out of range or malformed", () => {
     for (const bad of [{ type: "admin" }, { type: "bite" }, { type: "bite", tree: -1 }, { type: "bite", tree: 999 }, { type: "bite", tree: 1.5 },
       { type: "fell", tree: 1, direction: null }, { type: "fell", tree: 1, direction: 1e6 }, { ...rest, at: [1e9, 0, 0] }, { ...rest, turn: [0, 0, 2, 0] },
-      { ...rest, turn: [0, 0, 1] }, { type: "place", slot: SLOTS, stick: "w1" }, { type: "place", slot: 0, stick: "<b>" },
+      { ...rest, turn: [0, 0, 1] }, { type: "place", slot: SLOTS + LODGE, stick: "w1" }, { type: "place", slot: 0, stick: "<b>" },
       { type: "place", slot: 0, stick: "w1".repeat(20) }, { type: "place", slot: 0 }, null, 4, "find", ["bite", 1]]) {
       expect(parseChange(bad)).toBeUndefined();
     }
@@ -167,8 +167,9 @@ describe("build changes", () => {
     expect(admit(world, { type: "bite", tree: 1 })).toBe(false); // wood now
     expect(admit(world, { type: "place", slot: 0, stick: "w2" })).toBe(true);
     expect(admit(world, { type: "place", slot: 1, stick: "w2" })).toBe(false); // a stick only once
-    for (let k = 0; k < SLOTS + 5; k++) admit(world, { type: "place", slot: 0, stick: `x${k}` });
-    expect(world.dam.length).toBe(SLOTS);
+    for (let k = 0; k < SLOTS + LODGE + 5; k++) admit(world, { type: "place", slot: 0, stick: `x${k}` });
+    expect(world.dam.length).toBe(SLOTS + LODGE); // the dam, then the lodge, then no more
+    expect(parseChange({ type: "place", slot: SLOTS + LODGE - 1, stick: "w3" })).toEqual({ type: "place", slot: SLOTS + LODGE - 1, stick: "w3" });
   });
 
   test("a state is the changes that make it, and back", () => {

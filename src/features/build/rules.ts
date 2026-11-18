@@ -7,12 +7,16 @@
 //   apply(state, { type: "bite", tree: 4 });          true when it changed something; the only way to change state
 //   bitesToFell(radius) · woodFrom(tree, trunk) · damPlan() · moundHeight(placed) · goals(state) · pondRise(placed)
 //   pondLevel(full, placed): where the pond's surface stands with this many sticks in the dam
+//   lodgeGrow(placed): how far the lodge stands out of the pond (after the dam's SLOTS sticks come LODGE onto it)
 //
 // The state is plain JSON: it is kept in localStorage and the changes can be sent to other players as they are.
 import { seeded } from "../../world/noise.ts";
 
 /** Sticks in a finished dam. */
 export const SLOTS = 30;
+/** Sticks the beaver builds onto the lodge after the dam, swimming them out to it. They follow the dam's in
+ *  BuildState.dam (slots SLOTS … SLOTS + LODGE - 1), so whatever counts the sticks gone from the world counts them too. */
+export const LODGE = 10;
 /** Seconds of gnawing per bite. */
 export const BITE_TIME = 0.6;
 /** Bites that break a lying tree into wood. */
@@ -39,7 +43,7 @@ export interface BuildState {
   /** By index in World.trees; trees never touched are left out. */
   trees: Record<number, TreeState>;
   /** The sticks in the dam, slot by slot: their names ("w3" the world's fourth stick, "t2:1" the second stick of
-   *  tree 2's wood). */
+   *  tree 2's wood); after the first SLOTS, those on the lodge. */
   dam: string[];
   /** Has picked up a stick once. */
   found: boolean;
@@ -91,7 +95,7 @@ export function apply(s: BuildState, c: BuildChange): boolean {
       return true;
     }
     case "place":
-      if (s.dam.length >= SLOTS || s.dam.includes(c.stick)) return false;
+      if (s.dam.length >= SLOTS + LODGE || s.dam.includes(c.stick)) return false;
       s.dam.push(c.stick); // the next free slot, whatever slot the sender saw: two players placing at once both fit
       return true;
   }
@@ -187,17 +191,24 @@ export const pondRise = (placed: number) => POND_RISE * Math.min(1, placed / SLO
 /** Height of the pond's surface with this many sticks in the dam, given the world's (full) water level, m. */
 export const pondLevel = (full: number, placed: number) => full - POND_RISE + pondRise(placed);
 
+/** How far the lodge has risen out of the pond, 0 … 1, with this many sticks placed: not at all before the dam is
+ *  finished, then its roof just out of the water, and fully up with the last of the LODGE sticks on it. */
+export const lodgeGrow = (placed: number) => placed < SLOTS ? 0 : 0.4 + 0.6 * Math.min(1, (placed - SLOTS) / LODGE);
+
 // ---- goals -------------------------------------------------------------------------------------------------------
 
-export interface Goal { id: "stick" | "fell" | "wood" | "dam"; text: string; done: boolean }
+export interface Goal { id: "stick" | "fell" | "wood" | "dam" | "lodge"; text: string; done: boolean }
 
-/** The goals in the order they lead through the game, with what is done. */
+/** The goals in the order they lead through the game, with what is done. Once the dam holds, the first steps are
+ *  behind the player: the list is the dam and the lodge that follows it. */
 export function goals(s: BuildState): Goal[] {
   const trees = Object.values(s.trees);
+  const dam: Goal = { id: "dam", text: `Build the dam: ${Math.min(SLOTS, s.dam.length)} of ${SLOTS}`, done: s.dam.length >= SLOTS };
+  if (dam.done) return [dam, { id: "lodge", text: `Build up the lodge: ${s.dam.length - SLOTS} of ${LODGE}`, done: s.dam.length >= SLOTS + LODGE }];
   return [
     { id: "stick", text: "Find a stick and pick it up", done: s.found },
     { id: "fell", text: "Gnaw down a tree", done: trees.some((t) => t.fell !== undefined) },
     { id: "wood", text: "Gnaw the fallen tree into wood", done: trees.some((t) => t.split) },
-    { id: "dam", text: `Build the dam: ${s.dam.length} of ${SLOTS}`, done: s.dam.length >= SLOTS },
+    dam,
   ];
 }

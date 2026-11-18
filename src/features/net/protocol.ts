@@ -8,7 +8,7 @@
 //
 // Every message is JSON with a type `t`. The server never takes a player id from a client: it adds the sender's own.
 import type { Action, Motion } from "../../contracts.ts";
-import { apply, BITES_TO_SPLIT, bitesToFell, newState, SLOTS, type BuildChange, type BuildState } from "../build/rules.ts";
+import { apply, BITES_TO_SPLIT, bitesToFell, LODGE, newState, SLOTS, type BuildChange, type BuildState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
 export const MAX_PLAYERS = 16;
@@ -121,7 +121,7 @@ const point = (v: unknown) => list(v, 3) && num(v[0], -WORLD, WORLD) && num(v[1]
 const place = (v: unknown): v is Place => list(v, 8) && int(v[0], 0, MAX_THINGS - 1) && point(v.slice(1, 4))
   && v.slice(4).every((q) => num(q, -1.01, 1.01));
 
-/** Changes a message may hold: more than a whole world needs (MAX_TREES * 17 + SLOTS + 1). */
+/** Changes a message may hold: more than a whole world needs (MAX_TREES * 17 + SLOTS + LODGE + 1). */
 export const MAX_CHANGES = 600;
 const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks
 const turn = (v: unknown) => list(v, 4) && v.every((q) => num(q, -1.01, 1.01));
@@ -131,7 +131,7 @@ export function parseChange(v: unknown): BuildChange | undefined {
   if (!v || typeof v !== "object") return;
   const c = v as Record<string, unknown>, tree = c.tree;
   if (c.type === "find") return { type: "find" };
-  if (c.type === "place") return int(c.slot, 0, SLOTS - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
+  if (c.type === "place") return int(c.slot, 0, SLOTS + LODGE - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
   if (!int(tree, 0, MAX_TREES - 1)) return;
   switch (c.type) {
     case "bite": case "split": return { type: c.type, tree };
@@ -204,7 +204,7 @@ export const MAX_BITES = bitesToFell(Infinity);
 
 /** The server's check of a change against its world: it must fit the world as it is (rules.ts apply: in order, not
  *  twice, a stick not used twice) and no tree takes more bites than any tree needs. Applies it when it passes, so
- *  the list of changes a world holds stays bounded (MAX_TREES * 17 + SLOTS + 1). */
+ *  the list of changes a world holds stays bounded (MAX_TREES * 17 + SLOTS + LODGE + 1). */
 export function admit(world: BuildState, change: BuildChange): boolean {
   if (change.type === "bite") {
     const t = world.trees[change.tree];
