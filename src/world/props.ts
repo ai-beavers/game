@@ -8,7 +8,15 @@ import type { Props } from "../contracts.ts";
 import { seeded } from "./noise.ts";
 import { material } from "./models.ts";
 
+const given = new WeakMap<Scene, TransformNode[]>();
+/** src/props hands over the bushes of assets/props.glb; with stand-in props they are drawn here. */
+export const giveBushes = (scene: Scene, nodes: TransformNode[]) => given.set(scene, nodes);
+
 export function bushes(scene: Scene) {
+  return given.get(scene) ?? standInBushes(scene);
+}
+
+function standInBushes(scene: Scene) {
   const green = material(scene, "leaves", 0x526e34);
   green.backFaceCulling = false;
   return [9, 15, 22].map(seed => {
@@ -57,7 +65,7 @@ export function standInProps(scene: Scene): Props {
     return root;
   }
   const tree = cylinder("tree", 0.32, 4);
-  const crown = bushes(scene)[0]!;
+  const crown = standInBushes(scene)[0]!;
   crown.parent = tree;
   crown.setEnabled(true);
   crown.scaling.setAll(2);

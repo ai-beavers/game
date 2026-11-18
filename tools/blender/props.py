@@ -1,5 +1,5 @@
 # Builds the things that stand around in the beaver's world, in Blender from nothing, and exports them as one glb:
-# trees (alder, birch, willow), stumps (gnawed, sawn), logs, sticks, rocks, a crate and reeds.
+# trees (oak, birch, poplar), bushes, stumps (gnawed, sawn), logs, sticks, rocks, a crate and reeds.
 #
 #   blender -b --factory-startup -P props.py -- props.glb [--save props.blend]
 #
@@ -8,9 +8,10 @@
 # resting on the ground. src/props/index.ts loads the file; lab/props.html shows it.
 #
 # Every texture is drawn here with numpy and kept small; they are shared: bark, birch bark, end grain, wood grain,
-# stone, and one leaf atlas (sprays of alder, birch and willow twigs, a reed blade) with alpha. Vertex colours tint them per
-# model (bark tone, shade inside a crown, moss, fresh wood). Leaves and reeds carry their own normals (out of the
-# crown, up for reeds), so the cards shade like a volume and not like flat paper.
+# stone, and one leaf atlas (sprays of broad and birch leaves, a crown's skin, a reed blade) with alpha. Vertex colours
+# tint them per model (bark tone, shade in a crown's creases, moss, fresh wood); for leaves and reeds their alpha says
+# how freely each vertex flutters. Leaves and reeds carry their own normals (out of the crown, up for reeds), so they
+# shade like a volume and not like flat paper; src/world/foliage.ts lights and moves them.
 # Blender is z up here; the exporter turns it into glTF's y up.
 import bpy, bmesh, math, os, shutil, subprocess, sys, tempfile
 import numpy as np
@@ -75,7 +76,7 @@ def bark_texture():
     furrow, plates, fine = noise(1, 2.5, 26), noise(2, 9, 16), noise(3, 1.2, 2.5)
     breaks = ramp(1.2, 2.0, noise(4, 22, 1.5))
     height = np.clip(0.5 + 0.5 * np.tanh(1.6 * furrow + 0.5 * plates) - 0.35 * breaks, 0, 1) + 0.06 * fine
-    colour = mix((0.24, 0.19, 0.15), (0.58, 0.50, 0.43), np.clip(height, 0, 1)) * (1 + 0.08 * fine)[..., None]
+    colour = mix((0.27, 0.19, 0.13), (0.62, 0.50, 0.40), np.clip(height, 0, 1)) * (1 + 0.08 * fine)[..., None]
     lichen = ramp(1.5, 2.2, noise(5, 6, 6)) * ramp(0.4, 0.8, height)
     colour = mix(colour, (0.58, 0.60, 0.48), 0.35 * lichen)
     return save("bark", colour), save("bark_normal", normal_from(height, 7), False)
@@ -137,9 +138,10 @@ def stone_texture():
 
 
 def leaf_texture():
-    """Leaf atlas, 2 x 2 cells: alder, birch and willow, each a spray of leafy twigs from the bottom middle of its
-    cell; and one reed blade filling its cell from bottom to a point at the top. Where there is no
-    leaf, the colour is the cell's mean leaf colour, so mipmaps do not draw dark rims."""
+    """Leaf atlas, 2 x 2 cells: broad leaves and birch leaves, each a spray of leafy twigs from the bottom middle of
+    its cell; a crown's skin (leaves painted over each other in soft dabs, no holes); and one reed blade filling its
+    cell from bottom to a point at the top. Where there is no leaf, the colour is the cell's mean leaf colour, so
+    mipmaps do not draw dark rims. All of it a light, warm green: vertex colours tint it per tree and bush."""
     S, C = 1024, 512
     rgba = np.zeros((S, S, 4))
     y, x = (np.mgrid[0:C, 0:C] + 0.5) / C
@@ -200,15 +202,37 @@ def leaf_texture():
         cx, cy = cell % 2, cell // 2
         rgba[cy * C:(cy + 1) * C, cx * C:(cx + 1) * C] = layer
 
-    # alder: round, broadest beyond the middle, blunt tip; birch: small, triangular, pointed, toothed; willow: narrow.
-    spray(0, 4, 7, 0.16, 0.42, lambda t: np.sin(math.pi * t ** 1.3) ** 0.7, (0.27, 0.41, 0.12), 55)
-    spray(1, 5, 8, 0.11, 0.36, lambda t: np.sin(math.pi * t ** 0.6) ** 0.9, (0.42, 0.56, 0.16), 55, serrate=0.06)
-    spray(2, 5, 9, 0.19, 0.11, lambda t: np.sin(math.pi * t) ** 0.8, (0.44, 0.52, 0.26), 35)
+    def skin(cell, count, colour):
+        """The crown's skin: small leaves in soft dabs, overlapping until no ground shows, light on their upper half
+        (the side the sky lights), each drawn only in its own little square."""
+        layer = np.zeros((C, C, 4))
+        layer[..., :3], layer[..., 3] = np.asarray(colour) * 0.88, 1.0
+        for _ in range(count):
+            cx, cy, angle = rng.uniform(0, 1), rng.uniform(0, 1), rng.uniform(0, 2 * math.pi)
+            length, width = rng.uniform(0.05, 0.09), rng.uniform(0.5, 0.65)
+            box = int(length * C) + 2
+            x0, y0 = int(cx * C) - box // 2, int(cy * C) - box // 2
+            xs, ys = slice(max(0, x0), min(C, x0 + box)), slice(max(0, y0), min(C, y0 + box))
+            sx, sy = x[ys, xs] - cx, y[ys, xs] - cy
+            along = (sx * math.cos(angle) + sy * math.sin(angle)) / length + 0.5
+            across = (-sx * math.sin(angle) + sy * math.cos(angle)) / (length * width)
+            t = np.clip(along, 0, 1)
+            cover = np.clip((np.sin(math.pi * t) ** 0.8 * 0.5 - np.abs(across)) * length * width * C * 2 + 0.5, 0, 1) * (along > 0) * (along < 1)
+            lit = 0.88 + 0.24 * np.clip(sy / length + 0.5, 0, 1) - 0.08 * np.abs(across)
+            tone = np.asarray(colour) * rng.uniform(0.9, 1.1) * np.array((rng.uniform(0.95, 1.08), 1, rng.uniform(0.85, 1.0)))
+            patch = layer[ys, xs]
+            patch[..., :3] = patch[..., :3] * (1 - cover[..., None]) + tone * lit[..., None] * cover[..., None]
+        rgba[(cell // 2) * C:(cell // 2 + 1) * C, (cell % 2) * C:(cell % 2 + 1) * C] = layer
+
+    # broad: round, broadest beyond the middle, blunt tip; birch: small, triangular, pointed, toothed.
+    spray(0, 4, 7, 0.16, 0.46, lambda t: np.sin(math.pi * t ** 1.3) ** 0.7, (0.50, 0.66, 0.22), 55)
+    spray(1, 5, 8, 0.11, 0.36, lambda t: np.sin(math.pi * t ** 0.6) ** 0.9, (0.56, 0.68, 0.22), 55, serrate=0.06)
+    skin(2, 1500, (0.52, 0.68, 0.22))
     t = np.clip(y, 0, 1)
     half = 0.44 * (1 - t ** 3) ** 0.5
     cover = np.clip((half - np.abs(x - 0.5)) * C + 0.5, 0, 1) * (y < 0.995)
     veins = 0.92 + 0.08 * np.cos((x - 0.5) / 0.44 * 7 * math.pi)
-    blade = mix((0.30, 0.42, 0.13), (0.62, 0.56, 0.30), ramp(0.6, 1.0, t)) * veins[..., None]
+    blade = mix((0.40, 0.54, 0.16), (0.78, 0.70, 0.36), ramp(0.6, 1.0, t)) * veins[..., None]
     place(3, np.dstack((blade, cover)))
     return save("leaves", rgba)
 
@@ -219,7 +243,7 @@ end_img, end_nrm = end_grain_texture()
 wood_img, wood_nrm = wood_texture()
 stone_img, stone_nrm = stone_texture()
 leaf_img = leaf_texture()
-CELLS = {"alder": 0, "birch": 1, "willow": 2, "reed": 3}
+CELLS = {"broad": 0, "birch": 1, "skin": 2, "reed": 3}
 
 
 def cell_uv(cell, u, v):
@@ -264,9 +288,10 @@ class Mesh:
     def __init__(self):
         self.co, self.col, self.nrm, self.faces, self.uvs, self.mats = [], [], [], [], [], []
 
-    def vert(self, p, colour=(1, 1, 1), normal=None):
+    def vert(self, p, colour=(1, 1, 1), normal=None, alpha=1.0):
+        """alpha: for foliage, how freely the vertex flutters in the wind (src/world/foliage.ts)."""
         self.co.append(tuple(p))
-        self.col.append((*colour[:3], 1.0))
+        self.col.append((*colour[:3], alpha))
         self.nrm.append(tuple(normal) if normal is not None else (0, 0, 1))
         return len(self.co) - 1
 
@@ -396,136 +421,181 @@ def path(start, direction, length, steps, rng, wobble, pull):
     return pts
 
 
+# ---- crowns, bushes ------------------------------------------------------------------------------------------------
+# Foliage is a few soft masses: lumpy spheres that overlap, the parts buried in a neighbour left out. Their normals
+# lean out of the whole crown, so it shades as one rounded volume, each mass still round within it; vertex colours
+# darken the creases between masses and the underside. Leaf cards stand out of the masses' outside only, to break
+# the silhouette. One mesh, the leaves material: the skin's atlas cell has no holes.
+_SPHERE = {}
+
+
+def sphere(sub):
+    if sub not in _SPHERE:
+        bm = bmesh.new()
+        bmesh.ops.create_icosphere(bm, subdivisions=sub, radius=1.0)
+        _SPHERE[sub] = (np.array([tuple(v.co.normalized()) for v in bm.verts]), [[v.index for v in f.verts] for f in bm.faces])
+        bm.free()
+    return _SPHERE[sub]
+
+
+def foliage(m, masses, rng, tone, cell, cards, card, droop=0.0, lumpy=0.2, sub=2):
+    """masses: (centre, radii) each; tone: the leaves' tint; cards per square metre of outside, card size in m."""
+    dirs, faces = sphere(sub)
+    cs, rs = np.array([tuple(c) for c, _ in masses]), np.array([r for _, r in masses], float)
+    lo, hi = (cs - rs).min(0), (cs + rs).max(0)
+    mid, half = (lo + hi) / 2, (hi - lo) / 2
+    for i, (c, r) in enumerate(masses):
+        waves = rng.normal(size=(6, 3)) * np.array([[1.5], [2], [2.5], [3], [4], [5]])
+        phases, amps = rng.uniform(0, 6.3, 6), 1 / np.arange(1, 7) ** 0.7
+        wobble = (np.sin(dirs @ waves.T + phases) * amps).sum(1) / amps.sum() * 2
+        p = cs[i] + dirs * rs[i] * (1 + lumpy * wobble)[:, None]
+        s = dirs / rs[i]
+        s /= np.linalg.norm(s, axis=1, keepdims=True)
+        o = (p - mid) / half
+        o /= np.maximum(np.linalg.norm(o, axis=1, keepdims=True), 1e-6)
+        n = 0.55 * s + 0.45 * o + np.array((0, 0, 0.12))
+        n /= np.linalg.norm(n, axis=1, keepdims=True)
+        others = np.linalg.norm((p[:, None, :] - cs[None]) / rs[None], axis=2)
+        others[:, i] = np.inf
+        crease = others.min(1) - 1  # below 0: inside a neighbour
+        rel = (p[:, 2] - mid[2]) / half[2]
+        shade = (0.6 + 0.4 * ramp(-1, 0.7, rel)) * (0.7 + 0.3 * ramp(-0.05, 0.35, crease)) * rng.uniform(0.92, 1.08)
+        colour = np.asarray(tone) * shade[:, None]
+        index = {}
+
+        def at(k):
+            if k not in index:
+                index[k] = m.vert(Vector(p[k]), tuple(colour[k]), Vector(n[k]), 0.0)
+            return index[k]
+
+        for f in faces:
+            if all(crease[k] < -0.06 for k in f):
+                continue
+            axis = int(np.argmax(np.abs(s[f].sum(0))))
+            a, b = [k for k in range(3) if k != axis]
+            m.face([at(k) for k in f], tuple(cell_uv(CELLS["skin"], 0.5 + (p[k][a] - cs[i][a]) / 3.8, 0.5 + (p[k][b] - cs[i][b]) / 3.8) for k in f), LEAVES)
+        # cards on the outside: where no neighbour is near, more of them where the mass faces out of the crown
+        out = np.where(crease > 0.08)[0]
+        if not len(out):
+            continue
+        weight = np.clip((s[out] * o[out]).sum(1) + 0.5, 0.05, None)
+        area = 4 * math.pi * float(np.mean(rs[i])) ** 2 * len(out) / len(dirs)
+        count = min(len(out), max(2, round(cards * area)))
+        for k in rng.choice(out, count, replace=False, p=weight / weight.sum()):
+            size = card * rng.uniform(0.8, 1.2)
+            sv = Vector(s[k])
+            base = Vector(p[k]) - sv * size * 0.3
+            up = (sv * 0.8 + rand_unit(rng) * 0.45 + UP * (0.25 - droop)).normalized()
+            side = up.cross(rand_unit(rng))
+            side = (side if side.length > 0.1 else up.cross(Vector((1, 0, 0)))).normalized()
+            w = side * size * 0.5
+            c = tuple(colour[k] * 1.08)
+            quad = [(base - w, 0.25), (base + w, 0.25), (base + w + up * size, 1.0), (base - w + up * size, 1.0)]
+            idx = [m.vert(q, c, Vector(n[k]), flutter) for q, flutter in quad]
+            m.face(idx, (cell_uv(cell, 0, 0), cell_uv(cell, 1, 0), cell_uv(cell, 1, 1), cell_uv(cell, 0, 1)), LEAVES)
+
+
 # ---- trees -----------------------------------------------------------------------------------------------------
-# Per kind: height, trunk radius at the base, where the crown starts, leaders (a willow forks low), laterals and
-# their angle from the vertical (bottom, top) and reach in metres (bottom, top), how laterals bend (rise, droop),
-# twigs per lateral, leaf cards per metre of twig and their size, bark and its tone.
+# Three kinds, each clearly its own outline: a broad oak with a low dome of masses on three or four sweeping limbs;
+# a birch, white-barked and slender, with small airy masses along the upper trunk; a tall narrow poplar, a column of
+# stacked masses. Per kind: trunk radius at the foot, where it forks (oak) or ends (a leader through the crown),
+# root lobes, lean; bark and its tone; leaves: tint, card cell, cards per m², card size, how much the cards droop.
 KINDS = {
-    "alder": dict(seed=31, height=6.9, radius=0.15, crown=1.7, leaders=1, laterals=18, pitch=(68, 30), reach=(2.3, 0.8), rise=0.10, droop=0.10,
-                  twigs=10, twig=(0.5, 0.9), cards=20, card=0.8, bark=BARK, tone=(0.78, 0.76, 0.74), lean=0.25, roots=5, crown_round=0.4),
-    "birch": dict(seed=7, height=7.9, radius=0.13, crown=2.3, leaders=1, laterals=22, pitch=(60, 30), reach=(2.1, 0.7), rise=0.16, droop=0.32,
-                  twigs=9, twig=(0.45, 0.9), cards=20, card=0.7, bark=BIRCH, tone=(1.0, 1.0, 1.0), lean=0.55, roots=4, crown_round=0.6),
-    "willow": dict(seed=5, height=6.0, radius=0.2, crown=2.1, leaders=3, laterals=7, pitch=(70, 35), reach=(2.0, 0.9), rise=0.08, droop=0.30,
-                   twigs=9, twig=(0.5, 1.0), cards=18, card=0.85, bark=BARK, tone=(0.95, 0.85, 0.72), lean=0.2, roots=6, crown_round=0.8),
+    "oak": dict(seed=31, radius=0.165, top=2.3, fork=True, roots=6, lean=0.2, bark=BARK, tone=(0.9, 0.82, 0.74),
+                leaf=(0.95, 0.92, 0.58), cell="broad", cards=1.8, card=0.8, droop=0.05),
+    "birch": dict(seed=7, radius=0.13, top=7.6, fork=False, roots=4, lean=0.5, bark=BIRCH, tone=(1.0, 1.0, 1.0),
+                  leaf=(1.12, 1.06, 0.58), cell="birch", cards=2.4, card=0.7, droop=0.4),
+    "poplar": dict(seed=5, radius=0.155, top=9.0, fork=False, roots=5, lean=0.15, bark=BARK, tone=(0.82, 0.78, 0.72),
+                   leaf=(0.74, 0.88, 0.6), cell="broad", cards=1.6, card=0.7, droop=0.0),
 }
+
+
+def crown_masses(kind, rng):
+    """Where a kind's masses sit: (centre, radii), metres, the trunk's foot at the origin."""
+    a0, out = rng.uniform(0, 6.3), []
+    if kind == "oak":
+        out.append((Vector((0, 0, 5.6)), (1.7, 1.6, 1.25)))
+        for k in range(5):
+            a, d, r = a0 + k * 2 * math.pi / 5 + rng.uniform(-0.3, 0.3), 1.9 * rng.uniform(0.9, 1.12), rng.uniform(1.25, 1.6)
+            out.append((Vector((math.cos(a) * d, math.sin(a) * d, 4.6 + rng.uniform(-0.35, 0.4))), (r, r * 0.95, r * 0.78)))
+        for k in range(2):
+            a, r = a0 + math.pi / 5 + k * 2.6 + rng.uniform(-0.3, 0.3), rng.uniform(0.95, 1.15)
+            out.append((Vector((math.cos(a) * 2.6, math.sin(a) * 2.6, 3.5)), (r * 1.1, r, r * 0.7)))
+    elif kind == "birch":
+        for k in range(7):
+            a, d, r = a0 + k * 2.4, 0.55 + 0.25 * rng.uniform(-1, 1), (0.95 - 0.045 * k) * rng.uniform(0.8, 1.15)
+            out.append((Vector((math.cos(a) * d, math.sin(a) * d, 3.7 + k * 0.6)), (r, r * 0.9, r * 1.15)))
+        out.append((Vector((0.1, 0, 7.9)), (0.62, 0.6, 0.75)))
+    else:
+        for k in range(6):
+            a, d, r = a0 + k * 2.2, 0.32 * rng.uniform(0.5, 1.2), 1.15 * (1 - 0.075 * k)
+            out.append((Vector((math.cos(a) * d, math.sin(a) * d, 2.9 + k * 1.12)), (r * 0.95, r * 0.9, r * 1.35)))
+        out.append((Vector((0, 0.05, 9.5)), (0.5, 0.5, 0.75)))
+    return out
 
 
 def tree(name, kind):
     P, node = KINDS[kind], variant(name)
     rng = np.random.default_rng(P["seed"])
-    wood, cards = Mesh(), []  # cards: (base, up, side, size), drawn once the crown's extent is known
-    bark, tone, H = P["bark"], P["tone"], P["height"]
-    birch = kind == "birch"
+    wood, leaves = Mesh(), Mesh()
+    bark, tone, birch = P["bark"], P["tone"], kind == "birch"
+    masses = crown_masses(kind, rng)
 
     def bark_colour(level):
         def colour(i, a, q):
-            if birch:  # white bark, dark and rough at the foot; dark twigs
-                c = lerp((0.30, 0.28, 0.26), (1, 1, 1), smooth(0.15, 1.3, q.z)) if level == 0 else ((0.75, 0.72, 0.70) if level == 1 else (0.32, 0.25, 0.22))
+            if birch:  # white bark, dark and rough at the foot; darker limbs
+                c = lerp((0.30, 0.28, 0.26), (1, 1, 1), smooth(0.15, 1.3, q.z)) if level == 0 else (0.62, 0.58, 0.56)
             else:
-                c = mul(tone, 0.9 if level == 0 else 0.75)
+                c = mul(tone, 0.95 if level == 0 else 0.82)
             return mul(c, 1 - 0.25 * (1 - smooth(-0.1, 0.5, q.z)))  # the foot of the trunk sits in shade
         return colour
 
-    def twig(start, direction, length):
-        pts = path(start, direction, length, 3, rng, 0.15, lambda t: UP * (0.12 - P["droop"] * t) * 0.6)
-        tube(wood, pts, [0.009 - 0.006 * k / 3 for k in range(4)], 4, bark, bark_colour(2))
-        count = max(2, round(P["cards"] * length))
-        for k in range(count):
-            t = 0.25 + 0.75 * k / max(1, count - 1)
-            at = pts[0].lerp(pts[-1], t) + rand_unit(rng) * 0.06
-            leaf_card(at, (pts[-1] - pts[0]).normalized())
-
-    def leaf_card(at, along):
-        up = (along + rand_unit(rng) * 0.7 + UP * (0.2 - P["droop"] * 0.8)).normalized()
-        side = up.cross(rand_unit(rng))
-        if side.length < 0.1:
-            side = up.cross(Vector((1, 0, 0)))
-        side.normalize()
-        side = (side + UP * -side.z * 0.6).normalized()  # cards lean toward lying flat, to catch the sun
-        cards.append((at, up, side, P["card"] * rng.uniform(0.8, 1.15)))
-
-    def lateral(start, direction, reach, r0):
-        steps = max(3, round(reach / 0.35))
-        out = Vector((direction.x, direction.y, 0)).normalized() if Vector((direction.x, direction.y, 0)).length > 1e-3 else Vector((1, 0, 0))
-        pts = path(start, direction, reach, steps, rng, 0.12, lambda t: UP * (P["rise"] * (1 - t) - P["droop"] * t * t) + out * 0.05)
-        radii = [max(0.006, r0 * (1 - k / steps) ** 0.9) for k in range(steps + 1)]
-        tube(wood, pts, radii, 6 if r0 > 0.035 else 5, bark, bark_colour(1), u_tiles=1)
-        n = max(2, round(P["twigs"] * reach / P["reach"][0]))
-        for k in range(n):
-            t = 0.25 + 0.75 * k / max(1, n - 1) * 0.95
-            i = min(steps - 1, int(t * steps))
-            at = pts[i].lerp(pts[i + 1], t * steps - i)
-            d = (pts[i + 1] - pts[i]).normalized()
-            perp = d.cross(UP)
-            perp = perp.normalized() if perp.length > 1e-3 else Vector((1, 0, 0))
-            turn = Matrix.Rotation(rng.uniform(-0.9, 0.9) + (0 if k % 2 else math.pi), 3, d)
-            angle = math.radians(rng.uniform(35, 55))
-            twig_dir = (d * math.cos(angle) + (turn @ perp) * math.sin(angle) + UP * 0.25).normalized()
-            twig(at, twig_dir, rng.uniform(*P["twig"]) * (1 - 0.3 * t) * min(1.0, 0.5 + reach / 2))
-        for k in range(3):  # leaves around the very tip, too
-            leaf_card(pts[-1] + rand_unit(rng) * 0.12, (pts[-1] - pts[-2]).normalized())
-
-    # trunk: root flare in lobes at the foot, a gentle lean and sway
-    fork = P["crown"] if P["leaders"] > 1 else H * 0.9
-    zs = [-0.15, 0.0, 0.07, 0.15, 0.26, 0.4, 0.6, 0.85] + list(np.arange(1.2, fork, 0.45)) + [fork]
-    phase, lean_dir = rng.uniform(0, 6.3), rng.uniform(0, 6.3)
+    # trunk: root flare in lobes at the foot, a gentle lean and sway, up to the fork or through the crown
+    top = P["top"]
+    zs = [-0.15, 0.0, 0.07, 0.15, 0.26, 0.4, 0.6, 0.85] + list(np.arange(1.2, top, 0.45)) + [top]
+    phase, lean_dir, H = rng.uniform(0, 6.3), rng.uniform(0, 6.3), max(top, 5.0)
     trunk_pts = [Vector((P["lean"] * (max(z, 0) / H) ** 2 * math.cos(lean_dir) + 0.04 * math.sin(z * 1.3 + phase),
                          P["lean"] * (max(z, 0) / H) ** 2 * math.sin(lean_dir) + 0.04 * math.cos(z * 1.1 + phase), z)) for z in zs]
-    top_r = 0.11 if P["leaders"] > 1 else 0.03
-    trunk_r = lambda z: P["radius"] + (top_r - P["radius"]) * (max(z, 0) / fork) ** 0.8
+    top_r = 0.12 if P["fork"] else 0.035
+    trunk_r = lambda z: P["radius"] + (top_r - P["radius"]) * (max(z, 0) / top) ** 0.8
     roots = P["roots"]
-    flare = lambda i, a: 1 + 0.75 * math.exp(-max(zs[i], 0) / 0.22) * (0.3 + 0.7 * (0.5 + 0.5 * math.cos(roots * a + phase)) ** 3) + 0.025 * math.sin(3 * a + zs[i] * 2)
+    flare = lambda i, a: 1 + 0.9 * math.exp(-max(zs[i], 0) / 0.24) * (0.3 + 0.7 * (0.5 + 0.5 * math.cos(roots * a + phase)) ** 3) + 0.03 * math.sin(3 * a + zs[i] * 2)
     tube(wood, trunk_pts, [trunk_r(z) for z in zs], 16, bark, bark_colour(0), u_tiles=3 if P["radius"] > 0.14 else 2, shape=flare)
 
-    def laterals_on(pts, count, z_from, z_top, r_at):
-        golden = rng.uniform(0, 6.3)
-        for k in range(count):
-            t = (k + rng.uniform(0.1, 0.9)) / count
-            z = z_from + (z_top - z_from) * t
-            i = min(range(len(pts) - 1), key=lambda j: abs(pts[j].z - z))
-            at = pts[i].lerp(pts[i + 1], 0.5)
-            golden += math.radians(137.5) + rng.uniform(-0.3, 0.3)
-            pitch = math.radians(P["pitch"][0] + (P["pitch"][1] - P["pitch"][0]) * t + rng.uniform(-8, 8))
-            out = Vector((math.cos(golden), math.sin(golden), 0))
-            d = out * math.sin(pitch) + UP * math.cos(pitch)
-            shape = math.sin(math.pi * (0.35 + 0.65 * t)) ** P["crown_round"] if P["crown_round"] else 1
-            reach = (P["reach"][0] + (P["reach"][1] - P["reach"][0]) * t) * rng.uniform(0.8, 1.15) * (0.6 + 0.4 * shape)
-            lateral(at, d, reach, max(0.02, min(r_at * 0.6, 0.012 + 0.025 * reach)))
+    # main limbs: from the fork (oak) or the trunk below each mass, ending inside the mass
+    def trunk_at(z):
+        i = min(range(len(zs) - 1), key=lambda j: abs(zs[j] - z))
+        return trunk_pts[i]
 
-    if P["leaders"] == 1:
-        laterals_on(trunk_pts, P["laterals"], P["crown"], fork, P["radius"] * 0.5)
-        tip = trunk_pts[-1]
-        lateral(tip, (trunk_pts[-1] - trunk_pts[-2]).normalized(), H - tip.z, 0.03)
-    else:
-        top = trunk_pts[-1]
-        for k in range(P["leaders"]):
-            a = phase + k * 2 * math.pi / P["leaders"] + rng.uniform(-0.3, 0.3)
-            d = (Vector((math.cos(a), math.sin(a), 0)) * math.sin(math.radians(28)) + UP * math.cos(math.radians(28))).normalized()
-            length = (H - top.z - 0.6) / d.z
-            pts = path(top - d * 0.15, d, length, 8, rng, 0.06, lambda t: UP * 0.04)
-            tube(wood, pts, [0.11 * (1 - 0.82 * j / 8) for j in range(9)], 10, bark, bark_colour(0), u_tiles=2)
-            laterals_on(pts, P["laterals"], top.z + 0.5, pts[-1].z, 0.08)
-            lateral(pts[-1], d, 0.9, 0.025)
+    for c, r in masses:
+        start = trunk_pts[-1] if P["fork"] else trunk_at(max(1.6, c.z - r[2] * 0.9))
+        if not P["fork"] and abs(Vector((c.x, c.y, 0)).length) < 0.15:
+            continue  # sits on the trunk itself
+        end = c - (c - start).normalized() * min(r) * 0.35
+        span = (end - start).length
+        heading = (end - start).normalized()
+        steps = 4
+        pts = path(start, (heading + UP * 0.35).normalized(), span, steps, rng, 0.06, lambda t: (heading - UP * 0.2) * 0.25 * t)
+        r0 = (0.095 if c.z > 5 else 0.075) if P["fork"] else (0.035 if birch else 0.05)
+        tube(wood, pts, [max(0.018, r0 * (1 - 0.75 * k / steps)) for k in range(steps + 1)], 7, bark, bark_colour(1))
 
-    # leaf cards: normals out of the crown, darker deep inside it and underneath
-    centres = np.array([tuple(c[0]) for c in cards])
-    lo, hi = centres.min(0), centres.max(0)
-    mid, half = Vector((lo + hi) / 2), Vector(np.maximum((hi - lo) / 2, 0.5))
-    leaves, cell = Mesh(), CELLS[kind]
-    for at, up, side, size in cards:
-        rel = Vector(((at - mid).x / half.x, (at - mid).y / half.y, (at - mid).z / half.z))
-        depth = rel.length
-        out = Vector((rel.x / half.x, rel.y / half.y, rel.z / half.z)).normalized()
-        normal = (out * 0.8 + UP * 0.3 + rand_unit(rng) * 0.2).normalized()
-        shade = (0.5 + 0.5 * smooth(0.2, 1.0, depth)) * (0.75 + 0.25 * smooth(-1, 0.6, rel.z)) * rng.uniform(0.85, 1.1)
-        colour = (shade * rng.uniform(0.95, 1.1), shade, shade * rng.uniform(0.8, 1.0))
-        w = side * size * 0.5
-        quad = [at - w, at + w, at + w + up * size, at - w + up * size]
-        idx = [leaves.vert(q, colour, normal) for q in quad]
-        leaves.face(idx, (cell_uv(cell, 0, 0), cell_uv(cell, 1, 0), cell_uv(cell, 1, 1), cell_uv(cell, 0, 1)), LEAVES)
+    foliage(leaves, masses, rng, P["leaf"], CELLS[P["cell"]], P["cards"], P["card"], P["droop"], sub=3)
     wood.build(name + "_wood", node)
     leaves.build(name + "_leaves", node, custom_normals=True)
-    print(f"{name} ({kind}): wood {wood.tris()} + leaves {leaves.tris()} triangles, crown {tuple(round(float(v), 1) for v in hi - lo)} m")
+    # src/world/index.ts gives each tree a trunk collider as thick as the nearest vertex between 0.6 and 1.4 m, at
+    # least 0.12 m: every kind keeps that least value, so the colliders stay as they were.
+    knee = min(math.hypot(x, y) for x, y, z in wood.co + leaves.co if 0.6 < z < 1.4)
+    assert knee <= 0.12, f"{name}: trunk {knee:.3f} m at the knee, its collider would grow"
+    print(f"{name} ({kind}): wood {wood.tris()} + leaves {leaves.tris()} triangles, {len(wood.co) + len(leaves.co)} vertices, knee {knee:.3f} m")
+
+
+def bush(name, seed, masses, tone):
+    """A bush on the bank: low masses sunk into the ground (src/world sinks it 0.35 m), small leaf cards round them."""
+    node, rng, m = variant(name), np.random.default_rng(seed), Mesh()
+    jitter = lambda v, k: Vector(v) + Vector((rng.uniform(-k, k), rng.uniform(-k, k), rng.uniform(-k, k) * 0.5))
+    foliage(m, [(jitter(c, 0.08), tuple(x * rng.uniform(0.9, 1.1) for x in r)) for c, r in masses], rng, tone, CELLS["broad"], 2.2, 0.5, droop=0.1, lumpy=0.18)
+    m.build(name + "_leaves", node, custom_normals=True)
+    return m.tris()
 
 
 # ---- gnawed wood -----------------------------------------------------------------------------------------------
@@ -779,7 +849,7 @@ def reed(name, seed, blades, height, width, cattails):
                 p = p + d * length / rows
             normal = (out * 0.5 + UP * 0.8).normalized()
             shade = 0.45 + 0.55 * t ** 0.5
-            row = [m.vert(p + across * s * width / 2, mul(tone, shade), normal) for s in (-1, 1)]
+            row = [m.vert(p + across * s * width / 2, mul(tone, shade), normal, t * t) for s in (-1, 1)]  # the tips flutter
             if prev:
                 m.face((prev[0], prev[1], row[1], row[0]), (cell_uv(cell, 0, (k - 1) / rows), cell_uv(cell, 1, (k - 1) / rows), cell_uv(cell, 1, t), cell_uv(cell, 0, t)), LEAVES)
             prev = row
@@ -803,10 +873,14 @@ def reed(name, seed, blades, height, width, cattails):
 
 
 # ---- all of it -------------------------------------------------------------------------------------------------
-tree("tree_1", "alder")
+tree("tree_1", "oak")
 tree("tree_2", "birch")
-tree("tree_3", "willow")
+tree("tree_3", "poplar")
 counts = {
+    # three bushes unlike each other: a round mound, a long low hedge on a curve, a tall one with a skirt; tints apart
+    "bush_1": bush("bush_1", 101, [((0, 0, 0.62), (0.75, 0.7, 0.62)), ((0.62, 0.28, 0.42), (0.5, 0.48, 0.42)), ((-0.48, 0.42, 0.4), (0.5, 0.45, 0.4))], (0.9, 0.95, 0.6)),
+    "bush_2": bush("bush_2", 102, [((-1.05, 0.1, 0.4), (0.48, 0.45, 0.4)), ((-0.4, 0.32, 0.55), (0.58, 0.52, 0.52)), ((0.3, 0.3, 0.5), (0.55, 0.5, 0.48)), ((0.95, 0.05, 0.38), (0.45, 0.42, 0.36))], (1.05, 0.98, 0.55)),
+    "bush_3": bush("bush_3", 103, [((0, 0, 0.92), (0.55, 0.52, 0.78)), ((0.5, -0.25, 0.42), (0.48, 0.45, 0.4)), ((-0.3, 0.45, 0.36), (0.42, 0.4, 0.34))], (0.76, 0.9, 0.6)),
     "stump_1": stump_gnawed("stump_1"),
     "stump_2": stump_sawn("stump_2"),
     "log_1": log("log_1", 2.4, 0.16, 61, gnawed=False),
