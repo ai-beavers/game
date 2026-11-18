@@ -58,8 +58,8 @@ test("no bone pops over a scripted minute of play", () => {
     seenLast = turns;
   }
   console.log(`worst jump in a frame: ${worstTurn.toFixed(3)} rad (${where}), ${(worstMove * 1000).toFixed(1)} mm`);
-  // Steady running at 2 m/s alone reaches 0.33 rad (a stride is 21 frames); the worst case is touching down from a
-  // jump at full speed (about 0.6 rad: the leg catches up with the ground in three frames). Real pops were 2 rad.
-  expect(worstTurn).toBeLessThan(0.65);
+  // Steady running at 2 m/s alone reaches 0.33 rad (a stride is 21 frames); the worst is going from walk to run
+  // (0.40 rad). Touching down from a jump once restarted the stride and reached 0.61 rad; real pops were 2 rad.
+  expect(worstTurn).toBeLessThan(0.45);
   expect(worstMove).toBeLessThan(0.015);
 });

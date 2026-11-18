@@ -1,6 +1,6 @@
 // Tests for the player's pure logic: jump timing, the carry sequence, the Motion bookkeeping. bun test src/player
 import { describe, expect, test } from "bun:test";
-import { jumpStarts, newAction, newJump, newMotion, stepAction, trackMotion, turnTowards, type ActionState } from "./state.ts";
+import { TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSteering, steer, stepAction, trackMotion, turnTowards, type ActionState } from "./state.ts";
 
 const dt = 1 / 60;
 
@@ -107,4 +107,41 @@ describe("motion", () => {
 test("turnTowards goes the short way", () => {
   expect(turnTowards(3, -3, 1)).toBeCloseTo(3 + (2 * Math.PI - 6));
   expect(turnTowards(0, 2, 0.5)).toBe(0.5);
+});
+
+describe("steer", () => {
+  /** Walking, the stick pushed to `to`: when facing is within 0.05 rad of it, the most the turn rate changed in a
+   *  step, and how far it went past. */
+  const turn = (to: number) => {
+    const s = newSteering();
+    s.speed = 0.8;
+    let settled = NaN, kick = 0, over = 0, spin = 0;
+    for (let i = 1; i < 120; i++) {
+      steer(s, to, 1, 0.8, 6, 9, dt);
+      kick = Math.max(kick, Math.abs(s.spin - spin));
+      spin = s.spin;
+      over = Math.max(over, s.facing - to);
+      if (Number.isNaN(settled) && Math.abs(s.facing - to) < 0.05) settled = i * dt;
+    }
+    return { settled, kick, over };
+  };
+  test("the turn rate builds up instead of jumping to full (it jumped 10 rad/s in one step)", () => {
+    for (const to of [0.3, Math.PI / 2, Math.PI]) expect(turn(to).kick).toBeLessThanOrEqual(TURN_ACCEL * dt + 1e-9);
+  });
+  test("it arrives without overshooting, about as quickly as the old 10 rad/s snap", () => {
+    // the old turn settled after 0.083 s (45°), 0.167 s (90°), 0.317 s (180°)
+    for (const [to, old] of [[Math.PI / 4, 0.083], [Math.PI / 2, 0.167], [Math.PI, 0.317]] as const) {
+      const r = turn(to);
+      expect(r.settled).toBeLessThanOrEqual(old + 0.02);
+      expect(r.over).toBeLessThan(0.01);
+    }
+  });
+  test("letting go stops the turn within a quarter radian", () => {
+    const s = newSteering();
+    for (let i = 0; i < 10; i++) steer(s, Math.PI, 1, 0.8, 6, 9, dt);
+    const at = s.facing;
+    for (let i = 0; i < 30; i++) steer(s, undefined, 0, 0.8, 6, 9, dt);
+    expect(s.spin).toBe(0);
+    expect(s.facing - at).toBeLessThan(0.25);
+  });
 });
