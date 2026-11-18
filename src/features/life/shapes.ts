@@ -10,7 +10,9 @@ import { smoothstep } from "../../world/noise.ts";
 const smooth = (x: number, a: number, b: number) => smoothstep(a, b, x);
 type Paint = (p: Vector3, n: Vector3, out: Color3) => void;
 interface Piece { data: VertexData; part: number[]; second: number[] }
-interface Shape { name: string; geometry: Piece; pose: string; fragment?: string; variant?: boolean }
+/** lit: lit by the scene's sun (or moon) and sky instead of the daylight number, for the larger animals that stand in
+ *  the dusk and the moonlight; their pose takes a second vec4 (`more`) and their tint is not used. */
+interface Shape { name: string; geometry: Piece; pose: string; fragment?: string; variant?: boolean; lit?: boolean }
 
 function piece(data: VertexData, joint: number, place: (p: Vector3) => void, paint: Paint, paint2 = paint): Piece {
   const positions = data.positions!, normals = data.normals!, c = new Color3(), colors = [], second = [], part = [];
@@ -69,40 +71,45 @@ export function animalMesh(scene: Scene, shape: Shape, count: number) {
   geometry.data.applyToMesh(mesh);
   mesh.setVerticesData("part", geometry.part, false, 1);
   mesh.setVerticesData("color2", geometry.second, false, 3);
-  const anim = new Float32Array(count * 4), tint = new Float32Array(count * 4).fill(1);
+  const lit = shape.lit, anim = new Float32Array(count * 4), tint = new Float32Array(count * 4).fill(1), more = new Float32Array(lit ? count * 4 : 0);
   mesh.thinInstanceSetBuffer("matrix", new Float32Array(count * 16), 16, false);
   mesh.thinInstanceSetBuffer("aAnim", anim, 4, false);
-  mesh.thinInstanceSetBuffer("tint", tint, 4, false);
+  mesh.thinInstanceSetBuffer(lit ? "aMore" : "tint", lit ? more : tint, 4, false);
   const mat = new ShaderMaterial(mesh.name, scene, {
-    vertexSource: `precision highp float; attribute vec3 position, normal, color2; attribute vec4 color, aAnim, tint;
-      attribute float part; varying vec4 shade; varying float vPart,vLifeY; varying vec3 vWorld;
+    vertexSource: `precision highp float; attribute vec3 position, normal, color2; attribute vec4 color, aAnim, ${lit ? "aMore" : "tint"};
+      attribute float part; varying vec4 shade; varying float vPart,vLifeY; varying vec3 vWorld; ${lit ? "varying vec3 vNormal;" : ""}
       #include<instancesDeclaration>
       uniform mat4 viewProjection;
       ${POSE_GLSL}
       ${shape.pose}
       void main(){
         #include<instancesVertex>
-        vec3 p=position,n=normal; pose(part,aAnim,p,n);
+        vec3 p=position,n=normal; ${lit ? "pose(part,aAnim,aMore,p,n)" : "pose(part,aAnim,p,n)"};
         vec4 at=finalWorld*vec4(p,1.); vPart=part; vWorld=at.xyz; vLifeY=at.y;
+        ${lit ? `shade=vec4(color.rgb,1.); vNormal=normalize(mat3(finalWorld)*n);` : `
         shade=vec4(mix(color.rgb,color2,${shape.variant ? "aAnim.w" : "0."})*tint.rgb,1.);
-        shade.rgb*=.65+.35*max(0.,normalize(mat3(finalWorld)*n).y);
+        shade.rgb*=.65+.35*max(0.,normalize(mat3(finalWorld)*n).y);`}
         gl_Position=viewProjection*at;
       }`,
+    // Lit: the sky from above and the ground's bounce from below, as a hemispheric light does, and the sun or moon.
     fragmentSource: `precision highp float; varying vec4 shade; varying float vPart,vLifeY; varying vec3 vWorld; uniform float daylight, waterLevel; uniform vec3 cameraPosition;
+      ${lit ? `varying vec3 vNormal; uniform vec3 sunDirection, sunColor, skyColor, groundColor;` : ""}
       void main(){vec4 diffuseColor=shade;
+        ${lit ? `vec3 n=normalize(vNormal);
+        diffuseColor.rgb*=mix(groundColor,skyColor,.5+.5*n.y)+sunColor*max(0.,dot(n,-sunDirection));` : ""}
         ${shape.fragment ?? ""}
-        gl_FragColor=vec4(diffuseColor.rgb*daylight,diffuseColor.a);
+        gl_FragColor=vec4(diffuseColor.rgb${lit ? "" : "*daylight"},diffuseColor.a);
       }`,
   }, {
-    attributes: ["position", "normal", "color", "part", "aAnim", "color2", "tint"],
-    uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition"],
+    attributes: ["position", "normal", "color", "part", "aAnim", "color2", lit ? "aMore" : "tint"],
+    uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition", ...lit ? ["sunDirection", "sunColor", "skyColor", "groundColor"] : []],
     needAlphaBlending: shape.name === "fish" || shape.name === "dragonfly",
   });
   mesh.material = mat;
   mesh.alwaysSelectAsActiveMesh = true;
   mat.backFaceCulling = false;
   mesh.isPickable = false;
-  return { mesh, material: mat, anim, tint };
+  return { mesh, material: mat, anim, tint, more };
 }
 // ---- a small songbird, 17 cm long --------------------------------------------------------------------------------
 // anim: x wingbeat phase, y how hard the wings beat, z 0 folded … 1 spread, w 1 for a bird of prey's long wings.
@@ -375,5 +382,141 @@ export function dragonflyShape(): Shape {
         }
       }`,
     fragment: /* glsl */`if (vPart > 0.5) { diffuseColor.rgb = vec3(0.85, 0.9, 0.92); diffuseColor.a = 0.35; }`,
+  };
+}
+
+// ---- a roe deer, 75 cm at the shoulder ---------------------------------------------------------------------------
+// anim: x gait phase, y 0 … 1 walking, z 0 … 1 bounding, w head 0 up … 1 down to the grass. more: x head turned
+// (radians), y and z left and right ear flicked, w the white tail up. Parts: 0 body, 1 neck and head, 2 left ear,
+// 3 right ear, 4 … 7 legs (front left, front right, hind left, hind right), 8 tail.
+
+export function deerShape(): Shape {
+  const coat = C(0x9a5a30), back = C(0x6e3e22), belly = C(0xd2b08a), white = C(0xf2eee4), dark = C(0x241a14), hoof = C(0x2e2620);
+  const body: Paint = (p, n, out) => {
+    Color3.LerpToRef(coat, back, smooth(n.y, 0.4, 0.95) * 0.7, out);
+    Color3.LerpToRef(out, belly, smooth(-n.y, 0.35, 0.8), out);
+    if (p.z < -0.3 && n.z < -0.3 && p.y > 0.5) out.copyFrom(white); // the rump patch
+  };
+  const nose = new Vector3(0, 0.975, 0.63);
+  const head: Paint = (p, n, out) => {
+    Color3.LerpToRef(coat, back, smooth(n.y, 0.5, 1) * 0.6, out);
+    if (p.y < 0.975 && p.z > 0.55 && n.y < -0.2) out.copyFrom(white); // the chin
+    if (Vector3.Distance(p, nose) < 0.04) out.copyFrom(dark);
+    if (Math.abs(n.x) > 0.7 && p.z > 0.5 && p.z < 0.56 && p.y > 1.02) out.copyFrom(dark); // the eye
+  };
+  const ear = (side: number) => ellipsoid([0.036, 0.075, 0.014], [side * 0.055, 1.13, 0.46], [8, 6], side > 0 ? 2 : 3,
+    (_p, n, out) => void out.copyFrom(n.z > 0.3 ? belly : back), { turn: [0.2, 0, -side * 0.5] });
+  const leg = (side: number, front: boolean) => {
+    const part = front ? (side > 0 ? 4 : 5) : (side > 0 ? 6 : 7), x = side * 0.08;
+    const paint: Paint = (p, _n, out) => void Color3.LerpToRef(coat, back, 0.3 + 0.4 * smooth(p.y, 0.45, 0.1), out);
+    return front ? [
+      rod([x, 0.58, 0.27], [x, 0.3, 0.28], 0.038, 0.026, part, paint),
+      rod([x, 0.3, 0.28], [x, 0.04, 0.29], 0.022, 0.017, part, paint),
+      ellipsoid([0.02, 0.03, 0.028], [x, 0.025, 0.3], [6, 5], part, flat(hoof)),
+    ] : [
+      ellipsoid([0.07, 0.15, 0.1], [side * 0.075, 0.55, -0.27], [10, 8], part, body),
+      rod([x, 0.5, -0.27], [x, 0.32, -0.36], 0.035, 0.025, part, paint),
+      rod([x, 0.32, -0.36], [x, 0.04, -0.31], 0.02, 0.017, part, paint),
+      ellipsoid([0.02, 0.03, 0.028], [x, 0.025, -0.3], [6, 5], part, flat(hoof)),
+    ];
+  };
+  return {
+    name: "deer",
+    lit: true,
+    geometry: merge([
+      ellipsoid([0.15, 0.17, 0.4], [0, 0.62, -0.02], [18, 12], 0, body, {
+        bend: (p) => { if (p.z > 0) p.y *= 1 + 0.15 * p.z; if (p.z < 0 && p.y < 0) p.y *= 1 + 0.25 * p.z; },
+      }),
+      ellipsoid([0.06, 0.065, 0.2], [0, 0.83, 0.36], [10, 8], 1, body, { turn: [-0.95, 0, 0] }),
+      ellipsoid([0.065, 0.07, 0.11], [0, 1.02, 0.53], [12, 10], 1, head, {
+        turn: [0.45, 0, 0], bend: (p) => { const f = Math.max(0, p.z); p.x *= 1 - 0.35 * f; p.y *= 1 - 0.25 * f; },
+      }),
+      ear(1), ear(-1),
+      ...leg(1, true), ...leg(-1, true), ...leg(1, false), ...leg(-1, false),
+      ellipsoid([0.032, 0.02, 0.055], [0, 0.69, -0.42], [8, 6], 8, (_p, n, out) => void out.copyFrom(n.y < 0 || n.z < -0.5 ? white : coat), { turn: [-0.6, 0, 0] }),
+    ]),
+    pose: /* glsl */`
+      void pose(float part, vec4 anim, vec4 more, inout vec3 p, inout vec3 n) {
+        if (part > 3.5 && part < 7.5) {
+          float side = mod(part, 2.0) < 0.5 ? 1.0 : -1.0, front = part < 5.5 ? 1.0 : 0.0;
+          // A walk in four beats (hind left, front left, hind right, front right); a bound with the pairs together.
+          float at = anim.x + 6.2832 * (front * 0.25 + (side > 0.0 ? 0.0 : 0.5));
+          float swing = sin(at) * 0.45 * anim.y, lift = max(0.0, cos(at)) * 0.75 * anim.y;
+          float stretch = sin(anim.x);
+          swing += anim.z * (front > 0.5 ? 0.9 * stretch - 0.2 : 0.1 - 0.9 * stretch);
+          lift += anim.z * max(0.0, -stretch) * 0.9;
+          vec3 hip = vec3(side * 0.08, 0.6, front > 0.5 ? 0.27 : -0.27), knee = front > 0.5 ? vec3(side * 0.08, 0.3, 0.28) : vec3(side * 0.08, 0.32, -0.36);
+          if (p.y < knee.y + 0.01) turnAround(rotX(front > 0.5 ? lift : -lift), knee, p, n);
+          turnAround(rotX(-swing), hip, p, n);
+        } else if (part > 7.5) {
+          turnAround(rotX(more.w * 1.6), vec3(0.0, 0.72, -0.4), p, n);
+        } else if (part > 0.5) {
+          if (part > 1.5) {
+            float side = part < 2.5 ? 1.0 : -1.0, e = part < 2.5 ? more.y : more.z;
+            turnAround(rotX(-0.7 * e) * rotZ(side * 0.4 * e), vec3(side * 0.04, 1.07, 0.46), p, n);
+          }
+          turnAround(rotY(more.x) * rotX(anim.w * 1.6), vec3(0.0, 0.62, 0.22), p, n);
+        }
+        n = normalize(n);
+      }`,
+  };
+}
+
+// ---- a tawny owl, 38 cm tall ---------------------------------------------------------------------------------------
+// anim: x wingbeat phase, y how hard they beat, z wings 0 folded (sitting upright) … 1 spread (flying, the body
+// level), w the head turned (radians). more: x 1 while it sits (its branch is drawn), 0 in flight. Parts: 0 body,
+// 1 head, 2 eyes, 3 left wing, 4 right wing, 5 the branch. The eyes shine back the light (fragment).
+
+export function owlShape(): Shape {
+  const brown = C(0x5e3e26), dark = C(0x32221a), pale = C(0x9a7a56), disc = C(0x9a7858), bark = C(0x3a3028);
+  const plumage: Paint = (p, n, out) => {
+    Color3.LerpToRef(brown, dark, streak(p.x, p.y, 0.5) * 0.45, out);
+    if (n.z > 0.3 && p.y < 0.22) Color3.LerpToRef(pale, dark, Math.max(0, Math.sin(p.y * 160 + Math.sin(p.x * 90) * 2)) * 0.6, out); // a streaked breast
+  };
+  const face: Paint = (p, n, out) => {
+    Color3.LerpToRef(brown, dark, streak(p.x, p.y, 0.6) * 0.3, out);
+    if (n.z > 0.4) out.copyFrom(n.z > 0.55 ? disc : dark); // the facial disc, rimmed dark
+  };
+  const wing = (side: number) => ellipsoid([0.3, 0.012, 0.11], [side * 0.3, 0.22, -0.02], [12, 4], side > 0 ? 3 : 4, (p, _n, out) => {
+    Color3.LerpToRef(brown, dark, 0.2 + streak(p.z, p.x, 0.4) * 0.4, out);
+    if (Math.sin(Math.abs(p.x) * 70) > 0.6 && Math.abs(p.x) > 0.25) Color3.LerpToRef(out, pale, 0.5, out); // barred flight feathers
+  }, { bend: (p) => { p.z -= 0.25 * p.x * p.x; } });
+  const eye = (side: number) => ellipsoid([0.027, 0.027, 0.012], [side * 0.037, 0.335, 0.078], [8, 6], 2, flat(C(0x101010)));
+  return {
+    name: "owl",
+    lit: true,
+    geometry: merge([
+      ellipsoid([0.11, 0.15, 0.1], [0, 0.16, 0], [16, 12], 0, plumage, { bend: (p) => { p.x *= 1 + Math.max(0, -p.y) * 0.12; } }),
+      ellipsoid([0.05, 0.012, 0.085], [0, 0.03, -0.07], [8, 4], 0, flat(brown), { turn: [-1.1, 0, 0] }),
+      ellipsoid([0.025, 0.012, 0.03], [0.04, 0.008, 0.04], [6, 4], 0, flat(pale)), ellipsoid([0.025, 0.012, 0.03], [-0.04, 0.008, 0.04], [6, 4], 0, flat(pale)),
+      ellipsoid([0.095, 0.085, 0.085], [0, 0.33, 0.01], [16, 12], 1, face),
+      piece(VertexData.CreateCylinder({ diameterTop: 0, diameterBottom: 0.022, height: 0.03, tessellation: 6 }).transform(Matrix.RotationX(Math.PI / 2 + 0.5)), 1,
+        (p) => p.addInPlace(new Vector3(0, 0.31, 0.095)), flat(C(0xc8b080))),
+      eye(1), eye(-1),
+      wing(1), wing(-1),
+      rod([0, -0.005, 0.12], [0, -0.01, -0.5], 0.02, 0.024, 5, flat(bark)),
+      rod([0, -0.008, -0.2], [0.12, 0.06, -0.3], 0.008, 0.012, 5, flat(bark)),
+    ]),
+    pose: /* glsl */`
+      void pose(float part, vec4 anim, vec4 more, inout vec3 p, inout vec3 n) {
+        vec3 shoulder = vec3(0.0, 0.24, 0.0), neck = vec3(0.0, 0.3, 0.0);
+        mat3 level = rotX(anim.z * 1.25); // in flight the body lies level between the wings
+        if (part > 4.5) p *= more.x;
+        else if (part > 2.5) {
+          float side = part < 3.5 ? 1.0 : -1.0, fold = 1.0 - anim.z;
+          vec3 root = vec3(side * 0.06, 0.22, 0.0);
+          turnAround(rotZ(side * (sin(anim.x) * 0.9 * anim.y + 0.08)) * rotY(side * 1.5 * fold), root, p, n);
+          p = mix(root, p, 0.3 + 0.7 * anim.z); // folded, small and against the body
+        } else if (part > 0.5) {
+          turnAround(rotY(anim.w), neck, p, n);
+          p += level * (neck - shoulder) - (neck - shoulder); // the head stays upright, carried forward with the body
+        } else turnAround(level, shoulder, p, n);
+        n = normalize(n);
+      }`,
+    fragment: /* glsl */`
+      if (vPart > 1.5 && vPart < 2.5) {
+        float back = max(0.0, dot(normalize(vNormal), normalize(cameraPosition - vWorld)));
+        diffuseColor.rgb = vec3(1.0, 0.8, 0.42) * (0.6 + 2.4 * back * back);
+      }`,
   };
 }

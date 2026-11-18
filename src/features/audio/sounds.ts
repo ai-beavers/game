@@ -1,6 +1,6 @@
 // The one-shot sounds of the beaver and its world, each made on the spot from noise, oscillators, filters and
 // envelopes. A recipe takes any BaseAudioContext, so the same code plays in the game and renders offline in
-// lab/audio.ts.
+// tools/listen.ts.
 //
 //   SOUNDS.stepGrass(ctx, out, ctx.currentTime, 0.5)   out: a panner or a bus; the number: how hard, 0 … 1
 //   noise(ctx)                                         a looping white-noise source, for the ambience
@@ -11,12 +11,14 @@ import { pitch } from "./music.ts";
 export type Recipe = (ctx: BaseAudioContext, out: AudioNode, t: number, amount: number) => void;
 
 const buffers = new WeakMap<BaseAudioContext, AudioBuffer>();
+/** Seconds of noise before it repeats: a 2 s loop was heard as a pulse in the wind and rain (tools/listen.ts: repeat). */
+const LOOP = 9;
 
 /** A looping white-noise source; start it at a random offset so two bursts never sound the same. */
 export function noise(ctx: BaseAudioContext) {
   let buffer = buffers.get(ctx);
   if (!buffer) {
-    buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    buffer = ctx.createBuffer(1, ctx.sampleRate * LOOP, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
     buffers.set(ctx, buffer);
@@ -143,7 +145,7 @@ const RECIPES = {
   },
   /** Touch down: a body thump and grass, bigger with amount (how hard it fell). */
   land(ctx, out, t, amount) {
-    tone(ctx, out, t, { freq: 85, to: 40, decay: 0.12 + amount * 0.1, peak: 0.3 + amount * 0.3 });
+    tone(ctx, out, t, { freq: 85, to: 40, decay: 0.12 + amount * 0.1, peak: 0.2 + amount * 0.2 });
     burst(ctx, out, t, { filter: "lowpass", freq: 700, decay: 0.1 + amount * 0.05, peak: 0.2 + amount * 0.25 });
     burst(ctx, out, t, { at: 0.01, filter: "bandpass", freq: 3000, q: 0.8, decay: 0.12, peak: 0.12 + amount * 0.18 });
   },
@@ -157,7 +159,7 @@ const RECIPES = {
   /** The tail slapped flat on the water, the beaver's alarm: a loud crack like a rifle shot, the deep whump of the
    *  water hit, spray falling back and bubbles. */
   slap(ctx, out, t, amount) {
-    burst(ctx, out, t, { filter: "highpass", freq: 1400, attack: 0.001, decay: 0.035, peak: 0.6 + 0.3 * amount });
+    burst(ctx, out, t, { filter: "highpass", freq: 1400, attack: 0.001, decay: 0.035, peak: 0.3 + 0.15 * amount });
     burst(ctx, out, t, { filter: "bandpass", freq: 2600, to: 900, q: 0.9, attack: 0.001, decay: 0.12, peak: 0.45 + 0.2 * amount });
     tone(ctx, out, t, { freq: 110, to: 42, attack: 0.002, decay: 0.22, peak: 0.45 + 0.15 * amount });
     burst(ctx, out, t, { at: 0.05, filter: "lowpass", freq: 4000, to: 700, attack: 0.03, decay: 0.6, peak: 0.18 + 0.1 * amount });
@@ -165,7 +167,7 @@ const RECIPES = {
   },
   /** The tail slapped on the ground: a soft, dull thump and a puff of grit. */
   thump(ctx, out, t, amount) {
-    tone(ctx, out, t, { freq: 75, to: 38, attack: 0.003, decay: 0.16, peak: 0.35 + 0.15 * amount });
+    tone(ctx, out, t, { freq: 75, to: 38, attack: 0.003, decay: 0.16, peak: 0.24 + 0.1 * amount });
     burst(ctx, out, t, { filter: "lowpass", freq: 900, attack: 0.002, decay: 0.09, peak: 0.3 + 0.1 * amount });
     burst(ctx, out, t, { at: 0.02, filter: "bandpass", freq: 2400, q: 0.7, decay: 0.15, peak: 0.08 });
   },
@@ -197,9 +199,9 @@ const RECIPES = {
    *  progress 0 … 1). */
   bite(ctx, out, t, amount) {
     const v = rand(0.9, 1.1);
-    for (let i = 0; i < 3; i++) burst(ctx, out, t, { at: i * 0.028, filter: "bandpass", freq: 2500 * v, q: 2.5, attack: 0.003, decay: 0.03, peak: 0.45 });
-    burst(ctx, out, t, { at: 0.06, filter: "bandpass", freq: 1100 * v, q: 1.2, attack: 0.004, decay: 0.07, peak: 0.3 + 0.2 * amount });
-    knock(ctx, out, t + 0.1, rand(620, 720) * (1 - 0.25 * amount), 0.3 + 0.25 * amount);
+    for (let i = 0; i < 3; i++) burst(ctx, out, t, { at: i * 0.028, filter: "bandpass", freq: 2500 * v, q: 2.5, attack: 0.003, decay: 0.03, peak: 0.7 });
+    burst(ctx, out, t, { at: 0.06, filter: "bandpass", freq: 1100 * v, q: 1.2, attack: 0.004, decay: 0.07, peak: 0.45 + 0.3 * amount });
+    knock(ctx, out, t + 0.1, rand(620, 720) * (1 - 0.25 * amount), 0.45 + 0.35 * amount);
   },
   /** A gnawed tree starts to go: a slow groan of wood with fibres popping, faster and faster, then a snap. */
   creak(ctx, out, t) {
@@ -212,7 +214,7 @@ const RECIPES = {
   },
   /** A tree hits the ground: a deep thud, branches snapping, leaves thrashing; bigger with amount (how hard). */
   crash(ctx, out, t, amount) {
-    tone(ctx, out, t, { freq: 58, to: 30, attack: 0.006, decay: 0.45 + 0.4 * amount, peak: 0.3 + 0.2 * amount });
+    tone(ctx, out, t, { freq: 58, to: 30, attack: 0.006, decay: 0.45 + 0.4 * amount, peak: 0.15 + 0.1 * amount });
     burst(ctx, out, t, { filter: "lowpass", freq: 1100, to: 180, attack: 0.008, decay: 0.5 + 0.6 * amount, peak: 0.35 + 0.25 * amount });
     burst(ctx, out, t, { at: 0.02, filter: "bandpass", freq: 3800, q: 0.5, attack: 0.03, decay: 0.9 + 0.8 * amount, peak: 0.18 + 0.15 * amount });
     for (let i = 0, n = 3 + Math.round(6 * amount); i < n; i++) knock(ctx, out, t + rand(0, 0.45), rand(260, 750), rand(0.15, 0.35));
@@ -234,15 +236,15 @@ const RECIPES = {
   },
   /** The dam is finished: the tune's own notes run up and land on a chord. */
   fanfare(ctx, out, t) {
-    [0, 2, 3, 4].forEach((d, i) => note(ctx, out, t + i * 0.14, pitch(d), 0.22, 0.35));
-    for (const d of [5, 7, 8]) note(ctx, out, t + 0.6, pitch(d), 0.16, 2.2);
-    note(ctx, out, t + 0.6, pitch(0) / 2, 0.2, 2.4);
-    bell(ctx, out, t + 0.62, pitch(10), 0.06, 1.2);
+    [0, 2, 3, 4].forEach((d, i) => note(ctx, out, t + i * 0.14, pitch(d), 0.055, 0.35));
+    for (const d of [5, 7, 8]) note(ctx, out, t + 0.6, pitch(d), 0.04, 2.2);
+    note(ctx, out, t + 0.6, pitch(0) / 2, 0.05, 2.4);
+    bell(ctx, out, t + 0.62, pitch(10), 0.014, 1.2);
   },
   /** A goal reached: two soft bell notes going up. */
   chime(ctx, out, t) {
-    bell(ctx, out, t, pitch(7), 0.18);
-    bell(ctx, out, t + 0.16, pitch(10), 0.15);
+    bell(ctx, out, t, pitch(7), 0.05);
+    bell(ctx, out, t + 0.16, pitch(10), 0.043);
   },
   /** An owl far off: hoo … hoo-hoooo. */
   owl(ctx, out, t) {
@@ -254,10 +256,19 @@ const RECIPES = {
     hoot(0.9, 0.12, 0.2);
     hoot(1.1, 0.7, 0.3);
   },
+  /** A roe deer's alarm as it bounds off: a hoarse, barking "böh", twice. */
+  deer(ctx, out, t) {
+    const v = rand(0.92, 1.08), bark = (at: number, peak: number) => {
+      buzz(ctx, out, t, { at, freq: 210 * v, to: 150 * v, filter: 900 * v, sweep: 600, q: 3, attack: 0.012, decay: 0.16, peak });
+      burst(ctx, out, t, { at, filter: "bandpass", freq: 1300 * v, to: 700, q: 1.2, attack: 0.01, decay: 0.14, peak: peak * 0.7 });
+    };
+    bark(0, 0.5);
+    bark(0.42, 0.35);
+  },
   /** One chirp of a cricket: three quick pulses of a high tone; amount picks its pitch. */
   cricket(ctx, out, t, amount) {
     const f = 4300 + amount * 600;
-    for (let i = 0; i < 3; i++) tone(ctx, out, t, { at: i * 0.026, freq: f, attack: 0.004, decay: 0.014, peak: 0.12 });
+    for (let i = 0; i < 3; i++) tone(ctx, out, t, { at: i * 0.026, freq: f, attack: 0.004, decay: 0.014, peak: 0.045 });
   },
   /** A frog: a low, buzzing double croak; amount picks its pitch. */
   frog(ctx, out, t, amount) {
@@ -279,12 +290,12 @@ const RECIPES = {
     const v = rand(0.9, 1.12);
     if (amount < 0.34) {
       const n = 3 + Math.floor(rand(0, 3));
-      for (let i = 0; i < n; i++) tone(ctx, out, t, { at: i * 0.13, freq: 3200 * v, to: 4300 * v, attack: 0.01, decay: 0.06, peak: 0.12 });
+      for (let i = 0; i < n; i++) tone(ctx, out, t, { at: i * 0.13, freq: 3200 * v, to: 4300 * v, attack: 0.01, decay: 0.06, peak: 0.24 });
     } else if (amount < 0.67) {
-      tone(ctx, out, t, { freq: 2500 * v, to: 2600 * v, attack: 0.04, decay: 0.18, peak: 0.12 });
-      tone(ctx, out, t, { at: 0.24, freq: 2000 * v, to: 1850 * v, attack: 0.04, decay: 0.28, peak: 0.1 });
+      tone(ctx, out, t, { freq: 2500 * v, to: 2600 * v, attack: 0.04, decay: 0.18, peak: 0.24 });
+      tone(ctx, out, t, { at: 0.24, freq: 2000 * v, to: 1850 * v, attack: 0.04, decay: 0.28, peak: 0.2 });
     } else {
-      for (let i = 0; i < 10; i++) tone(ctx, out, t, { at: i * 0.045, freq: 4600 * v, to: 3800 * v, attack: 0.004, decay: 0.03, peak: 0.08 + 0.004 * i });
+      for (let i = 0; i < 10; i++) tone(ctx, out, t, { at: i * 0.045, freq: 4600 * v, to: 3800 * v, attack: 0.004, decay: 0.03, peak: 0.16 + 0.008 * i });
     }
   },
   /** One wave against the shore. */

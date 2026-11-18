@@ -1,7 +1,8 @@
 // Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
-// rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the steps and splashes of
-// other players (src/features/net); and a quiet tune that composes itself.
+// rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
+// that src/features/life shows, calling from where they are; the steps and splashes of other players
+// (src/features/net); and a quiet tune that composes itself.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
@@ -10,7 +11,7 @@
 //   createGame(canvas, [create])      starts with the first key press or click (browsers allow sound only then)
 //
 // Follows settings.volume / mute / music, goes quiet while stage.paused. `played` counts every sound started, by
-// name (lab/audio.ts reads it; window.audio.played in the game). The recipes live in sounds.ts, buses and lasting sounds in mix.ts.
+// name (window.audio.played in the game; tools/listen.ts renders the sounds offline). The recipes live in sounds.ts, buses and lasting sounds in mix.ts.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { gait } from "../../anim/index.ts";
@@ -69,13 +70,19 @@ export const create: CreateFeature = (game) => {
   addEventListener("keydown", unlock);
   addEventListener("pointerdown", unlock);
 
+  /** When each sound last started: the same sound twice within SAME seconds plays once (a world caught up after a
+   *  reconnect replays every bite and stick in one frame; ten bites stacked are just louder). */
+  const last: Partial<Record<SoundName, number>> = {}, SAME = 0.05;
   /** Starts a sound at a place in the world (none: not placed, as music is); nothing before the first key press or
-   *  while paused. */
+   *  while paused. A little ahead of now, so its attack is not already past when the audio thread gets to it. */
   function play(name: SoundName, place: Vector3 | undefined, amount = 1, bus: "steps" | "sfx" | "ambience" | "music" = "sfx", delay = 0) {
     if (!live || live.paused || live.ctx.state !== "running") return;
+    const t = live.ctx.currentTime + 0.02 + delay;
+    if (Math.abs(t - (last[name] ?? -1)) < SAME) return;
+    last[name] = t;
     const out = place ? live.panner(live.mix[bus], place.x, place.y + 0.3, place.z) : live.mix[bus];
-    SOUNDS[name](live.ctx, out, live.ctx.currentTime + delay, amount);
-    if (bus === "sfx") live.mix.duck(live.ctx.currentTime + delay);
+    SOUNDS[name](live.ctx, out, t, amount);
+    if (bus === "sfx") live.mix.duck(t);
     played[name] = (played[name] ?? 0) + 1;
   }
 
@@ -191,6 +198,9 @@ export const create: CreateFeature = (game) => {
         const angle = rand(0, Math.PI * 2), distance = rand(14, 24);
         play("owl", new Vector3(here.x + Math.cos(angle) * distance, here.y + rand(4, 8), here.z + Math.sin(angle) * distance), 1, "ambience");
       }
+      // The larger animals call from where they are (src/features/life): the owl on its branch, a deer bounding off.
+      const heard = (window as { life?: { heard?: { name: "owl" | "deer"; x: number; y: number; z: number }[] } }).life?.heard;
+      for (let call = heard?.shift(); call; call = heard!.shift()) play(call.name, new Vector3(call.x, call.y, call.z), 1, "ambience");
       listenToOthers(dt);
     },
   };
