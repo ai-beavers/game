@@ -17,6 +17,7 @@
 //   camera.zoom(scale)                distance times scale, kept in 2 … 8 m (eased in the picture)
 //   camera.invertY = true             mouse drag up and down turned round (settings.invertY; the controls feature sets it)
 //   camera.aim, camera.floor          look past the beaver, stay above a height (the tour's live view; players leave them).
+//   camera.room                       how far it may stand along a way, for things without a collider (live view too).
 //                                     Once floor is set the live view directs: the player framing above is off.
 //
 // Mouse and pen drag here; touches are left to whoever handles touch (src/features/controls).
@@ -149,7 +150,8 @@ export function followCamera({ camera, physics, canvas, engine }: Stage, blocks:
   const freeAt = (yaw: number, pitch: number, distance: number) => {
     direction.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     const hit = physics.castShape(look, rotation, direction, ball, 0, distance, true, flags, undefined, undefined, undefined, blocks);
-    return hit ? Math.max(0.05, hit.time_of_impact - 0.02) : distance;
+    const free = hit ? Math.max(0.05, hit.time_of_impact - 0.02) : distance;
+    return state.room ? Math.min(free, state.room(look, direction, distance)) : free;
   };
   const state = {
     yaw: Math.PI, // camera stands at -z of the beaver, looking along +z
@@ -160,6 +162,9 @@ export function followCamera({ camera, physics, canvas, engine }: Stage, blocks:
     aim: new Vector3(),
     /** Lowest height the camera may take at x, z; the live view keeps it out of water and reeds, which have no collider. */
     floor: noFloor,
+    /** How far the camera may stand from `from` along `direction` (unit), up to `distance`, for things without a
+     *  collider; the live view keeps it out of crowns and bushes. */
+    room: undefined as ((from: Vector3, direction: Vector3, distance: number) => number) | undefined,
     /** How far it really is now, after pulling in for things in the way. */
     get shown() { return shown; },
     turn(yaw: number, pitch: number) {
