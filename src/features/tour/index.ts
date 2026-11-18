@@ -31,7 +31,9 @@ import type { CreateFeature } from "../../game.ts";
 import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
-import { liveDirector, shotFor, type Station } from "./live.ts";
+import { bodyPoints, direct, enter, eyeAt, framing, glide, inside, KEEP_OUT, liveDirector, newHold, shotFor, sight, type Choice, type Station, type Volume, type XYZ } from "./live.ts";
+import { fader, occluders } from "./clearview.ts";
+import { RAPIER } from "../../engine.ts";
 import { live as standing, LODGE, REGROW, SLOTS, SPROUT, type BuildState } from "../build/rules.ts";
 import { deerHours, type Deer } from "../life/brain.ts";
 import { dayAt } from "../sky/clock.ts";
@@ -41,7 +43,10 @@ const STUCK_MOVE = 0.25;
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
 const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is jumped over (teleport), but the last metre
-const EASE = 0.5; // 1/s: how fast the live camera drifts to its next shot (about 2 s), calm on a stream
+// The live camera glides to its next shot, eased in and out, never faster than these: calm on a stream.
+const GLIDE = 0.8, TURN = 0.4, TILT = 0.15, DOLLY = 0.8, PAN = 0.6; // 1/s; rad/s round and up, m/s in and out, m/s of its aim
+const LOOK = 0.7; // m above the feet the live camera turns round (src/player/camera.ts LOOK_HEIGHT)
+const TOWARD = 0.45, REACH = 1.2; // the live picture is moved this share towards what the beaver works on, at most m
 const LEAD = 1.2; // m: the live camera looks this far ahead of a walking beaver
 const BATCH = 3; // sticks built per visit, live and plain; fast builds to the next half of the dam, then the lodge
 const DUCKS_BACK = 120; // s after animals were startled until the ducks count as back on the pond
@@ -69,6 +74,7 @@ export const create: CreateFeature = (game) => {
 
   // ---- what the tour wants, read once per physics step like any other device ----
   const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false, dive: false }, aimAt = new Vector3();
+  let subject: (() => { x: number; z: number }) | undefined; // what the beaver works on, for the live picture: a tree, the dam, a deer
   player.keys.add({
     read(into: Input) {
       Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap, dive: want.dive });
@@ -165,6 +171,7 @@ export const create: CreateFeature = (game) => {
   };
   const fell = async (i: number) => {
     const tree = world.trees![i]!;
+    subject = () => tree.place;
     // From the side facing the clearing's middle, as build.at(i) does, so it falls outwards.
     const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize();
     const stand = tree.place.add(out.scale(tree.radius + 0.35));
@@ -181,6 +188,7 @@ export const create: CreateFeature = (game) => {
     const b = needBuild();
     // Only a tree lying still can be gnawed (build: the "rest" change); one leaning on another may never be.
     await until(() => !!standing(b.state.trees[i])?.rest, 8, `tree ${i} never came to rest after its fall (leaning on something?)`);
+    subject = () => b.views.get(i)?.trunkLine()?.from ?? world.trees![i]!.place;
     // The nearest point of the trunk as it lies now, a little off its foot; then further along it.
     await reach("split", (attempt) => {
       const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new Vector3() };
@@ -231,6 +239,7 @@ export const create: CreateFeature = (game) => {
     while (b.state.dam.length < upTo) {
       await fetchStick();
       const { origin, across } = b.dam.frame, to = origin.subtract(across.scale(1.25)), from = b.dam.lodgeAt.subtract(across.scale(1.7));
+      subject = () => lodge ? b.dam.lodgeAt : origin;
       await reach("build", (attempt) => lodge ? (attempt ? b.dam.lodgeAt : from) : attempt ? origin : to, true);
       const placed = after("stickPlaced"), finished = after("damFinished"), n = b.state.dam.length + 1;
       await tap("act");
@@ -435,6 +444,7 @@ export const create: CreateFeature = (game) => {
         }
         await until(() => deer.some((d) => d.state === "graze"), 60, "no deer came out to graze at dusk");
         const d = deer.find((o) => o.state === "graze")!;
+        subject = () => d;
         expect(!!stage.scene.getMeshByName("life-deer")?.isEnabled(), "a deer grazes, none is drawn");
         await wait(2); // a look at it grazing
         await walkTo(d.x, d.z, { run: 1, near: 2, arrived: () => d.state === "flee", limit: 25 });
@@ -608,6 +618,26 @@ export const create: CreateFeature = (game) => {
     const ground = world.heightAt(x, z), edge = Math.max(0, 1 - Math.abs(ground - world.waterLevel) / 0.8);
     return Math.max(world.waterLevel + 0.3, ground + 1.6 + 0.9 * edge);
   };
+  // What can hide the beaver without a collider the camera sees (clearview.ts), taken before the first picture; the
+  // camera stays out of the crowns and bushes among them, and the director keeps a clear view (live.ts: direct).
+  const near = live ? occluders(stage.scene, player.node) : undefined, fade = fader(stage.scene);
+  let volumes: Volume[] = [], hold = newHold(), looked = 0, yawV = 0, pitchV = 0, distanceV = 0;
+  const aimV = new Vector3();
+  /** How far (0 … 1) the camera gets from `from` towards `to` before a crown or bush (with room to spare). */
+  const room = (from: XYZ, to: XYZ) => {
+    let t = Infinity;
+    for (const v of volumes) if (v.round && !inside(v, from)) t = Math.min(t, enter(v, from, to, KEEP_OUT));
+    return Math.min(1, t);
+  };
+  if (live) player.camera.room = (from, direction, distance) => Math.max(0.05, room(from, from.add(direction.scale(distance))) * distance);
+  // The ground, trunks, rocks, fallen trees in between (not the beaver, nor sticks).
+  const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }), FLAGS = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC;
+  const heavy = (c: RAPIER.Collider) => !c.parent()?.isDynamic() || c.parent()!.mass() > 1;
+  const solid = (from: XYZ, to: XYZ) => {
+    const d = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
+    ray.origin = from; ray.dir = { x: (to.x - from.x) / d, y: (to.y - from.y) / d, z: (to.z - from.z) / d };
+    return d > 0.15 && !!stage.physics.castRay(ray, d - 0.1, true, FLAGS, undefined, undefined, undefined, heavy);
+  };
 
   // ---- on screen: where the tour is; live, a caption big enough for a 1080p stream, top centre, clear of the
   // corners and the bottom third where stream overlays (webcam, chat, alerts) usually sit ----
@@ -687,6 +717,7 @@ export const create: CreateFeature = (game) => {
           if (!skipped) failed = true;
         }
         want.act = want.jump = want.slap = want.dive = false;
+        subject = undefined;
         result.seconds = +((performance.now() - t0) / 1000).toFixed(1);
         results.push(result);
         if (results.length > 500) results.shift();
@@ -719,15 +750,39 @@ export const create: CreateFeature = (game) => {
       if (!stage.paused) tour.clock = clock += dt;
       if (live && tour.activity === "Dam work") label.text = caption();
       if (live && !stage.paused) {
-        // Live: every activity has its shot (live.ts); yaw, height, distance and aim drift there over seconds, so a
+        // Live: every activity has its shot (live.ts); yaw, height, distance and aim glide there over seconds, so a
         // new activity or a stop to gnaw is a slow camera move, never a cut. Rounds alternate the side it films from.
-        const walking = !!want.to, shot = shotFor(tour.activity, walking), cam = player.camera, k = 1 - Math.exp(-EASE * dt);
-        const goal = player.facing + Math.PI + shot.side * (tour.round % 2 ? 1 : -1);
-        cam.yaw += Math.atan2(Math.sin(goal - cam.yaw), Math.cos(goal - cam.yaw)) * k;
-        cam.pitch += (shot.pitch - cam.pitch) * k;
-        cam.distance += (shot.distance - cam.distance) * k;
-        const lead = walking ? LEAD : 0; // looks a little ahead of where it walks
-        Vector3.LerpToRef(cam.aim, aimAt.set(Math.sin(player.facing) * lead, shot.lift, Math.cos(player.facing) * lead), k, cam.aim);
+        // Four times a second the director looks whether the beaver is seen, and if not takes another angle (or fades).
+        const walking = !!want.to, shot = shotFor(tour.activity, walking), cam = player.camera, feet = player.feet;
+        volumes = near!(feet, dt);
+        const look = { x: feet.x, y: feet.y + LOOK, z: feet.z }, points = bodyPoints(feet), behind = player.facing + Math.PI;
+        const sign = tour.round % 2 ? 1 : -1;
+        if ((looked += dt) >= 0.25) {
+          const now = sight(stage.camera.position, points, volumes, solid);
+          // Clear from there, and the camera can get there: no collider, crown or bush between it and the beaver pulls it in.
+          const shows = (c: Choice) => {
+            const eye = eyeAt(look, framing(behind, shot, sign, c), cam.floor);
+            return room(look, eye) === 1 && !solid(look, eye) && sight(eye, points, volumes, solid).seen;
+          };
+          const next = direct(hold, looked, !now.seen, shows);
+          hold = next.hold;
+          if (next.fade) fade.want(now.by);
+          looked = 0;
+        }
+        fade.update(dt);
+        const goal = framing(behind, shot, sign, hold.choice), s = subject?.(), lead = walking ? LEAD : 0; // looks a little ahead of where it walks
+        let tx = 0, tz = 0;
+        if (s) { // what it works on comes into the picture too
+          const dx = s.x - feet.x, dz = s.z - feet.z, k = Math.min(TOWARD, REACH / Math.max(1e-6, Math.hypot(dx, dz)));
+          tx = dx * k; tz = dz * k;
+        }
+        [cam.yaw, yawV] = glide(cam.yaw, yawV, cam.yaw + Math.atan2(Math.sin(goal.yaw - cam.yaw), Math.cos(goal.yaw - cam.yaw)), GLIDE, TURN, dt);
+        [cam.pitch, pitchV] = glide(cam.pitch, pitchV, goal.pitch, GLIDE, TILT, dt);
+        [cam.distance, distanceV] = glide(cam.distance, distanceV, goal.distance + Math.hypot(tx, tz), GLIDE, DOLLY, dt);
+        aimAt.set(Math.sin(player.facing) * lead + tx, shot.lift, Math.cos(player.facing) * lead + tz);
+        [cam.aim.x, aimV.x] = glide(cam.aim.x, aimV.x, aimAt.x, GLIDE, PAN, dt);
+        [cam.aim.y, aimV.y] = glide(cam.aim.y, aimV.y, aimAt.y, GLIDE, PAN, dt);
+        [cam.aim.z, aimV.z] = glide(cam.aim.z, aimV.z, aimAt.z, GLIDE, PAN, dt);
       } else if (want.to && !stage.paused) {
         // The camera swings round behind the beaver while it goes somewhere, so the way ahead is in the picture.
         const behind = player.facing + Math.PI, turn = Math.atan2(Math.sin(behind - player.camera.yaw), Math.cos(behind - player.camera.yaw));
