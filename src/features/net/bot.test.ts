@@ -1,11 +1,11 @@
-// One full cycle of a working bot (bot.ts) against the real server on a free port: alone in a world whose own sticks
-// are all in the dam already, it fells a tree, gnaws it into wood and lays a stick of it into the dam, and the
-// server took every change it sent.
+// Working bots (bot.ts) against the real server on a free port: alone in a world whose own sticks are all in the dam
+// already, one fells a tree, gnaws it into wood and lays a stick of it into the dam; in a world whose dam and lodge
+// are full, one fetches a stick and dives it down into the food cache. The server took every change they sent.
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { live, type BuildChange } from "../build/rules.ts";
+import { live, LODGE, SLOTS, type BuildChange } from "../build/rules.ts";
 import { replay } from "./protocol.ts";
 
 const root = join(import.meta.dir, "../../..");
@@ -43,5 +43,23 @@ test("a bot alone fells a tree, makes wood and lays a stick of it, and the serve
   expect(world.dam[20]).toStartWith(`t${tree}:`);
   // In order and nothing refused: the bites, the fall, where it lay, the bites into wood, the split, the stick.
   expect(build.slice(21).map((c) => c.type).join(" ")).toMatch(/^(bite )+fell rest (bite ){4}split place$/);
+  expect(bot()).not.toContain("refused");
+}, 150_000);
+
+test("a bot dives a stick down into the food cache once the dam and the lodge are full", async () => {
+  const file = join(mkdtempSync(join(tmpdir(), "beaver-")), "world.json");
+  const sticks: BuildChange[] = Array.from({ length: SLOTS + LODGE }, (_, i) => ({ type: "place", slot: i, stick: `d${i}` }));
+  writeFileSync(file, JSON.stringify({ epoch: "bots2", build: [{ type: "find" }, ...sticks] }));
+  const server = await spawn(["bun", "server.ts"], { NODE_ENV: "production", PORT: "0", WORLD_FILE: file }, /port \d+/);
+  const port = /port (\d+)/.exec(server())![1];
+  const bot = await spawn(["bun", "src/features/net/bot.ts", `ws://localhost:${port}/net`, "--quiet"], {}, /bot\(s\) on/);
+
+  let build: BuildChange[] = [];
+  for (let t = 0; t < 120 && build.length <= 1 + SLOTS + LODGE; t++) {
+    await Bun.sleep(1000);
+    build = (await (await fetch(`http://localhost:${port}/net/info?build`)).json()).build;
+  }
+  expect(build.slice(1 + SLOTS + LODGE)).toEqual([{ type: "place", slot: SLOTS + LODGE, stick: expect.stringMatching(/^w\d+$/) }]);
+  expect(bot()).toContain("wedged");
   expect(bot()).not.toContain("refused");
 }, 150_000);
