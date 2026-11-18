@@ -5,9 +5,10 @@
 //
 // Rules: trees ring the clearing and one stands near the pond; nothing solid stands in the water or on the building
 // site; reeds grow in the shallow edge of the pond; sticks lie under trees, on the shore and by the site; the
-// crates wait at the site. Bushes and far trees fill the bank and the land behind it (seen, not walked).
+// crates wait at the site. Bushes and far trees fill the bank and the land behind it (seen, not walked). Rocks and a
+// sunken log lie down in the pond's deep basin.
 import { fbm, seeded } from "./noise.ts";
-import { HILL, POND, RIM, SITE, WATER_LEVEL, heightAt, pondRatio, slopeAt, sunsetGap } from "./terrain.ts";
+import { BASIN, HILL, POND, RIM, SITE, WATER_LEVEL, heightAt, pondRatio, slopeAt, sunsetGap } from "./terrain.ts";
 
 export interface Spot {
   x: number; z: number;
@@ -26,6 +27,8 @@ export const SPAWN = { x: -1.5, z: -3 };
 export interface Layout {
   tree: Spot[]; stump: Spot[]; log: Spot[]; rock: Spot[]; reed: Spot[]; crate: Spot[]; stick: Spot[];
   bush: Spot[]; farTree: Spot[];
+  /** Under water, in the deep basin: rocks on its bed, a sunken log. */
+  bedRock: Spot[]; sunkenLog: Spot[];
 }
 
 const dist = (a: { x: number; z: number }, x: number, z: number) => Math.hypot(a.x - x, a.z - z);
@@ -98,5 +101,15 @@ export function placeAll(seed = 42): Layout {
   const bush = scatter(260, RIM - 1, RIM + 7, (x, z) => heightAt(x, z) > 0.45 && dist(HILL, x, z) > 2.5 && dist(pondTree, x, z) > 2
     && sunsetGap(x, z) < 0.5).map((p) => spot(p, 0.8 + random() * 0.9, 3));
   const farTree = scatter(110, RIM + 4, RIM + 26, (x, z) => sunsetGap(x, z) === 0).map((p) => spot(p, 0.9 + random() * 0.6, 5));
-  return { tree, stump, log, rock, reed, crate, stick, bush, farTree };
+
+  // Down in the deep basin: a few rocks fallen from the drop-off and a sunken log on the floor, lengthwise. Their own
+  // random, after everything else, so nothing above moves.
+  const deep = seeded(seed + 1), bedRock: Spot[] = [];
+  const sunkenLog: Spot[] = [{ x: BASIN.x + 0.5, z: BASIN.z + 0.05, turn: Math.atan2(1, -0.25) + 0.3, scale: 1, variant: 0 }]; // the variant of the meadow's logs: drawn with them
+  for (let i = 0; i < 400 && bedRock.length < 4; i++) {
+    const x = BASIN.x + (deep() * 2 - 1) * BASIN.along, z = BASIN.z + (deep() * 2 - 1) * BASIN.across * 1.4;
+    if (heightAt(x, z) < WATER_LEVEL - 1.3 && [...bedRock, ...sunkenLog].every((r) => dist(r, x, z) > 1))
+      bedRock.push({ x, z, turn: deep() * Math.PI * 2, scale: 0.5 + deep() * 0.6, variant: Math.floor(deep() * 3) });
+  }
+  return { tree, stump, log, rock, reed, crate, stick, bush, farTree, bedRock, sunkenLog };
 }

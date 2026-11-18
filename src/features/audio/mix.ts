@@ -5,6 +5,7 @@
 //   mix.master.gain.value = 0.7;             volume, before the limiter: at any volume the peaks stay under -1 dBFS
 //   const wind = createWind(ctx, mix.ambience);   wind.update(ctx.currentTime, strength) every frame or so
 //   rain.update(now, rain, nearWater) · night.update(now, crickets, frogs) · music.night(dark, now)
+//   mix.under(cameraUnderWater, now)         muffles the whole mix and brings up the hum of the pond
 //
 // Lasting sounds follow the sky by gliding their gains (setTargetAtTime), never by switching.
 import { composer, pitch } from "./music.ts";
@@ -41,7 +42,10 @@ export function createMix(ctx: BaseAudioContext) {
   }
   ceiling.curve = curve;
   ceiling.oversample = "4x";
-  drive.connect(rumble).connect(air).connect(master).connect(limiter).connect(ceiling).connect(ctx.destination);
+  // Under water (mix.under): everything through a low-pass with a gentle resonance; open above, it passes all.
+  const muffle = ctx.createBiquadFilter();
+  muffle.type = "lowpass"; muffle.frequency.value = UNDER.open; muffle.Q.value = UNDER.openQ;
+  drive.connect(rumble).connect(air).connect(muffle).connect(master).connect(limiter).connect(ceiling).connect(ctx.destination);
   // A small glade: 1.4 s of decaying stereo noise, darker towards its end.
   const length = Math.floor(ctx.sampleRate * 1.4), impulse = ctx.createBuffer(2, length, ctx.sampleRate);
   for (let c = 0; c < 2; c++) {
@@ -71,8 +75,31 @@ export function createMix(ctx: BaseAudioContext) {
     ambience.gain.setTargetAtTime(LEVELS.ambience.gain * 0.56, t, 0.015);
     ambience.gain.setTargetAtTime(LEVELS.ambience.gain, t + 0.25, 0.35);
   };
-  return { master, limiter, duck, steps: bus(LEVELS.steps), sfx: bus(LEVELS.sfx), ambience, music: bus(LEVELS.music) };
+  // The pond's own sound under water: a low, slowly swelling rush, silent until the camera goes under.
+  const hum = noise(ctx), humTone = ctx.createBiquadFilter(), humLevel = ctx.createGain(), swell = ctx.createOscillator(), swellDepth = ctx.createGain();
+  humTone.type = "lowpass"; humTone.frequency.value = 220; humTone.Q.value = 0.9;
+  humLevel.gain.value = 0;
+  swell.frequency.value = 0.13;
+  swellDepth.gain.value = 0;
+  swell.connect(swellDepth).connect(humLevel.gain);
+  hum.connect(humTone).connect(humLevel).connect(ambience);
+  hum.start(ctx.currentTime, 4.5); // no Math.random: tools/listen.ts renders from a seed
+  swell.start(ctx.currentTime);
+  let below = false;
+  /** The camera goes under the surface (true) or comes up: the low-pass and the hum ease in or out over about 0.2 s. */
+  const under = (on: boolean, t: number) => {
+    if (on === below) return;
+    below = on;
+    muffle.frequency.setTargetAtTime(on ? UNDER.cutoff : UNDER.open, t, UNDER.ease);
+    muffle.Q.setTargetAtTime(on ? UNDER.q : UNDER.openQ, t, UNDER.ease);
+    humLevel.gain.setTargetAtTime(on ? UNDER.hum : 0, t, UNDER.ease);
+    swellDepth.gain.setTargetAtTime(on ? UNDER.hum * 0.35 : 0, t, UNDER.ease);
+  };
+  return { master, limiter, duck, under, steps: bus(LEVELS.steps), sfx: bus(LEVELS.sfx), ambience, music: bus(LEVELS.music) };
 }
+
+/** Under water: the master's low-pass (Hz, its resonance Q), how fast it eases (time constant: about there in 0.2 s), the hum's level. */
+export const UNDER = { cutoff: 600, q: 1.6, open: 22000, openQ: 0.707, ease: 0.06, hum: 0.2 };
 export type Mix = ReturnType<typeof createMix>;
 
 /** How strong the wind sounds for the sky's wind (0 … 1): 1 at a light breeze (0.25), as before the sky. */

@@ -119,7 +119,11 @@ function world(ctx: BaseAudioContext, mix: Mix, music: boolean) {
 }
 
 type Play = (name: SoundName, t: number, amount?: number, distance?: number) => void;
-interface Scene { seconds: number; music?: boolean; sky?: (now: number) => { dark: number; rain: number; wind: number; evening?: boolean }; events?: (play: Play) => void }
+interface Scene {
+  seconds: number; music?: boolean; sky?: (now: number) => { dark: number; rain: number; wind: number; evening?: boolean }; events?: (play: Play) => void;
+  /** Seconds from … to: the camera under water (mix.under). */
+  under?: [number, number];
+}
 
 const NOON = { dark: 0, rain: 0, wind: 0.25 };
 const walk = (play: Play, from: number, to: number, every = 0.32, kind: SoundName = "stepGrass") => {
@@ -172,6 +176,16 @@ export const SCENES: Record<string, Scene> = {
       play("shake", 12.8);
     },
   },
+  /** Diving: paddling on the surface, then under (all muffled, the pond's hum), another beaver's tail slaps heard
+   *  from below as thumps, up again. */
+  underwater: {
+    seconds: 16, under: [3, 13], events: (play) => {
+      for (let t = 0.5; t < 3; t += 1 / 2.3) play("paddle", t, 0.8);
+      for (let t = 3.4; t < 12.6; t += 1 / 1.6) play("paddle", t, 0.5, 2);
+      for (const t of [6, 9.5]) play("slap", t, 1, 5);
+      for (let t = 13.4; t < 16; t += 1 / 2.3) play("paddle", t, 0.8);
+    },
+  },
   /** Tail slaps on the water, the alarm, one after another. */
   slap: { seconds: 14, events: (play) => { for (const t of [2, 5, 5.9, 9]) play("slap", t); } },
   /** The milestones over the music: two goal chimes, the fanfare. */
@@ -199,6 +213,7 @@ async function scene(name: string) {
   // index.ts updates every frame; here at 30 a second, all scheduled before the render.
   for (let now = 0, dt = 1 / 30; now < s.seconds; now += dt) {
     while (events[0] && events[0].t < now + 0.1) events.shift()!.go();
+    if (s.under) mix.under(now >= s.under[0] && now < s.under[1], now);
     tick(now, dt, sky(now));
   }
   return result(await ctx.startRendering());

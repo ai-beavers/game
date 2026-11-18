@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { placeAll, SPAWN } from "./place.ts";
 import { dayAt } from "../features/sky/clock.ts";
-import { heightAt, HILL, POND, pondRatio, RIM, SITE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
+import { BASIN, heightAt, HILL, POND, pondRatio, RIM, SHELF, SITE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
 
 describe("heightAt", () => {
   test("the pond is about 1.2 m deep in its middle", () => {
@@ -19,8 +19,30 @@ describe("heightAt", () => {
     }
   });
   test("the shore is shallow enough to walk in and out (< 30°)", () => {
-    for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) for (let r = 2; r < 5.5; r += 0.25)
-      expect(slopeAt(POND.x + Math.cos(a) * r, POND.z + Math.sin(a) * r)).toBeLessThan(Math.tan((30 * Math.PI) / 180));
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) for (let r = 2; r < 5.5; r += 0.25) {
+      const x = POND.x + Math.cos(a) * r, z = POND.z + Math.sin(a) * r;
+      if (pondRatio(x, z) > SHELF + 0.05) expect(slopeAt(x, z)).toBeLessThan(Math.tan((30 * Math.PI) / 180));
+    }
+  });
+  test("a basin about 3 m deep on the south side, with room to dive; the shallows along the bank stay", () => {
+    let deepest = 0, room = 0, shelf = 0;
+    for (let x = POND.x - 4.5; x < POND.x + 4.5; x += 0.1) for (let z = POND.z - 4.5; z < POND.z + 4.5; z += 0.1) {
+      const h = heightAt(x, z);
+      deepest = Math.min(deepest, h);
+      if (h < WATER_LEVEL - 2.5) room += 0.01;
+      if (pondRatio(x, z) >= SHELF) shelf = Math.min(shelf, h);
+    }
+    expect(deepest).toBeLessThan(WATER_LEVEL - 2.9);
+    expect(deepest).toBeGreaterThan(WATER_LEVEL - 3.4);
+    expect(room).toBeGreaterThan(2.5); // m² deeper than 2.5 m
+    expect(heightAt(BASIN.x, BASIN.z)).toBeLessThan(WATER_LEVEL - 2.5);
+    expect(BASIN.z).toBeLessThan(POND.z - 1.5); // south of the middle: the lodge stands there, the dam at the west shore
+    expect(shelf).toBeGreaterThan(WATER_LEVEL - 0.6); // the old bowl's shore, untouched
+  });
+  test("the bed stays up where the lodge stands and where the dam meets the water", () => {
+    for (let r = 0; r <= 1.25; r += 0.05) for (let a = 0; a < Math.PI * 2; a += 0.1)
+      expect(heightAt(POND.x + 0.6 + Math.cos(a) * r, POND.z + Math.sin(a) * r)).toBeGreaterThan(WATER_LEVEL - POND.depth - 0.15);
+    expect(heightAt(SITE.x + 1.1 + 1, SITE.z)).toBeGreaterThan(WATER_LEVEL - 1);
   });
   test("the building site is flat", () => {
     const heights: number[] = [];
@@ -83,6 +105,11 @@ describe("placement", () => {
       expect(s.thickness!).toBeGreaterThanOrEqual(0.03);
       expect(s.thickness!).toBeLessThanOrEqual(0.05);
     }
+  });
+  test("rocks and a sunken log lie down in the deep basin", () => {
+    expect(layout.bedRock.length).toBeGreaterThanOrEqual(3);
+    expect(layout.sunkenLog).toHaveLength(1);
+    for (const s of [...layout.bedRock, ...layout.sunkenLog]) expect(heightAt(s.x, s.z)).toBeLessThan(WATER_LEVEL - 1.2);
   });
   test("the spawn is clear and dry", () => {
     expect(wet(SPAWN)).toBe(false);
