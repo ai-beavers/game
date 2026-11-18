@@ -77,11 +77,11 @@ void main() {
   } else if (dist < 1e3) { // something under water: dimmer and greener the deeper it lies, caustics playing on it
     vec3 hit = eye + dir * dist;
     float deep = max(0., level - hit.y);
-    lit = colour * mix(vec3(1.), vec3(.55, .85, .8), smoothstep(0., .4, deep)) * exp(-deep * .5);
-    lit += colour * sun * 2.2 * caustic(hit.xz, time * .7) * exp(-deep * 1.) * smoothstep(0., .05, deep);
+    lit = colour * mix(vec3(1.), vec3(.55, .85, .8), smoothstep(0., .4, deep)) * exp(-deep * .3);
+    lit += colour * sun * 2.2 * caustic(hit.xz, time * .7) * exp(-deep * .7) * smoothstep(0., .05, deep);
   }
-  // fog through water: green-blue, thicker with distance; about half gone at 2 m, all but gone at 7 m
-  vec3 under = mix(lit, water, 1. - exp(-seen * .38));
+  // fog through water: green-blue, clear near, thicker with distance; about half gone at 4 m, nearly all at 8 m
+  vec3 under = mix(lit, water, 1. - exp(-seen * .08 - seen * seen * .025));
   vec3 picture = mix(colour, under, wet);
   picture = mix(picture, water * .5 + vec3(.02, .03, .03), line * .85); // the meniscus: a thin dark line
   gl_FragColor = vec4(picture, 1.);
