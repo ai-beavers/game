@@ -13,7 +13,8 @@ import { CONTROLS, DEVICE_NAMES, PRESS, TEACH, USE, type Device, type Step } fro
 import { MapDisplay } from "./map-display.ts";
 import { menuNav } from "./nav.ts";
 import { EXTENT, type MapView } from "./map.ts";
-import { box, GOLD, onViewport, Overlay, safeArea } from "./overlay.ts";
+import { place } from "../net/tags.ts";
+import { box, floating, GOLD, hudLayout, onViewport, Overlay, safeArea } from "./overlay.ts";
 import { skyLabel } from "./sky.ts";
 
 interface NetView { connected: boolean; me: number; host: number; remotes: Map<number, Remote> }
@@ -44,8 +45,9 @@ export const create: CreateFeature = game => {
   let large = false, started = false, page: Page | undefined, address = "", goals: Goal[] = [];
   let played = 0, swimUntil = 0, praise = "", praiseUntil = 0, listOpen = false, others: number | undefined;
   let startName = settings.values.name || randomName();
-  let sky: TextBlock, fps: TextBlock, mission: TextBlock, prompt: TextBlock, hints: TextBlock, note: TextBlock, players: TextBlock, north: TextBlock, marker: TextBlock;
-  let markerY = [0, 0], justDone = "", justDoneUntil = 0;
+  type Pill = ReturnType<Overlay["pill"]>;
+  let fps: TextBlock, mission: TextBlock, north: TextBlock, status: Pill, prompt: Pill, hints: Pill, note: Pill, players: Pill, marker: Pill;
+  let markerY = [0, 0], justDone = "", justDoneUntil = 0, compact = false;
   // The first minute: each step's hint shows when it is of use and goes once done; done steps are remembered.
   let taught = new Set<Step>();
   try { taught = new Set(JSON.parse(localStorage.getItem(TAUGHT) ?? "[]")); } catch { /* a broken or blocked store: all to learn */ }
@@ -56,7 +58,7 @@ export const create: CreateFeature = game => {
   };
   let walked = 0, looked = 0, lastYaw = player.camera.yaw;
   const lastAt = player.node.position.clone();
-  let mapSize = 0, nextMap = 0, goalPanel: ReturnType<Overlay["rect"]>, skyPanel: ReturnType<Overlay["rect"]>;
+  let mapSize = 0, nextMap = 0, goalPanel: ReturnType<Overlay["rect"]>;
   const readers = document.createElement("output");
   readers.setAttribute("aria-live", "polite");
   const photo = () => document.body.classList.contains("photo");
@@ -69,66 +71,53 @@ export const create: CreateFeature = game => {
     return names;
   }
 
+  // Each element in its home of style.ts's layout; see there for the regions.
   function redrawHud() {
     hud.group.removeControl(map);
     hud.clear();
     hud.dom.append(readers);
-    const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
-    const compact = w < 650 || h < 530;
+    const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight, at = hudLayout(stage), {u, small, gap, pad} = at;
     const {top: T, right: R, bottom: B, left: L} = safeArea(); // all 0 on a desktop
-    if (!touch && !live) hud.button("pause","Pause",box(L+12,T+12,68,36),() => open("pause"));
-    fps = hud.text("fps","",box(L+(touch ? 12 : 90),T+(touch ? (compact ? 86 : 140) : 12),80,36),13);
-    mapSize = large ? Math.min(w-24-L-R,h-62-T-B,390) : compact ? 92 : 126;
-    const goalW = compact ? Math.min(w/2-16,200) : 260;
-    // The live caption at the top centre (src/features/tour, same sizes): on a small screen the goals and the map go below it.
-    const captionSize = Math.max(18,Math.round(h*.03)), captionW = Math.min(w-24,captionSize*24);
-    const below = (left: number, right: number) => live && right > (w-captionW)/2 && left < (w+captionW)/2 ? Math.round(h*.025+captionSize*1.9)+8 : 0;
-    const mapX = large ? L+(w-L-R-mapSize)/2 : w-R-mapSize-(touch ? 66 : 14);
-    const mapY = large ? T+(h-T-B-mapSize)/2 : Math.max(T+14,below(mapX,w));
-    const mapBox = box(mapX,mapY,mapSize,mapSize);
+    compact = at.compact;
+    if (at.pause) hud.button("pause","Pause",at.pause,() => open("pause"));
+    fps = hud.label("fps","",at.fps,small,"center");
+    // The large map is asked for: the middle of the screen, as large as fits.
+    mapSize = large ? Math.min(w-24-L-R,h-62-T-B,390) : at.map?.w ?? 0;
+    const mapBox = large ? box(L+(w-L-R-mapSize)/2,T+(h-T-B-mapSize)/2,mapSize,mapSize) : at.map ?? box(0,0,0,0);
     const toggle = hud.button("map","Map",mapBox,toggleMap);
     toggle.element.className = large ? "map large" : "map";
     toggle.element.setAttribute("aria-expanded", String(large));
+    toggle.element.hidden = !mapSize;
     toggle.panel.isVisible = toggle.caption.isVisible = false;
     hud.put(map,mapBox);
+    map.isVisible = !!mapSize;
     map.focused = false;
     toggle.element.onfocus = () => { map.focused = toggle.element.matches(":focus-visible"); map.markAsDirty(); };
     toggle.element.onblur = () => { map.focused = false; map.markAsDirty(); };
-    north = hud.text("map-north","N",box(mapX,mapY+3,mapSize,23),15,"center");
-    north.fontWeight = "bold"; north.shadowBlur = 3; north.shadowColor = "black"; north.isVisible = large;
-    const statusX = w - R - (touch ? 66 : 14) - (compact ? 110 : 146);
-    const statusY = large ? T+14 : mapY+mapSize+7;
-    skyPanel = hud.rect("weather-panel",box(statusX,statusY,compact ? 110 : 146,27));
-    sky = hud.text("weather","",box(statusX,statusY,compact ? 110 : 146,27),13,"center");
-    const goalY = Math.max(T + (touch || live ? 14 : 56), below(L+12,L+12+goalW));
-    goalPanel = hud.rect("goals-panel",box(L+12,goalY,goalW,1));
-    mission = hud.text("goals","",box(L+22,goalY+8,goalW-20,1),compact ? 12 : 14);
-    // The panel takes the height of its text, however many lines the goals wrap into; a touch screen's fps go below it.
+    north = hud.label("map-north","N",box(mapBox.x,mapBox.y+3,mapSize,u*1.5),u,"center");
+    north.fontWeight = "bold"; north.isVisible = large;
+    status = hud.pill("weather",large ? {...at.status,y:T+gap} : at.status,u,"top");
+    goalPanel = hud.rect("goals-panel",box(at.goals.x,at.goals.y,at.goals.w,1));
+    mission = hud.label("goals","",box(at.goals.x+pad,at.goals.y+pad*.7,at.goals.w-2*pad,1),u);
+    // The panel takes the height of its text, however many lines the goals wrap into.
     // A text resized to fit counts the texture's pixels, not the CSS pixels the rest scales from (twice as many on a phone).
     const k = stage.hud.getSize().width/w;
     mission.resizeToFit = true;
-    mission.width = (goalW-20)*k+"px";
+    mission.width = (at.goals.w-2*pad)*k+"px";
     mission.onLinesReadyObservable.add(() => {
-      const tall = mission.heightInPixels/k;
-      goalPanel.height = tall+16+"px";
-      markerY[0] = goalY+tall+16+60; // the marker stays below the goals
-      if (touch) fps.top = goalY+tall+22+"px";
+      const tall = Math.min(mission.heightInPixels/k, at.goals.h-pad*1.4);
+      goalPanel.height = tall+pad*1.4+"px";
+      markerY[0] = Math.max(at.middle.top, at.goals.y+tall+pad*1.4+gap); // the marker stays below the goals
     });
-    // On a narrow touch screen the thumbs' controls and the chat (net/ui.ts) fill the bottom: prompt and hints above them.
-    // On a small desktop window the centred hints would reach the chat row at the bottom left: they go above it.
-    // A wide touch screen has the thumbs' buttons at both sides: the centre lines stay between them.
-    const bottom = B + (touch ? (w < 640 ? 330 : 152) : compact ? 94 : 58), centerW = Math.min(w-24-L-R,touch && w >= 640 ? w-380 : 560);
-    prompt = hud.text("context","",box((w-centerW)/2,h-bottom-54,centerW,46),18,"center");
-    hints = hud.text("input-hints","",box((w-centerW)/2,h-bottom,centerW,48),13,"center");
-    note = hud.text("announcement","",box(L+12,Math.max(T+8,h*.25),w-24-L-R,54),20,"center");
-    players = hud.text("players-list","",box(L+12,T+58,w-24-L-R,Math.max(50,h-128-T-B)),17,"center");
-    // Over the thing the goal at hand needs, kept on screen between the goals and the prompt; at the side when off it.
-    marker = hud.text("first-marker","",box(0,0,140,52),15,"center",false);
-    marker.color = GOLD; marker.fontWeight = "bold"; marker.shadowBlur = 6; marker.shadowColor = "#0b1814"; marker.isVisible = false;
-    markerY = [T+(compact ? 150 : 190), h-bottom-60];
-    for (const block of [prompt,hints,note,players]) {
-      block.shadowBlur = 4; block.shadowColor = "#0b1814"; block.outlineWidth = 2; block.outlineColor = "#1c2824";
-    }
+    prompt = hud.pill("context",at.prompt,Math.round(u*1.15));
+    prompt.text.fontWeight = "600";
+    hints = hud.pill("input-hints",at.hints,u);
+    note = hud.toast("announcement",at.toast,Math.round(u*1.1));
+    players = hud.pill("players-list",box(at.goals.x,at.middle.top,w-2*at.goals.x,Math.max(u*4,at.middle.bottom-at.middle.top)),u,"top");
+    // Over the thing the goal at hand needs, kept in the middle between the regions; at the side when off screen.
+    marker = hud.pill("first-marker",box(0,0,w,u*3),u,"bottom",false);
+    marker.text.color = GOLD; marker.text.fontWeight = "bold";
+    markerY = [at.middle.top, at.middle.bottom];
     nextMap = 0;
   }
 
@@ -340,16 +329,18 @@ export const create: CreateFeature = game => {
   }
   function current() { return goals.find(g => !g.done)?.id; }
   function pointAt(target: { at: Vector3; label: string } | undefined) {
-    marker.isVisible = !!target;
-    if (!target) return;
+    if (!target) return marker.set("");
     const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
     const p = Vector3.Project(target.at, Matrix.IdentityReadOnly, stage.scene.getTransformMatrix(), stage.camera.viewport.toGlobal(w,h));
     // Behind the camera the projection mirrors: then it is off to a side, the side it lies on.
     const behind = p.z < 0 || p.z > 1, rawX = behind ? (w-p.x < w/2 ? 0 : w) : p.x;
-    const x = Scalar.Clamp(rawX,80,w-80), y = Scalar.Clamp(behind ? h : p.y,markerY[0]!,markerY[1]!);
-    marker.text = target.label + "\n" + (rawX < 80 ? "◀" : rawX > w-80 ? "▶" : "▼");
-    marker.left = x-70+"px";
-    marker.top = y-52-5*Math.abs(Math.sin(performance.now()/300))+"px";
+    const text = target.label + " " + (rawX < 80 ? "◀" : rawX > w-80 ? "▶" : "▼");
+    marker.set(text);
+    const size = marker.measure(text), x = Scalar.Clamp(rawX,size.w/2+8,w-size.w/2-8);
+    const y = Scalar.Clamp(behind ? h : p.y,markerY[0]!+size.h,markerY[1]!) - 5*Math.abs(Math.sin(performance.now()/300));
+    // Clear of the name tags and bubbles (net/ui.ts): they keep their places, the marker goes up above them.
+    const spot = place([...floating.map(f => ({x: f.x+f.w/2, y: f.y+f.h, w: f.w, h: f.h})), {x, y, ...size}], w, h).at(-1)!;
+    marker.at(spot.x, spot.y);
   }
   const nav = menuNav();
   return {
@@ -375,7 +366,6 @@ export const create: CreateFeature = game => {
       } else padWas = [];
       hud.show(started && !photo());
       if (!hud.group.isVisible) return;
-      const compact = stage.canvas.clientWidth < 650 || stage.canvas.clientHeight < 530;
       goalPanel.isVisible = mission.isVisible = goals.length > 0 && !large;
       // The goal at hand stands out with what to do for it; a goal just done keeps its tick a moment on a small screen.
       const doing = current();
@@ -385,20 +375,18 @@ export const create: CreateFeature = game => {
       mission.text = "Beaver work\n" + lines.join("\n");
       fps.text = settings.values.fps ? Math.round(stage.engine.getFps())+" fps" : "";
       const offer = player.offer()?.text || "";
-      prompt.text = offer && !live ? USE[device] + "   " + offer : "";
-      if (oldOffer !== offer) { oldOffer = offer; readers.value = prompt.text; }
+      prompt.set(offer && !live ? USE[device] + "   " + offer : "");
+      if (oldOffer !== offer) { oldOffer = offer; readers.value = prompt.text.text; }
       const feet = player.node.position, pond = world.pond;
       const wet = !!pond && Math.hypot(feet.x-pond.x, feet.z-pond.z) < pond.radius+2.5;
       const step: Step | undefined = !taught.has("move") ? "move" : !taught.has("look") ? "look" : !taught.has("use") && offer ? "use" : !taught.has("slap") && wet ? "slap" : undefined;
-      hints.text = step && !live ? TEACH[device][step] : "";
+      // One line of advice at a time, low in the middle over the prompt: what to learn, else how to get out of the water.
+      hints.set(live ? "" : step ? TEACH[device][step] : played < swimUntil ? "Swim to the shore to climb out" : "");
       pointAt(live || large ? undefined : firstTarget());
-      note.text = played < praiseUntil ? praise : played < swimUntil && !live ? "Swim to the shore to climb out" : "";
-      players.text = listOpen ? "Players\n" + playerNames().join("\n") : "";
-      if (game.sky) {
-        const s = skyLabel(game.sky.hour,game.sky.weather,game.sky.dark);
-        sky.text = s.time+"   "+s.text;
-      }
-      skyPanel.isVisible = sky.isVisible = !!game.sky;
+      note.set(played < praiseUntil ? praise : "");
+      players.set(listOpen ? "Players\n" + playerNames().join("\n") : "");
+      const s = game.sky && skyLabel(game.sky.hour,game.sky.weather,game.sky.dark);
+      status.set(s ? s.time+"   "+s.text : "");
       const now = performance.now();
       if (now < nextMap) return;
       nextMap = now+90;
