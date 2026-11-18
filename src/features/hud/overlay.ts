@@ -105,8 +105,11 @@ export class Overlay {
     element.setAttribute("aria-label", label);
     element.style.cssText = "position:absolute;pointer-events:auto;opacity:0;touch-action:none;box-sizing:border-box;margin:0;font-size:16px";
     this.placeElement(element, r);
-    element.addEventListener("focus", () => { panel.color = GOLD; panel.thickness = 2; });
-    element.addEventListener("blur", () => { panel.color = EDGE; panel.thickness = 1; });
+    // The focus ring: drawn where the DOM focus is, a gap outside the control, so it shows on a gold button too.
+    const ring = this.rect(panel.name + "-focus", box(r.x-4,r.y-4,r.w+8,r.h+8), "transparent", panel.cornerRadius + 4);
+    ring.thickness = 3; ring.color = GOLD; ring.isVisible = false;
+    element.addEventListener("focus", () => { panel.color = GOLD; panel.thickness = 2; ring.isVisible = panel.isVisible; });
+    element.addEventListener("blur", () => { panel.color = EDGE; panel.thickness = 1; ring.isVisible = false; });
     this.dom.append(element);
     return element;
   }

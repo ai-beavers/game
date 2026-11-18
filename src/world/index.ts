@@ -11,6 +11,7 @@
 import { Vector3, Quaternion, Matrix } from "@babylonjs/core/Maths/math.vector.js";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
 import type { Plane } from "@babylonjs/core/Maths/math.plane.js";
+import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { CreateWorld, Props, Stick, WorldTree } from "../contracts.ts";
 import { RAPIER, type Stage } from "../engine.ts";
@@ -93,7 +94,7 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
   const { scene, physics } = stage;
   const light = daylight(stage);
 
-  buildTerrain(stage);
+  const ground = buildTerrain(stage);
   const water = buildWater(stage);
   const props = given ?? standInProps(scene), layout = placeAll();
   const pick = (list: TransformNode[], s: Spot) => list[s.variant % list.length]!;
@@ -192,7 +193,7 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
   const solid = [...layout.tree.map((s) => ({ s, r: 0.5 })), ...layout.rock.map((s) => ({ s, r: 0.55 * s.scale })),
     ...layout.stump.map((s) => ({ s, r: 0.4 })), ...layout.log.map((s) => ({ s, r: 1.2 })),
     ...layout.stick.map((s) => ({ s, r: 0.3 }))]; // a trampled spot around each stick, so it can be found
-  const grass = buildGrass(stage, (x, z) => solid.some(({ s, r }) => Math.hypot(s.x - x, s.z - z) < r));
+  const grass = buildGrass(stage, (x, z) => solid.some(({ s, r }) => Math.hypot(s.x - x, s.z - z) < r), ground.material as StandardMaterial);
 
   // Rapier leaves a thin box on the ground rocking a fraction of a degree, for ever, and a crate creeping a few
   // millimetres a second; neither falls asleep. A loose thing that has moved less than a centimetre in a second,

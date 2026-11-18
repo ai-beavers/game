@@ -7,7 +7,7 @@
 // site; reeds grow in the shallow edge of the pond; sticks lie under trees, on the shore and by the site; the
 // crates wait at the site. Bushes and far trees fill the bank and the land behind it (seen, not walked).
 import { fbm, seeded } from "./noise.ts";
-import { HILL, POND, RIM, SITE, WATER_LEVEL, heightAt, pondRatio, slopeAt } from "./terrain.ts";
+import { HILL, POND, RIM, SITE, WATER_LEVEL, heightAt, pondRatio, slopeAt, sunsetGap } from "./terrain.ts";
 
 export interface Spot {
   x: number; z: number;
@@ -94,9 +94,9 @@ export function placeAll(seed = 42): Layout {
   for (const p of scatter(20, 2, 13, stickFree)) if (sticks.length < 20) sticks.push(p);
   const stick = sticks.slice(0, 20).map((p) => spot(p, 0.5 + random() * 0.3, 2, { thickness: 0.03 + random() * 0.02 }));
 
-  // The thicket on the bank and the forest behind it.
-  const bush = scatter(260, RIM - 1, RIM + 7, (x, z) => heightAt(x, z) > 0.45 && dist(HILL, x, z) > 2.5 && dist(pondTree, x, z) > 2)
-    .map((p) => spot(p, 0.8 + random() * 0.9, 3));
-  const farTree = scatter(110, RIM + 4, RIM + 26, () => true).map((p) => spot(p, 0.9 + random() * 0.6, 5));
+  // The thicket on the bank and the forest behind it, open where the evening sun goes down.
+  const bush = scatter(260, RIM - 1, RIM + 7, (x, z) => heightAt(x, z) > 0.45 && dist(HILL, x, z) > 2.5 && dist(pondTree, x, z) > 2
+    && sunsetGap(x, z) < 0.5).map((p) => spot(p, 0.8 + random() * 0.9, 3));
+  const farTree = scatter(110, RIM + 4, RIM + 26, (x, z) => sunsetGap(x, z) === 0).map((p) => spot(p, 0.9 + random() * 0.6, 5));
   return { tree, stump, log, rock, reed, crate, stick, bush, farTree };
 }
