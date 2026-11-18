@@ -2,8 +2,7 @@
 // game's time, walking and reaching, the events that happened, and the dam work in parts. index.ts makes one Kit, hands
 // it to every station file, and drives it: resume(dt) once a picture lets every waiter go on.
 //
-// A station file destructures what it uses at its top. Two things are written through the kit itself, not a copy:
-// kit.subject (what the live camera brings into the picture; the round loop clears it after each station) and
+// A station file destructures what it uses at its top. One thing is written through the kit itself, not a copy:
 // kit.usedUp (read by the round loop: the saved game has no wood left).
 import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
@@ -54,8 +53,6 @@ export interface Kit {
   requested: string[];
   /** What the tour holds down, read once per physics step: where to walk (to; side: a step aside), run, the keys. */
   want: { to: Vector3 | undefined; side: number; run: number; jump: boolean; act: boolean; slap: boolean; dive: boolean; crawl: boolean };
-  /** What the beaver works on, for the live picture: a tree, the dam, a deer. Write it as kit.subject. */
-  subject: (() => { x: number; z: number }) | undefined;
   /** No wood left in the saved game (set by fetchStick): the round loop starts it anew. */
   readonly usedUp: boolean;
   /** The next frame of the world; its dt. */
@@ -113,7 +110,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
 
   // ---- what the tour wants, read once per physics step like any other device ----
   const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false, dive: false, crawl: false };
-  let subject: (() => { x: number; z: number }) | undefined; // what the beaver works on, for the live picture: a tree, the dam, a deer
   player.keys.add({
     read(into: Input) {
       Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap, dive: want.dive, crawl: want.crawl });
@@ -207,7 +203,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   };
   const fell = async (i: number) => {
     const tree = world.trees![i]!;
-    subject = () => tree.place;
     // From the side facing the clearing's middle, as build.at(i) does, so it falls outwards.
     const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize();
     const stand = tree.place.add(out.scale(tree.radius + 0.35));
@@ -224,7 +219,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     const b = needBuild();
     // Only a tree lying still can be gnawed (build: the "rest" change); one leaning on another may never be.
     await until(() => !!standing(b.state.trees[i])?.rest, 8, `tree ${i} never came to rest after its fall (leaning on something?)`);
-    subject = () => b.views.get(i)?.trunkLine()?.from ?? world.trees![i]!.place;
     // The nearest point of the trunk as it lies now, a little off its foot; then further along it.
     await reach("split", (attempt) => {
       const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new Vector3() };
@@ -275,7 +269,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     while (b.state.dam.length < upTo) {
       await fetchStick();
       const { origin, across } = b.dam.frame, to = origin.subtract(across.scale(1.25)), from = b.dam.lodgeAt.subtract(across.scale(1.7));
-      subject = () => lodge ? b.dam.lodgeAt : origin;
       await reach("build", (attempt) => lodge ? (attempt ? b.dam.lodgeAt : from) : attempt ? origin : to, true);
       const placed = after("stickPlaced"), finished = after("damFinished"), n = b.state.dam.length + 1;
       await tap("act");
@@ -307,8 +300,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
 
   return {
     game, player, world, stage, beaver, fast, live, requested, want,
-    get subject() { return subject; },
-    set subject(at) { subject = at; },
     get usedUp() { return usedUp; },
     frame, paint, wait, until, tap, press, key, flat, walkTo, reach, last, expect, after, hudText,
     build, needBuild, pond, sky, clear, standingTrees, fell, split, loose, pickUp, fetchStick, buildUpTo, regrowing, resume,

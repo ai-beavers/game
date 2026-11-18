@@ -20,7 +20,6 @@ export const trading = (kit: Kit): Station[] => {
       // At the building site with the stick in hand, E still builds: the dam's prompt is the dam's.
       if (!live) {
         const { origin, across } = b.dam.frame, to = origin.subtract(across.scale(1.25)), n = b.state.dam.length;
-        kit.subject = () => origin;
         await walkTo(to.x, to.z, { near: 0.4, hop: true });
         const offer = player.offer();
         if (n < SLOTS) expect(offer?.action === "build" && offer.text === "Build into dam", `with a stick at the dam, E would "${offer?.text}", not "Build into dam"`);
@@ -28,7 +27,6 @@ export const trading = (kit: Kit): Station[] => {
       }
       const spot = GOODS.findIndex((g) => g.id === "pinecone"), stand = standAt(spot), good = GOODS[spot]!.id;
       // Up to the counter from in front of it, as a beaver coming from the meadow does.
-      kit.subject = () => stand;
       const approach = new Vector3(stand.x + FRONT.x * 1.4, 0, stand.z + FRONT.z * 1.4);
       await walkTo(approach.x, approach.z, { near: 0.4, hop: true, limit: 60 });
       await reach("trade", () => stand);

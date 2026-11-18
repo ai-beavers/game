@@ -9,7 +9,7 @@ Draw everything a player sees with Babylon.js: Babylon GUI on `stage.hud`, built
 
 ## Stations
 
-New player-facing behavior gets a playable station in `src/features/tour/stations/`. Play it with `?play&tour=fast&station=Name`. A station with an activity name joins that activity in the live tour; one without becomes its own activity. The live tour plays as a player would: an activity of its own gets its reason (`reason`), the day it came (`NEW`, so the beaver tries it first for a week) and, when the camera behind the beaver does not show it, a shot (`SHOTS`), all in `src/features/tour/live.ts`.
+New player-facing behavior gets a playable station in `src/features/tour/stations/`. Play it with `?play&tour=fast&station=Name`. A station with an activity name joins that activity in the live tour; one without becomes its own activity. The live tour plays as a player would, with the player's own camera behind the beaver: an activity of its own gets its reason (`reason`) and the day it came (`NEW`, so the beaver tries it first for a week), both in `src/features/tour/live.ts`.
 
 ## Agent skills
 

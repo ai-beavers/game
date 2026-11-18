@@ -126,7 +126,6 @@ export const skyWatch = (kit: Kit): Station[] => {
         }
         await until(() => deer.some((d) => d.state === "graze"), 60, "no deer came out to graze at dusk");
         const d = deer.find((o) => o.state === "graze")!;
-        kit.subject = () => d;
         expect(!!stage.scene.getMeshByName("life-deer")?.isEnabled(), "a deer grazes, none is drawn");
         await wait(2); // a look at it grazing
         await walkTo(d.x, d.z, { run: 1, near: 2, arrived: () => d.state === "flee", limit: 25 });
