@@ -4,6 +4,7 @@
 //   const jump = newJump();      if (jumpStarts(jump, dt, grounded, input.jump, canJump)) vy = JUMP_SPEED;
 //   const act = newAction();     const event = stepAction(act, dt, actPressed, stickInReach);  // "grab" | "release"
 //   const slap = newSlap();      stepSlap(slap, dt, slapPressed, allowed);                      // the tail slap, Q
+//   const dive = newDive();      stepDive(dive, dt, diveHeld, afloat, headUnder);              // diving, C held
 //   trackMotion(motion, dt, facts);                                                            // fills motion in place
 import type { Action, Motion } from "../contracts.ts";
 
@@ -73,7 +74,30 @@ export function stepSlap(s: Slap, dt: number, pressed: boolean, allowed: boolean
 export const slapHits = (before: Motion, now: Motion) =>
   before.action === "none" && now.action === "none" && before.actionProgress < SLAP_HIT && now.actionProgress >= SLAP_HIT;
 
+// ---- diving ------------------------------------------------------------------------------------------------------
+
+// Held while swimming, the dive key takes the beaver under; it comes up when the key is let go or its breath runs
+// out (no harm: it just surfaces, and dives again on a fresh press). Breath goes while the head is under and comes
+// back at the surface.
+export const BREATH = 20, REFILL = 6; // s of breath under water; s to get all of it back at the surface
+export interface Dive { diving: boolean; breath: number; spent: boolean }
+export const newDive = (): Dive => ({ diving: false, breath: BREATH, spent: false });
+
+/** Once per step. held: the dive key; afloat: swimming; under: the head below the surface. True while it dives. */
+export function stepDive(s: Dive, dt: number, held: boolean, afloat: boolean, under: boolean) {
+  s.breath = under ? Math.max(0, s.breath - dt) : Math.min(BREATH, s.breath + dt * BREATH / REFILL);
+  if (s.breath === 0) s.spent = true;
+  else if (!held) s.spent = false;
+  s.diving = held && afloat && !s.spent;
+  return s.diving;
+}
+
 // ---- motion ------------------------------------------------------------------------------------------------------
+
+/** The Motion with what only this player's own beaver tells: diving (under the surface on purpose). It does not
+ *  travel over the network (net/protocol.ts packs Motion's own fields); others see a dive in the feet's depth and
+ *  in `vertical`, which pitches the swimming body (src/anim). */
+export type SwimMotion = Motion & { diving?: boolean };
 
 export const newMotion = (): Motion => ({
   speed: 0, distance: 0, turning: 0, grounded: false, vertical: 0, airTime: 0, sinceLanding: 100, landingSpeed: 0,
@@ -90,11 +114,13 @@ export interface StepFacts {
   act: ActionState;
   /** The tail slap's progress, 0: none (Slap.progress). */
   slap?: number;
+  /** Diving (Dive.diving); left out by those that never dive (bots). */
+  diving?: boolean;
 }
 
 /** Fills every field of motion in place, except anger (which belongs to whoever sets it). Afloat counts as held
  *  up: no air time, and coming into the water is a landing. */
-export function trackMotion(m: Motion, dt: number, f: StepFacts): void {
+export function trackMotion(m: SwimMotion, dt: number, f: StepFacts): void {
   const supported = f.grounded || f.afloat, wasSupported = m.airTime === 0;
   m.time += dt;
   m.speed = f.moved / dt;
@@ -110,6 +136,7 @@ export function trackMotion(m: Motion, dt: number, f: StepFacts): void {
   m.action = f.act.action;
   m.actionProgress = f.act.action === "none" ? f.slap ?? 0 : f.act.progress;
   m.carrying = f.act.carrying;
+  if (f.diving !== undefined) m.diving = f.diving;
 }
 
 // ---- steering ----------------------------------------------------------------------------------------------------

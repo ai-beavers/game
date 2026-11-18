@@ -9,11 +9,13 @@
 //            around, flexing when angry), turning lean, the dip after a landing, anger
 //   action   pickup, drop, gnaw, build, by actionProgress; feet stay planted
 //   air      stretched while rising, legs forward while falling
-//   swim     level in the water, hind legs paddle, tail steers
+//   swim     level in the water, hind legs paddle, tail steers; pitched nose down sinking, up rising (motion.vertical)
+//   dive     under the surface (the player's own motion.diving): long and streamlined, the tail driving in strokes
 //   slap     the tail up and struck down (action "none" with a progress), over all of the above but the carry
 //   carry    the right arm holds the stick in front of the chest, over all of the above
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
 import { WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
+import type { SwimMotion } from "../player/state.ts";
 import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
 import { foot, gait, type FootPlan, type Gait } from "./gait.ts";
@@ -220,6 +222,24 @@ function swim(body: Body, phase: number, turning: number) {
   for (const [sign, lr] of SIDES) reachArm(body, placed, lr, onChest(placed, [sign * 0.07, 0.06, 0.16]), [sign, 0, -1], 0.5); // folded under the chin
 }
 
+/** Under water: long and level, the head in line, forelegs folded under the chin, hind legs trailing with slow kicks,
+ *  the tail driving in strokes up and down; the body stays as swim() pitched it. */
+function dive(body: Body, phase: number, turning: number) {
+  const s = sin(TAU * phase), late = sin(TAU * phase - 0.9);
+  trunk(body, { tail_up: 1.35 + 0.3 * s, tail_sway: soft(-0.5 * turning, 0.6) });
+  body.turns.tail2 = mul(axisAngle(X, 0.35 * late), body.turns.tail2); // the flat tip follows the stroke, late
+  body.turn("hips", [X, 1.5 + 0.04 * s]);
+  body.turn("spine", [X, 0.03 * s]);
+  body.turn("chest", [X, -0.03 * s]);
+  body.turn("head", [X, -1.3 - 0.04 * s], [Z, soft(0.3 * turning, 0.5)]);
+  for (const [sign, lr] of SIDES) {
+    const k = sin(TAU * phase + (sign > 0 ? 0 : 0.4)); // both hind feet kick nearly together, webbed and wide
+    leg(body, sign, lr, -0.35 + 0.25 * k, 0.4 + 0.2 * max(0, -k), 1.0 + 0.2 * k, 0.3);
+  }
+  const placed = body.fk();
+  for (const [sign, lr] of SIDES) reachArm(body, placed, lr, onChest(placed, [sign * 0.06, 0.04, 0.17]), [sign, 0, -1], 0.5);
+}
+
 /** How far the tail is raised over what the body does at slap progress p, radians: up in the first 38 %, struck down
  *  past rest by `below` at SLAP_HIT (src/player/state.ts: 0.5), then back. Each piece starts and ends at rest speed,
  *  so the strike is fast but never jumps. */
@@ -238,15 +258,16 @@ function tailSlap(body: Body, p: number, wet: number) {
 }
 
 export const createAnimator: CreateAnimator = (): Animator => {
-  const body = new Body(), layer = new Body();
+  const body = new Body(), layer = new Body(), extra = new Body();
   const holds = [0, 1].map(() => ({ planted: false, z: 0, yaw: 0, dz: 0, dyaw: 0 }));
   let phase = 0, lastDistance: number | undefined, swimPhase = 0;
   let speed = 0, anger = 0, first = true, wasGrounded = true;
   const turning$ = new Ease(-Infinity, Infinity); // eased, not damped: a damped rate jumps in its first frame
-  const air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease();
+  const air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease();
+  const pitch$ = new Ease(-Infinity, Infinity);
   let shown: Action = "none", progress = 0, vertical = 0;
   return {
-    pose(m: Motion, dt: number) {
+    pose(m: SwimMotion, dt: number) {
       dt = clamp(dt, 0, 0.1);
       const set = (from: number, to: number, seconds: number) => (first ? to : damp(from, to, seconds, dt));
       speed = set(speed, m.speed, 0.08);
@@ -256,6 +277,9 @@ export const createAnimator: CreateAnimator = (): Animator => {
       const inAir = ease(air$, m.grounded || m.swimming > 0.5 ? 0 : 1, 0.15);
       const swimming = ease(swimming$, clamp(m.swimming), 0.5);
       const carrying = ease(carrying$, m.carrying ? 1 : 0, 0.35);
+      const diving = ease(diving$, m.diving && m.swimming > 0.5 ? 1 : 0, 0.6);
+      // afloat, nose down while it sinks and up while it rises (others' beavers too: vertical travels)
+      const pitch = ease(pitch$, m.swimming > 0.5 ? soft(-0.8 * m.vertical, 0.45) : 0, 0.4);
       if (m.action !== "none") { shown = m.action; progress = m.actionProgress; }
       if (!m.grounded) vertical = m.vertical; // after touchdown the air pose fades out as it was, not as at the top
       const acting = ease(acting$, m.action !== "none" ? 1 : 0, 0.25);
@@ -295,7 +319,12 @@ export const createAnimator: CreateAnimator = (): Animator => {
       ground(body, { speed, pivot, feet, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
       if (acting > 0.001) { action(layer.reset(), shown, progress, m.time); body.blend(layer, acting); }
       if (inAir > 0.001) { air(layer.reset(), vertical); body.blend(layer, inAir); }
-      if (swimming > 0.001) { swim(layer.reset(), swimPhase, turning); body.blend(layer, swimming); }
+      if (swimming > 0.001) {
+        swim(layer.reset(), swimPhase, turning);
+        if (diving > 0.001) { dive(extra.reset(), swimPhase, turning); layer.blend(extra, diving); }
+        layer.turns.hips = mul(axisAngle(X, pitch), layer.turns.hips);
+        body.blend(layer, swimming);
+      }
       if (m.action === "none" && m.actionProgress > 0) tailSlap(body, m.actionProgress, swimming);
       const holding = carrying * (1 - acting);
       if (holding > 0.001) { // the right hand before the chest, wherever the trunk leans

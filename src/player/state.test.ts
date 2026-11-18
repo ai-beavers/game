@@ -1,6 +1,6 @@
-// Tests for the player's pure logic: jump timing, the carry sequence, the Motion bookkeeping. bun test src/player
+// Tests for the player's pure logic: jump timing, the carry sequence, diving and breath, the Motion bookkeeping. bun test src/player
 import { describe, expect, test } from "bun:test";
-import { SLAP_COOLDOWN, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
+import { BREATH, REFILL, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
 
 const dt = 1 / 60;
 
@@ -170,5 +170,23 @@ describe("tail slap", () => {
     expect(s.progress).toBeGreaterThan(0);
     m = { ...m, action: "pickup", actionProgress: 0.6 };
     expect(slapHits({ ...m, actionProgress: 0.4 }, m)).toBe(false); // a pickup's half way is not a slap
+  });
+});
+
+describe("dive", () => {
+  test("only afloat and while held; the breath lasts BREATH s under, then it surfaces until a fresh press", () => {
+    const s = newDive();
+    expect(stepDive(s, dt, true, false, false)).toBe(false); // on land: nothing
+    expect(stepDive(s, dt, true, true, false)).toBe(true);
+    expect(stepDive(s, dt, false, true, true)).toBe(false); // let go: up
+    let t = 0;
+    while (stepDive(s, dt, true, true, true)) t += dt;
+    expect(t).toBeGreaterThan(BREATH - 0.1); // no harm, no hurry: about 20 s
+    expect(t).toBeLessThan(BREATH + 0.1);
+    for (let i = 0; i < 60; i++) expect(stepDive(s, dt, true, true, i > 30)).toBe(false); // held on: stays up
+    stepDive(s, dt, false, true, false);
+    expect(stepDive(s, dt, true, true, false)).toBe(true); // a fresh press at the surface: under again
+    for (let i = 0; i * dt < REFILL; i++) stepDive(s, dt, false, true, false);
+    expect(s.breath).toBe(BREATH); // all back after REFILL s at the surface
   });
 });

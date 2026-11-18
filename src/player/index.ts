@@ -1,6 +1,6 @@
 import { holdInHand } from "./grip.ts";
-// Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming, the tail slap, the follow camera,
-// and the Motion report the animator draws from.
+// Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming and diving, the tail
+// slap, the follow camera, and the Motion report the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
 //   beaver.root.parent = player.node;
@@ -15,7 +15,7 @@ import { RAPIER, type Stage } from "../engine.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { keyboard, newInput, type Keyboard } from "./input.ts";
-import { jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepSlap, trackMotion } from "./state.ts";
+import { BREATH, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
 export const HEIGHT = 1.0, RADIUS = 0.225;
@@ -34,6 +34,10 @@ const MAX_FALL = 20;
 // Water: afloat once the feet are FLOAT_DEPTH deep, then held at HOLD_DEPTH, where the animator's swimming pose
 // has head and back above the surface; back on foot when it touches ground there.
 const FLOAT_DEPTH = 0.45, HOLD_DEPTH = 0.3;
+// Diving (C held while afloat): down at DIVE_SPEED, up again with Space, never shallower than DIVE_TOP (feet below the
+// surface, m), where the long diving body is just under; the head counts as under from HEAD_UNDER. Let go, it comes up
+// no faster than RISE. The capsule stays as it is: upright, its top in the water, which stops nothing.
+const DIVE_SPEED = 0.6, DIVE_TOP = 0.62, HEAD_UNDER = 0.5, RISE = 0.9;
 // Carrying.
 export const REACH = 0.6, REACH_RADIUS = 0.45; // m in front of the feet, and how far from that point a stick may lie
 export interface PlayerControls extends Player {
@@ -46,6 +50,9 @@ export interface PlayerControls extends Player {
   velocity: Vector3;
   facing: number;
   afloat: boolean;
+  /** Under the surface on purpose (the dive key held while swimming), and the breath left, 0 … 1. */
+  readonly diving: boolean;
+  readonly breath: number;
   /** The water's surface height the player swims by, now (it moves: src/world/water.ts); undefined: no water. */
   readonly waterLevel: number | undefined;
   setAnger(value: number): void;
@@ -98,12 +105,12 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   let carried: { stick: Stick; parent: TransformNode["parent"] } | undefined, target: Stick | undefined;
   const notCarried = (c: RAPIER.Collider) => !carried || c.parent() !== carried.stick.body;
   const camera = followCamera(stage, (c) => c !== collider && !stickBodies.has(c.parent()!));
-  const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion = newMotion(), steering = newSteering(), slap = newSlap();
+  const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion: SwimMotion = newMotion(), steering = newSteering(), slap = newSlap(), dive = newDive();
 
   const node = new TransformNode("player", stage.scene);
   const feet = options.spawn.clone(), before = feet.clone(), velocity = new Vector3();
   let lift = 0; // m the picture still lags behind the last steps up
-  let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false;
+  let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false, under = false;
   let actor: Actor | undefined, aim: number | undefined; // aim: where a lasting action turns the beaver
   const desired = new Vector3(), forward = new Vector3();
 
@@ -194,7 +201,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     before.copyFrom(feet);
     facingBefore = facing;
     keys.read(input);
-    stepSlap(slap, dt, !!input.slap && !slapHeld, (grounded || afloat) && act.action === "none");
+    // Under water: no tail slap (it is the alarm on the surface) and no gnawing or building; pickup and drop work.
+    stepSlap(slap, dt, !!input.slap && !slapHeld, (grounded || afloat) && act.action === "none" && !under);
     slapHeld = !!input.slap;
     const pressed = input.act && !actHeld && slap.progress === 0; // E waits while the tail is up
     actHeld = input.act;
@@ -202,7 +210,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // The carry sequence.
     if (act.action === "none" && pressed && !act.carrying) target = grounded || afloat ? inReach() : undefined;
     // A lasting action of another part (gnaw, build) when there is nothing to pick up; it comes before a drop.
-    const offer = act.action === "none" && pressed && !target && (grounded || afloat) ? actor?.begin(act.carrying) : undefined;
+    const offer = act.action === "none" && pressed && !target && (grounded || afloat) && !under ? actor?.begin(act.carrying) : undefined;
     if (offer) { act.action = offer.action; act.progress = 0; aim = offer.face; }
     else if (act.action === "gnaw" || act.action === "build") {
       const progress = actor?.step(dt, input.act);
@@ -231,9 +239,11 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     if (!afloat && depth > FLOAT_DEPTH) afloat = true;
     else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02) afloat = false;
     if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
+    const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && act.action !== "build" && slap.progress === 0, afloat, under);
     if (afloat) {
-      const toSurface = (depth - HOLD_DEPTH) * 4; // m/s up towards floating depth
-      vy += (toSurface - vy) * Math.min(1, 5 * dt);
+      // m/s: diving, down (or up with Space) but never up out of it; else up towards floating depth, calmly from deep
+      const goal = diving ? Math.min(input.jump ? DIVE_SPEED : -DIVE_SPEED, (depth - DIVE_TOP) * 4) : Math.min(RISE, (depth - HOLD_DEPTH) * 4);
+      vy += (goal - vy) * Math.min(1, 5 * dt);
     } else {
       // On walkable ground snap-to-ground keeps it down; pressing into the floor would make the controller stall.
       // On ground steeper than it can climb gravity stays on, and the controller lets it slide.
@@ -246,6 +256,10 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const wish = { x: Math.sin(facing) * speed * dt, y: vy * dt, z: Math.cos(facing) * speed * dt };
     controller.computeColliderMovement(collider, wish, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, notCarried);
     const moved = controller.computedMovement();
+    // Diving down onto the sloping bed, the controller slides the push down along it: no further sideways than wished,
+    // or it would glide down to the deepest point by itself.
+    const side = Math.hypot(moved.x, moved.z), wished = Math.hypot(wish.x, wish.z);
+    if (diving && side > wished) { moved.x *= wished / side; moved.z *= wished / side; }
     // The round bottom of the capsule slides up the edge of a step too high to take, a little each step: such a
     // creep (steeper than SLOPE, smaller than an autostep) counts as a wall.
     if (grounded && wish.y <= 0 && moved.y > 0 && moved.y < 0.05 && moved.y > Math.tan(SLOPE) * Math.hypot(moved.x, moved.z)) moved.x = moved.y = moved.z = 0;
@@ -262,9 +276,11 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     if (vy > 0 && moved.y < wish.y * 0.5) vy = 0; // bumped the head
     velocity.set(moved.x / dt, 0, moved.z / dt);
 
+    under = level !== undefined && level - feet.y > HEAD_UNDER;
+
     trackMotion(motion, dt, {
       moved: Math.hypot(moved.x, moved.z), vertical: (moved.y - stepped) / dt, // a step up is not a leap
-      turning: (facing - facingBefore) / dt, grounded, afloat, act, slap: slap.progress,
+      turning: (facing - facingBefore) / dt, grounded, afloat, act, slap: slap.progress, diving,
     });
   };
 
@@ -274,7 +290,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     lift *= Math.exp(-LIFT_EASE * dt); // a step up shows as a quick rise, not a jump of the whole body
     node.position.y += lift;
     node.rotation.set(0, facingBefore + Math.atan2(Math.sin(facing - facingBefore), Math.cos(facing - facingBefore)) * alpha, 0);
-    camera.update(dt, show.copyFrom(node.position), { velocity, facing, afloat, busy: act.action === "gnaw" || act.action === "build", level: waterLevel() });
+    camera.update(dt, show.copyFrom(node.position), { velocity, facing, afloat, busy: act.action === "gnaw" || act.action === "build", level: waterLevel(), diving: dive.diving });
     if (carried && options.hand) holdInHand(carried.stick.mesh, options.hand, node);
   };
 
@@ -282,6 +298,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     node, motion, step, update, keys, camera, collider, controller, feet, velocity,
     get facing() { return facing; },
     get afloat() { return afloat; },
+    get diving() { return dive.diving; },
+    get breath() { return dive.breath / BREATH; },
     get waterLevel() { return waterLevel(); },
     get carrying() { return carried?.stick; },
     drop() { if (carried) { release(); act.carrying = false; } },
@@ -290,7 +308,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     offer() {
       if (act.action !== "none" || !(grounded || afloat)) return undefined; // busy, or in the air: E does nothing
       if (!act.carrying && inReach()) return { action: "pickup", text: "Pick up stick" };
-      return actor?.offer?.(act.carrying) ?? (act.carrying ? { action: "drop", text: "Drop" } : undefined);
+      return (under ? undefined : actor?.offer?.(act.carrying)) ?? (act.carrying ? { action: "drop", text: "Drop" } : undefined);
     },
     handOver() {
       const stick = carried?.stick;

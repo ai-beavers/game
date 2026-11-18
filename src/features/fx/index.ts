@@ -5,6 +5,8 @@
 // when a tree starts to fall, dust and leaves where it lands, splinters when it breaks, mud or a splash for each stick
 // in the dam, a cheerful burst when the dam is finished. The weather (game.sky): rain splashing on the ground and the
 // pond near the camera, wet footsteps that splash instead of raising dust; it also hands the sky's wind to the grass.
+// Diving: a burst of bubbles as the beaver goes under, a trickle from its nose while it stays there (each rises and
+// is gone at the surface), and its breath as a quiet ring of ten bubbles on the HUD that pop one by one.
 //
 //   const game = await createGame(canvas, [create]);      see src/game.ts
 //   fxOf(game.stage.scene)?.splash(place, size)            for other features: a splash in the pond (size 1: a beaver
@@ -22,6 +24,7 @@ import type { CreateFeature } from "../../game.ts";
 import { grassOf } from "../../world/grass.ts";
 import { placeAll } from "../../world/place.ts";
 import { groundColor, slopeAt } from "../../world/terrain.ts";
+import { Overlay, box as screenBox, onViewport } from "../hud/overlay.ts";
 import { createParticles } from "./particles.ts";
 import { advance, blank, FLOOR, KIND, MODE, spawn, type Particle } from "./sim.ts";
 
@@ -400,6 +403,55 @@ export const create: CreateFeature = (game) => {
     leaf(t.x + Math.cos(a) * r, world.heightAt(t.x, t.z) + random(2.6, 4) * t.scale, t.z + Math.sin(a) * r);
   }
 
+  // ---- diving: bubbles, and the breath on the HUD ----------------------------------------------------------------
+  /** A bubble: a ring facing the camera (the only such ring), rising, wobbling, gone at the surface. */
+  function bubble(x: number, y: number, z: number, spread: number, big: number) {
+    make({
+      kind: KIND.ring, mode: MODE.face, x: x + random(-spread, spread), y: y + random(-spread, spread) * 0.5, z: z + random(-spread, spread),
+      vx: random(-0.15, 0.15), vy: random(0.1, 0.35), vz: random(-0.15, 0.15), gravity: -0.06, drag: 1.4, flutter: 0.4,
+      life: 5, fadeIn: 0.05, fadeOut: 0.3, size: random(0.4, 1) * big, grow: random(0.6, 1.2) * big, r: 1.3, g: 1.45, b: 1.45, a: 0.8,
+    });
+  }
+  let breathing = 0, wasDiving = false;
+  function diving(dt: number) {
+    const at = player.node.position, under = world.waterLevel - at.y > 0.5;
+    if (player.diving && !wasDiving) { facing(); for (let i = 0; i < many(26); i++) bubble(at.x + forward.x * 0.2, at.y + 0.35, at.z + forward.z * 0.2, 0.25, 0.05); }
+    wasDiving = player.diving;
+    if (!under) return;
+    breathing -= dt * budget.rate;
+    if (breathing > 0) return;
+    breathing = random(0.25, 0.7); // a few at a time from the nose, now and then
+    facing();
+    for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) bubble(at.x + forward.x * 0.45, at.y + 0.33, at.z + forward.z * 0.45, 0.02, random(0.015, 0.03));
+  }
+  // Ten bubbles in a shallow arc above the bottom middle (over the hints), shown only while the breath is not full; each pops (grows,
+  // fades) as its tenth of the breath goes. Babylon draws them on the HUD; the overlay's label tells screen readers.
+  const BUBBLES = 10, breathRing = new Overlay(stage, "breath", false, 3);
+  const dots: ReturnType<Overlay["rect"]>[] = [];
+  onViewport(stage, (w, h) => {
+    breathRing.clear(); dots.length = 0;
+    for (let i = 0; i < BUBBLES; i++) {
+      const a = (i / (BUBBLES - 1) - 0.5) * 1.1, x = w / 2 + Math.sin(a) * 90, y = h - 105 - Math.cos(a) * 30;
+      const dot = breathRing.rect(`breath-${i}`, screenBox(x - 7, y - 7, 14, 14), "rgba(220,240,240,.18)", 7);
+      dot.color = "rgba(240,250,250,.85)"; dot.thickness = 1.5;
+      dots.push(dot);
+    }
+  });
+  let shownBreath = 1, ringAlpha = 0, said = -1;
+  function breath(dt: number) {
+    const b = player.breath;
+    shownBreath += (b - shownBreath) * Math.min(1, dt * 8);
+    ringAlpha += ((b < 0.999 ? 1 : 0) - ringAlpha) * Math.min(1, dt * (b < 0.999 ? 6 : 1.5));
+    breathRing.group.alpha = ringAlpha;
+    breathRing.show(ringAlpha > 0.01);
+    dots.forEach((dot, i) => {
+      const left = Math.max(0, Math.min(1, shownBreath * BUBBLES - i)); // 1 full … 0 gone
+      dot.alpha = left; dot.scaleX = dot.scaleY = 1 + 0.6 * (1 - left);
+    });
+    const n = Math.ceil(b * BUBBLES);
+    if (n !== said) { said = n; breathRing.dom.setAttribute("aria-label", `breath ${n} of ${BUBBLES}`); }
+  }
+
   // ---- what goes on while the beaver swims, gnaws, drips -------------------------------------------------------
   let wake = 0, bob = 0, drip = 0, time = 0;
 
@@ -408,7 +460,7 @@ export const create: CreateFeature = (game) => {
     facing();
     // Swimming or wading: rings and a soft wake.
     const depth = world.waterLevel - world.heightAt(at.x, at.z), wet = m.swimming >= 0.5 || (depth > 0.1 && at.y < world.waterLevel);
-    if (wet) {
+    if (wet && world.waterLevel - at.y < 0.5) { // under, it leaves no rings on the surface
       const speed = player.velocity.length();
       bob -= dt;
       if (bob <= 0) { bob = speed > 0.2 ? 0.55 : 1.1; ring(at.x - forward.x * 0.15, at.z - forward.z * 0.15, 0.32, speed > 0.2 ? 0.8 : 0.9, 1.6, speed > 0.2 ? 0.3 : 0.22); }
@@ -474,6 +526,8 @@ export const create: CreateFeature = (game) => {
       if (!stage.paused) {
         time += dt;
         steady(dt);
+        diving(dt);
+        breath(dt);
         rain(dt, game.sky?.rain ?? 0);
         nextLeaf -= dt * budget.rate;
         if (nextLeaf <= 0) { nextLeaf = random(2.5, 6); dropLeaf(); }
@@ -481,6 +535,10 @@ export const create: CreateFeature = (game) => {
         for (const p of pool) {
           if (!p.alive || p.kind === KIND.mote) continue;
           if (p.mode === MODE.water) p.y = world.waterLevel; // rings and foam lie on the pond as it is now
+          else if (p.kind === KIND.ring && p.mode === MODE.face && !p.vanish && p.y > world.waterLevel - 0.02) { // a bubble at the surface
+            p.vanish = 14;
+            if (p.size > 0.025) ring(p.x, p.z, 0.03, 0.25, 0.8, 0.3);
+          }
           advance(p, dt, p.kind === KIND.drop ? surfaceAt : groundAt);
           if (p.kind === KIND.drop && p.vanish && !p.landed) { p.landed = true; splat(p); }
         }
