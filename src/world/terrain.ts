@@ -7,7 +7,8 @@ import { material } from "./models.ts";
 //
 // The layout, in metres, y up, +z is where the beaver looks at the start:
 //   meadow clearing around (0, 0), about 33 m across, closed by a bank that rises 4 m into thicket
-//   pond at POND, 1.2 m deep, a shallow shore all round; the building site SITE is flat at its west shore
+//   pond at POND, 1.2 m deep, a shallow shore all round, a basin 3 m deep in its south side (BASIN); the building
+//   site SITE is flat at its west shore
 //   hill at HILL, 3 m high: the side facing the clearing is walkable (< 25°), the side facing the bank is steep
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -64,10 +65,26 @@ export function heightAt(x: number, z: number): number {
   // The building site: levelled.
   const ds = Math.hypot(x - SITE.x, z - SITE.z);
   h = mix(SITE.height, h, smoothstep(SITE.radius, SITE.radius + 1.4, ds));
-  // The pond: a bowl with a flat floor and a shallow shore.
+  // The pond: a bowl with a flat floor and a shallow shore, and the deep basin sunk into its south side.
   const t = pondRatio(x, z);
   h = mix(WATER_LEVEL - POND.depth, h, smoothstep(0.2, 1.3, t));
-  return h;
+  return t < SHELF ? mix(Math.min(h, basinHeight(x, z)), h, smoothstep(SHELF - 0.12, SHELF, t)) : h;
+}
+
+/** The deep part: a basin about 3 m below the full pond on its south side, away from the dam (west shore) and the
+ *  lodge (the middle). Longer along the bank than across; a steep drop-off from the shelf, a gentler slope up towards
+ *  the middle, an uneven floor. It stays inside pondRatio SHELF, so the shallows along the bank (where the reeds and
+ *  frogs are and the beaver wades), the shoreline and everything placed on land stay as they were. */
+export const BASIN = { x: 4.1, z: 2.85, depth: 3, along: 2.4, across: 1.1 };
+export const SHELF = 0.84;
+const basinAlong = new Vector2(1, -0.25).normalize(); // roughly along the south bank
+export function basinHeight(x: number, z: number) {
+  const dx = x - BASIN.x, dz = z - BASIN.z;
+  const a = (dx * basinAlong.x + dz * basinAlong.y) / BASIN.along, b = (-dx * basinAlong.y + dz * basinAlong.x) / BASIN.across;
+  // across > 0 is towards the middle (north): there the side rises gently, towards the bank it drops off steeply
+  const e = Math.hypot(a, b > 0 ? b * 0.6 : b * 1.15) * (1 + 0.12 * noise(x * 1.3 + 21, z * 1.3 - 4));
+  const floor = WATER_LEVEL - BASIN.depth + 0.25 * fbm(x * 0.9 - 13, z * 0.9 + 6, 2) + 0.12 * smoothstep(0.1, 0.5, e);
+  return mix(floor, WATER_LEVEL, smoothstep(0.5, 1.05, e));
 }
 
 /** Steepness at a place, as rise over run (1 = 45°). */

@@ -113,10 +113,11 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
       clear: () => { if (trunk) physics.removeCollider(trunk, true); trunk = undefined; },
     };
   });
-  // Stumps, logs, rocks: convex hulls of the placed template.
-  for (const [kind, sink] of [["stump", 0.04], ["log", 0.04], ["rock", 0.1]] as const) {
-    scatter(props[kind], layout[kind], sink);
-    for (const s of layout[kind]) {
+  // Stumps, logs, rocks, and the rocks and log down in the deep basin: convex hulls of the placed template.
+  for (const [kind, sink, spots] of [["stump", 0.04, layout.stump], ["log", 0.04, layout.log], ["rock", 0.1, layout.rock],
+    ["rock", 0.2, layout.bedRock], ["log", 0.12, layout.sunkenLog]] as const) {
+    scatter(props[kind], spots, sink);
+    for (const s of spots) {
       const m = placement(s, sink), hull = new Float32Array(vertices(pick(props[kind], s)).flatMap((p) => Vector3.TransformCoordinates(p, m).asArray()));
       const desc = RAPIER.ColliderDesc.convexHull(hull);
       if (desc) fixed(desc);
