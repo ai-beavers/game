@@ -35,6 +35,8 @@ export const create: CreateFeature = game => {
   const readers = document.createElement("output");
   readers.setAttribute("aria-live", "polite");
   const photo = () => document.body.classList.contains("photo");
+  // The tour's live view is a stream nobody plays: no buttons, key hints or pause on losing focus (src/features/tour).
+  const live = new URLSearchParams(location.search).get("tour") === "live";
 
   function playerNames() {
     const n = net(), names = [settings.values.name + (n?.connected && n.me === n.host ? " · you · host" : " · you")];
@@ -48,7 +50,7 @@ export const create: CreateFeature = game => {
     hud.dom.append(readers);
     const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
     const compact = w < 650 || h < 530;
-    if (!touch) hud.button("pause","Pause",box(12,12,68,36),() => open("pause"));
+    if (!touch && !live) hud.button("pause","Pause",box(12,12,68,36),() => open("pause"));
     fps = hud.text("fps","",box(touch ? 12 : 90,touch ? (compact ? 86 : 140) : 12,80,36),13);
     mapSize = large ? Math.min(w-24,h-62,390) : compact ? 92 : 126;
     const mapX = large ? (w-mapSize)/2 : w-mapSize-(touch ? 66 : 14), mapY = large ? (h-mapSize)/2 : 14;
@@ -68,7 +70,7 @@ export const create: CreateFeature = game => {
     skyPanel = hud.rect("weather-panel",box(statusX,statusY,compact ? 110 : 146,27));
     sky = hud.text("weather","",box(statusX,statusY,compact ? 110 : 146,27),13,"center");
     const goalW = compact ? Math.min(w/2-16,200) : 224;
-    const goalY = touch ? 14 : 56, goalH = compact ? 70 : 120;
+    const goalY = touch || live ? 14 : 56, goalH = compact ? 70 : 120;
     goalPanel = hud.rect("goals-panel",box(12,goalY,goalW,goalH));
     mission = hud.text("goals","",box(22,goalY+4,goalW-20,goalH-8),compact ? 12 : 14);
     const bottom = touch ? 152 : 58, centerW = Math.min(w-24,560);
@@ -215,7 +217,7 @@ export const create: CreateFeature = game => {
   },true);
   dialog.dom.addEventListener("keydown",e => e.stopPropagation());
   window.addEventListener("keyup",e => { if (e.code === "Tab") listOpen = false; });
-  function away() { if (started && !page && !photo() && !(net()?.remotes.size)) open("pause"); }
+  function away() { if (!live && started && !page && !photo() && !(net()?.remotes.size)) open("pause"); }
   window.addEventListener("blur",away);
   document.addEventListener("visibilitychange",() => { if (document.hidden) away(); });
   events.on("enterWater",() => { swimUntil = played+6; });
@@ -244,10 +246,10 @@ export const create: CreateFeature = game => {
       mission.text = (remaining.length ? "Beaver work" : "All goals complete") + "\n" + shown.map(g => (g.done ? "✓ " : "· ") + g.text).join("\n");
       fps.text = settings.values.fps ? Math.round(stage.engine.getFps())+" fps" : "";
       const offer = player.offer()?.text || "";
-      prompt.text = offer ? USE[device] + "   " + offer : "";
+      prompt.text = offer && !live ? USE[device] + "   " + offer : "";
       if (oldOffer !== offer) { oldOffer = offer; readers.value = prompt.text; }
-      hints.text = played < hintsUntil ? CONTROLS[device].filter(c => c.hint).slice(0,compact ? 3 : 6).map(c => c.caps.join("")+" "+c.what).join("   ·   ") : "";
-      note.text = played < praiseUntil ? praise : played < swimUntil ? "Swim to the shore to climb out" : "";
+      hints.text = played < hintsUntil && !live ? CONTROLS[device].filter(c => c.hint).slice(0,compact ? 3 : 6).map(c => c.caps.join("")+" "+c.what).join("   ·   ") : "";
+      note.text = played < praiseUntil ? praise : played < swimUntil && !live ? "Swim to the shore to climb out" : "";
       players.text = listOpen ? "Players\n" + playerNames().join("\n") : "";
       if (game.sky) {
         const s = skyLabel(game.sky.hour,game.sky.weather,game.sky.dark);
