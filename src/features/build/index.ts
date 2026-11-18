@@ -46,7 +46,8 @@ const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.build.tou
 // the state, because physics moves it every step (no named change) and each player's copy rolls its own way.
 const LOOSE_KEY = `${KEY}.loose`;
 const KEEP_EVERY = 3; // s between keeping where the loose wood lies
-const BUILD_TIME = 1.3; // s for laying one stick; it leaves the hand half way
+/** s for laying one stick; it leaves the hand half way. The trade feature lays a stick on a pile in the same time. */
+export const BUILD_TIME = 1.3;
 const FLIGHT = 0.45; // s from the hand to its place
 const REACH = 0.6; // m from the beaver's body to the bark it can gnaw
 const GRACE = 5; // s past REGROW before this copy asks for a tree back: the server's count may have started later
@@ -57,7 +58,8 @@ const SAPLING = 0.15; // of the full tree's size, when the sapling shows
 export interface BuildHandle {
   readonly state: BuildState;
   /** The stick, just handed over from the hand (Player.handOver), leaves the world for everyone: committed as a
-   *  "trade" change. Its mesh stays where it is, for the caller to move and keep. False: it could not be traded. */
+   *  "trade" change. Its mesh stays where it is, for the caller to move and keep. False: it could not be traded; it has
+   *  left the world all the same. */
   trade(stick: Stick): boolean;
 }
 export const buildOf = (scene: Scene) => scene.metadata?.build as BuildHandle | undefined;
@@ -375,9 +377,9 @@ export const create: CreateFeature = (game) => {
     get state() { return state; },
     trade(stick) {
       const id = names.get(stick);
-      if (!id || used(state, id)) return false;
       if (world.sticks.includes(stick)) removeLoose(stick);
       names.delete(stick);
+      if (!id || used(state, id)) return false; // out of the world all the same: the caller lets its mesh go
       return commit({ type: "trade", stick: id }, false, stick.mesh);
     },
   };

@@ -20,7 +20,7 @@ import type { Node } from "@babylonjs/core/node.js";
 import type { CreateFeature } from "../../game.ts";
 import { firstOf } from "../../player/actors.ts";
 import type { Actor, Offer } from "../../player/index.ts";
-import { buildOf } from "../build/index.ts";
+import { BUILD_TIME, buildOf } from "../build/index.ts";
 import { hudLayout, onViewport, Overlay } from "../hud/overlay.ts";
 import { reachAt, RISE, HOLD, FALL } from "../lantern/stow.ts";
 import { backpackLine, GOODS, load, offerText, pay } from "./ledger.ts";
@@ -28,7 +28,6 @@ import { FACING, spotFor, standAt } from "./place.ts";
 import { createPost } from "./post.ts";
 
 const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.trade.tour" : "beaver.trade";
-const LAY_TIME = 1.3; // s for laying one stick on a pile (the build feature's motion); it leaves the hand half way
 const FLIGHT = 0.45; // s from the hand onto the pile
 const TAKE = 0.4; // s for the good from its spot into the paw
 const REACH = RISE + HOLD + FALL; // s of the reach to the backpack and back
@@ -74,7 +73,7 @@ export const create: CreateFeature = (game) => {
     step(dt) {
       if (!job) return undefined;
       const before = job.progress;
-      job.progress = Math.min(1, before + dt / LAY_TIME);
+      job.progress = Math.min(1, before + dt / BUILD_TIME);
       if (before < 0.5 && job.progress >= 0.5) {
         const stick = player.handOver();
         if (stick && build.trade(stick)) {

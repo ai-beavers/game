@@ -24,7 +24,7 @@ describe("the ledger", () => {
     const l = newLedger();
     expect(backpackLine(l)).toBe("");
     pay(l, "pinecone"); pay(l, "pinecone"); pay(l, "shell"); pay(l, "shell"); pay(l, "shell");
-    expect(backpackLine(l)).toBe("Pinecone ×2   Shell");
+    expect(backpackLine(l)).toBe("Pinecone ×2   Shell ×1");
   });
   test("counts survive a save and a load; anything broken loads as a fresh ledger", () => {
     const l = newLedger();
