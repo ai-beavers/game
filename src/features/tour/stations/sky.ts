@@ -1,12 +1,13 @@
-// Sky watch: a day passing, the lantern at night and from the backpack, deer at dusk, rain and fog.
+// Sky watch: a day passing, the same hour for all in a shared world, the lantern at night and from the backpack, deer at dusk, rain and fog.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { deerHours, type Deer } from "../../life/brain.ts";
 import { dayAt } from "../../sky/clock.ts";
+import { hourAt } from "../../sky/day.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 export const skyWatch = (kit: Kit): Station[] => {
-  const { player, world, stage, beaver, live, wait, until, walkTo, flat, expect, sky } = kit;
+  const { player, world, stage, beaver, live, fast, wait, until, walkTo, flat, expect, sky, hudText } = kit;
   return [
     ["A day passes", async () => {
       const s = sky(), hour = s.hour, running = s.running;
@@ -14,6 +15,36 @@ export const skyWatch = (kit: Kit): Station[] => {
       try {
         for (const h of [19.3, 20.5, 23, 5.6]) { s.setHour(h); await wait(3.5); if (h === 23) expect(s.dark > 0.5, `dark ${s.dark.toFixed(2)} at 23:00`); }
       } finally { s.setHour(hour); s.running = running; }
+    }, "Sky watch"],
+    // A viewer's wish: in a shared world everyone sees the same hour. src/features/net makes the sky follow the server's
+    // hour on welcome and lets it go alone when the connection drops; the tour plays alone, so it does the same here.
+    // It sets the clock, so the live tour skips it.
+    ["Same hour for all", async () => {
+      if (live) return skip("the live tour never sets the clock");
+      const s = sky(), { scene } = stage, hour = s.hour, running = s.running;
+      try {
+        s.setWeather("fair");
+        s.follow(23); // a welcome from a world deep in the night
+        expect(Math.abs(s.hour - 23) < 0.01, `told 23:00, the sky shows ${s.hour.toFixed(2)} h`);
+        await until(() => s.dark > 0.5, 3, `joined at 23:00, still not dark (${s.dark.toFixed(2)})`);
+        await until(() => hudText("weather").startsWith("23:"), 3, `joined at 23:00, the HUD reads "${hudText("weather")}"`);
+        await until(() => !!scene.getMeshByName("lantern")?.isEnabled(), 6, "joined at night, the beaver takes out no lantern");
+        // The shared day runs on real time: the fast tour's 4x world must not move it on faster.
+        const from = s.hour, at = performance.now();
+        let played = 0;
+        while (performance.now() - at < 3000) played += await kit.frame();
+        const real = performance.now() - at, shared = hourAt(from, at, performance.now());
+        const off = Math.abs(((s.hour - shared + 36) % 24) - 12); // h; at 4x the 3 s would put it 0.3 h ahead
+        expect(off < 0.01, `after ${(real / 1000).toFixed(1)} s the sky is at ${s.hour.toFixed(3)} h, the shared day at ${shared.toFixed(3)} h`);
+        if (fast) expect(played > real / 1000 * 2, `the world played only ${played.toFixed(1)} s in ${(real / 1000).toFixed(1)} s: not fast`);
+        // The connection drops: the own day runs on from the shared hour, in steps of play.
+        s.alone();
+        const left = s.hour;
+        expect(Math.abs(left - shared) < 0.01, `alone again, the sky jumped from ${shared.toFixed(2)} h to ${left.toFixed(2)} h`);
+        await wait(3);
+        expect(s.hour > left, `alone again, the hour stands at ${s.hour.toFixed(3)} h`);
+        expect(s.dark > 0.5, `alone again, it is day at ${s.hour.toFixed(2)} h`);
+      } finally { s.setHour(hour); s.running = running; s.setWeather("auto"); }
     }, "Sky watch"],
     // A viewer's wish: at night the beaver carries a lantern in its left hand that lights the ground around it
     // (src/features/lantern), the right hand free for sticks; by day it is out. Live it plays only at night and never sets the clock.

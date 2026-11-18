@@ -22,6 +22,10 @@ _Avoid_: deep end, pit
 The flat ground at the pond where the dam is built.
 _Avoid_: construction zone, build area
 
+**Day**:
+One turn of sun and moon over the clearing, twelve minutes of play. Everyone in the same world is at the same hour of it; a player alone keeps their own.
+_Avoid_: time, daytime, cycle
+
 **Stick**:
 A piece of wood the beaver can carry and build with. Every tree gnawed into wood yields sticks.
 _Avoid_: log, branch, wood item
