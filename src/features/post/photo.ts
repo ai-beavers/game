@@ -38,8 +38,12 @@ export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
     held = { yaw, pitch, distance };
     on = stage.paused = true;
     document.body.classList.add("photo");
-    eye.setTarget(beaver.root.getAbsolutePosition().add(new Vector3(0, 0.6, 0)));
-    eye.setPosition(camera.position);
+    // From the camera as it is: round the beaver behind it, or, in the first-person view (the camera at the eyes,
+    // the beaver left out), round the point a metre ahead of the eyes, which never coincides with them.
+    const first = player.camera.view === "first-person";
+    eye.layerMask = camera.layerMask;
+    eye.setTarget(first ? camera.getTarget().clone() : beaver.root.getAbsolutePosition().add(new Vector3(0, 0.6, 0)));
+    eye.setPosition(camera.position.clone());
     scene.activeCamera = eye;
     chain.camera(eye);
     eye.attachControl(false, false, 2);

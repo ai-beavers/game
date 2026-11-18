@@ -56,6 +56,10 @@ _Avoid_: NPC, AI player
 A creature of the world that no player steers: ducks, fish, deer.
 _Avoid_: NPC, mob, wildlife entity
 
+**Third-person view**, **First-person view**:
+The two ways a player can see the clearing. In the third-person view (the usual one) the camera follows behind the beaver, which is in the picture. In the first-person view the player sees through the beaver's eyes, and the beaver itself is not in the picture. Each player switches between them for their own screen only.
+_Avoid_: camera mode, POV, cockpit view
+
 **Saved game**:
 The state of the trees, the dam, the lodge and the cache, kept between visits.
 _Avoid_: save file, progress

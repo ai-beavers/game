@@ -1,4 +1,5 @@
-// The third-person camera: orbits a point above the beaver's feet, drag to turn it, wheel to zoom (2 … 8 m).
+// The player's camera, in the third-person view (the usual one) or the first-person view (V switches; see the end).
+// The third-person view: orbits a point above the beaver's feet, drag to turn it, wheel to zoom (2 … 8 m).
 // At rest it stands low behind the beaver and looks a little over it, so the beaver sits in the lower third, a bit left
 // of the middle, with the horizon, the sky and the pond in the picture. It follows with a little lag on a critically
 // damped spring, looks ahead where the beaver goes, stands back a touch at a run, goes lower over the water and closer
@@ -22,9 +23,19 @@
 //   camera.aim, camera.floor          look past the beaver, stay above a height (the tour's live view; players leave them).
 //   camera.room                       how far it may stand along a way, for things without a collider (live view too).
 //                                     Once floor is set the live view directs: the player framing above is off.
+//   camera.view                       "third-person" or "first-person"; V switches it, except while paused (a menu,
+//                                     photo mode) or while the live view directs, which keeps the third-person view.
+//   camera.eyes                       where the beaver sees from (Beaver.eyes), for the first-person view.
+//
+// The first-person view stands at the eyes, as the picture shows them, and looks the player's yaw and pitch (pitch
+// within EYE_PITCH either way), with no lag and none of the framing above; zoom does nothing there. The player's own
+// beaver and what it wears (meshes on OWN_LAYER) are left out of the picture; they still throw their shadow. Back in
+// the third-person view the yaw stays, the rig starts afresh at the beaver, pitch and distance are at rest again.
 //
 // Mouse and pen drag here; touches are left to whoever handles touch (src/features/controls).
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import type { Node } from "@babylonjs/core/node.js";
 import { RUN_SPEED, WALK_SPEED } from "../contracts.ts";
 import { RAPIER, type Stage } from "../engine.ts";
 
@@ -58,6 +69,13 @@ const DIVE_RAMP = 1.0; // 1/s: how fast the camera goes under and up again (unde
 const DIVE_LOOK = 0.4, DIVE_LEVEL = 0.07, DIVE_CLOSE = 0.1, DIVE_SIDE = 0.3, DIVE_FOV = 0.12, DIVE_LOW = 0.2;
 const ROOF = 2; // m: under the surface, looking down, the camera rises to it no further than this from the look point
 const PEER_PITCH = 0.35, PEER_CLOSE = 0.25; // diving with no room under: higher (rad) and nearer (fraction), to look down through the surface
+// The first-person view.
+const EYE_PITCH = 1.2; // rad up and down from the horizon
+/** The layer of the player's own beaver and what it wears: drawn in the third-person view (and in photo mode from
+ *  it), not in the first-person view. Within Babylon's default layer mask, so any other camera draws it. */
+export const OWN_LAYER = 0x08000000;
+const ALL_LAYERS = 0x0fffffff; // Babylon's default camera.layerMask
+export type View = "third-person" | "first-person";
 const ROOM_DEPTH = 0.35, ROOM_IN = 1.8, ROOM_OUT = 1.2; // m: it goes under where water this deep reaches this far back, up again under that
 
 /** One step of a critically damped spring, exact for any dt: x with its speed v towards goal at rate w (1/s). */
@@ -173,16 +191,25 @@ const lowest = (rig: Rig) => MIN_PITCH + (UNDER_PITCH - MIN_PITCH) * Math.max(0,
 export const orbit = (pivot: Vector3, yaw: number, pitch: number, distance: number) =>
   new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).scaleInPlace(distance).addInPlace(pivot);
 
+/** The way the first-person view looks (unit) at yaw and pitch: as the third-person camera at that yaw and pitch
+ *  looks at the beaver, so steering by the yaw walks the way the eyes look (pitch > 0 looks down). */
+export const gaze = (yaw: number, pitch: number) =>
+  new Vector3(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+
 /** The way the camera looks (unit) from `from` at `at`, turned up by rise and to the right by across, without roll. */
 export function view(from: Vector3, at: Vector3, rise: number, across: number) {
   const to = at.subtract(from), heading = Math.atan2(to.x, to.z) - across, up = Math.atan2(to.y, Math.hypot(to.x, to.z)) + rise;
   return new Vector3(Math.sin(heading) * Math.cos(up), Math.sin(up), Math.cos(heading) * Math.cos(up));
 }
 
-export function followCamera({ camera, physics, canvas, engine }: Stage, blocks: (collider: RAPIER.Collider) => boolean) {
+export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) => boolean) {
+  const { camera, physics, canvas, engine } = stage;
   const look = new Vector3(), direction = new Vector3(), probe = new Vector3(), ball = new RAPIER.Ball(BALL), rig = newRig();
   const rotation = { x: 0, y: 0, z: 0, w: 1 }, noFloor = (_x: number, _z: number) => -Infinity;
   let started = false, shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0;
+  let seen: View = "third-person", eyes: TransformNode | undefined, eyeChain: TransformNode[] = [];
+  const pitchRange = (pitch: number) => seen === "first-person"
+    ? Math.max(-EYE_PITCH, Math.min(EYE_PITCH, pitch)) : Math.max(lowest(rig), Math.min(MAX_PITCH, pitch));
   const flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
   // wet: a ray as well, for the ball slips through the steep heightfield walls of the basin (measured)
   const ray = new RAPIER.Ray(look, direction);
@@ -208,17 +235,48 @@ export function followCamera({ camera, physics, canvas, engine }: Stage, blocks:
     room: undefined as ((from: Vector3, direction: Vector3, distance: number) => number) | undefined,
     /** How far it really is now, after pulling in for things in the way. */
     get shown() { return shown; },
+    /** The live view directs the camera (floor set): it keeps the third-person view. */
+    get directed() { return state.floor !== noFloor; },
+    get view() { return seen; },
+    set view(next: View) {
+      if (next === seen) return;
+      seen = next;
+      camera.layerMask = next === "first-person" ? ALL_LAYERS & ~OWN_LAYER : ALL_LAYERS;
+      if (next === "first-person") { state.pitch = pitchRange(state.pitch); return; }
+      // Back behind the beaver as after the live view: the rig afresh where the beaver is, at rest but for the yaw.
+      rig.started = false;
+      state.pitch = shownPitch = REST_PITCH;
+      state.distance = shown = REST_DISTANCE;
+      shownV = idle = 0;
+    },
+    get eyes() { return eyes; },
+    set eyes(node: TransformNode | undefined) {
+      eyes = node; eyeChain = [];
+      for (let n: Node | null = node ?? null; n; n = n.parent) if (n instanceof TransformNode) eyeChain.unshift(n);
+    },
     turn(yaw: number, pitch: number) {
       if (yaw || pitch) idle = 0;
       state.yaw += yaw;
-      state.pitch = Math.max(lowest(rig), Math.min(MAX_PITCH, state.pitch + pitch));
+      state.pitch = pitchRange(state.pitch + pitch);
     },
     zoom(scale: number) {
+      if (seen === "first-person") return; // it would push the camera out of the eyes
       state.distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, state.distance * scale));
     },
     update(dt: number, feet: Vector3, going: Going = STANDING) {
       const live = state.floor !== noFloor; // the tour's live view directs yaw, pitch, distance and aim itself
-      state.pitch = Math.max(lowest(rig), Math.min(MAX_PITCH, state.pitch));
+      if (live) state.view = "third-person";
+      if (seen === "first-person" && eyes) {
+        // At the eyes as the bones were just posed (the world matrices from the beaver's root down, recomputed once).
+        for (const node of eyeChain) node.computeWorldMatrix(true);
+        camera.position.copyFrom(eyes.getAbsolutePosition());
+        camera.fov = lens(engine.getAspectRatio(camera) || 16 / 9).fov;
+        state.pitch = pitchRange(state.pitch);
+        camera.setTarget(gaze(state.yaw, state.pitch).addInPlace(camera.position));
+        started = true;
+        return;
+      }
+      state.pitch = pitchRange(state.pitch);
       const v = going.velocity, moving = Math.hypot(v.x, v.z);
       // Left alone for a while: back to the rest pitch, and round behind when it goes nearly away from the camera.
       if (!live && (idle += dt) > LEFT_ALONE && moving > 0.3) {
@@ -301,6 +359,15 @@ export function followCamera({ camera, physics, canvas, engine }: Stage, blocks:
     state.zoom(Math.exp(e.deltaY * 0.001));
   }, { passive: false });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  // V switches the view: not in a menu or photo mode (both pause), not while typing, not while the live view directs.
+  const switchView = (e: KeyboardEvent) => {
+    if (e.code !== "KeyV" || e.repeat || e.altKey || e.ctrlKey || e.metaKey || stage.paused || state.directed) return;
+    const target = e.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+    state.view = seen === "first-person" ? "third-person" : "first-person";
+  };
+  window.addEventListener("keydown", switchView);
+  stage.scene.onDisposeObservable.add(() => window.removeEventListener("keydown", switchView));
   return state;
 }
 export type FollowCamera = ReturnType<typeof followCamera>;

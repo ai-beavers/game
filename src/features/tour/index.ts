@@ -42,11 +42,12 @@ import { anger } from "./stations/anger.ts";
 import { skyWatch } from "./stations/sky.ts";
 import { hud } from "./stations/hud.ts";
 import { controls } from "./stations/controls.ts";
+import { views } from "./stations/views.ts";
 import { firstSteps } from "./stations/first-steps.ts";
 import { hat } from "./stations/hat.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, dam, pondPatrol, anger, hat, skyWatch, hud, controls, firstSteps];
+const STATIONS = [movement, dam, pondPatrol, anger, hat, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)

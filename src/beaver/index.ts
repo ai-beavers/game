@@ -6,7 +6,7 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader.js";
@@ -82,6 +82,19 @@ function makeHat(scene: Scene, head: TransformNode) {
   return hat;
 }
 
+/** A node on the head bone between the middles of the eyes (meshes on the head bone): where the beaver sees from. */
+function between(scene: Scene, head: TransformNode, eyes: TransformNode[]) {
+  const middle = new Vector3();
+  for (const eye of eyes) {
+    const local = Matrix.Compose(eye.scaling, eye.rotationQuaternion ?? Quaternion.FromEulerVector(eye.rotation), eye.position);
+    middle.addInPlace(Vector3.TransformCoordinates(eye instanceof Mesh ? eye.getBoundingInfo().boundingBox.center : Vector3.Zero(), local));
+  }
+  const node = new TransformNode("eyes", scene);
+  node.parent = head;
+  node.position.copyFrom(middle.scaleInPlace(1 / eyes.length));
+  return node;
+}
+
 export const loadBeaver: LoadBeaver = async (scene) => {
   const [asset, print] = await Promise.all([ImportMeshAsync(beaverGlb, scene, { pluginExtension: ".glb" }), shirtTexture(scene)]);
   for (const group of asset.animationGroups) { group.stop(); group.dispose(); }
@@ -97,6 +110,7 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   shirtMat.albedoTexture = print;
   for (const part of asset.meshes) part.receiveShadows = true;
   const hat = makeHat(scene, nodes.get("head")!);
+  const eyes = between(scene, nodes.get("head")!, [nodes.get("eye_L")!, nodes.get("eye_R")!]);
   const bones = BONES.map(name => {
     const node = nodes.get(name);
     if (!node) throw new Error(`Missing beaver bone: ${name}`);
@@ -117,7 +131,7 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   const DRY = 12; // s from dripping to dry once out of the water
   for (const morph of morphs) morph.influence = 0; // the file stores the furious body at 1: a calm beaver starts calm
   return {
-    root, hand: nodes.get("hand_R")!, leftHand: nodes.get("hand_L")!, chest: nodes.get("chest")!,
+    root, eyes, hand: nodes.get("hand_R")!, leftHand: nodes.get("hand_L")!, chest: nodes.get("chest")!,
     get anger() { return anger; },
     set anger(value) {
       if (anger === value) return;
