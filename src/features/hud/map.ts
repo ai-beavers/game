@@ -1,3 +1,4 @@
+import { hex as colorFromHex } from "../../world/color.ts";
 // The map: the ground painted from world.heightAt (water, sand, grass, hill shading), again whenever the pond's
 // level changes, then drawn each frame into a canvas with what is there now: standing trees, sticks, the dam as far
 // as it is built, the lodge, other players as named dots, and the beaver as an arrow.
@@ -7,14 +8,14 @@
 //                                         size: CSS pixels across where it is shown; the canvas gets size × devicePixelRatio
 //
 // North up, fixed: up on the map is +z, the way the camera looks at the start, so right is -x.
-import * as THREE from "three";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 
 /** Half the width of the mapped square around the middle of the clearing, m, and metres per pixel. */
 export const EXTENT = 22;
 const RESOLUTION = 0.2;
 const OUTSIDE = "#4a5f36"; // beyond the painted square: thicket
 
-const C = (hex: number) => new THREE.Color(hex);
+const C = (hex: number) => colorFromHex(hex).toLinearSpace();
 const DEEP = C(0x3a6f8c), SHALLOW = C(0x7db3c0), SAND = C(0xc4b28a), GRASS = C(0x7c9b4b), HIGH = C(0x5a7a36), BANK = C(0x3f5530);
 const SAND_REACH = 1.4; // m from the water's edge
 
@@ -56,23 +57,26 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
     }
     return false;
   };
-  const color = new THREE.Color(), shown = new THREE.Color();
+  const color = new Color3(), shown = new Color3();
   const paint = (waterLevel: number) => {
     painted = waterLevel;
     for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
       const above = height(i, j) - waterLevel;
-      if (above < 0) color.copy(SHALLOW).lerp(DEEP, Math.min(1, -above / 1.2));
-      else if (above < 0.3 && nearWater(i, j)) color.copy(SAND);
-      else color.copy(GRASS).lerp(HIGH, Math.min(1, above / 3)).lerp(BANK, Math.max(0, Math.min(1, (above - 2.5) / 1.5)));
+      if (above < 0) Color3.LerpToRef(SHALLOW, DEEP, Math.min(1, -above / 1.2), color);
+      else if (above < 0.3 && nearWater(i, j)) color.copyFrom(SAND);
+      else {
+        Color3.LerpToRef(GRASS, HIGH, Math.min(1, above / 3), color);
+        Color3.LerpToRef(color, BANK, Math.max(0, Math.min(1, (above - 2.5) / 1.5)), color);
+      }
       if (above >= 0) {
         // Hill shading: light from the top left of the map.
         const dx = height(i + 1, j) - height(i - 1, j), dy = height(i, j + 1) - height(i, j - 1);
-        color.multiplyScalar(Math.max(0.5, Math.min(1.4, 1 + (dx + dy) * 3)));
+        color.scaleInPlace(Math.max(0.5, Math.min(1.4, 1 + (dx + dy) * 3)));
         // A faint contour line every metre of height.
         const level = Math.floor(above);
-        if (level > 0 && (Math.floor(height(i + 1, j) - waterLevel) < level || Math.floor(height(i, j + 1) - waterLevel) < level)) color.multiplyScalar(0.8);
+        if (level > 0 && (Math.floor(height(i + 1, j) - waterLevel) < level || Math.floor(height(i, j + 1) - waterLevel) < level)) color.scaleInPlace(0.8);
       }
-      shown.copy(color).convertLinearToSRGB(); // THREE.Color works in linear light, the canvas wants sRGB
+      color.toGammaSpaceToRef(shown); // Color works in linear light, the canvas wants sRGB
       const at = (j * size + i) * 4;
       image.data[at] = Math.min(255, shown.r * 255); image.data[at + 1] = Math.min(255, shown.g * 255);
       image.data[at + 2] = Math.min(255, shown.b * 255); image.data[at + 3] = 255;
@@ -94,7 +98,7 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
       g.fillRect(0, 0, px, px);
       const sx = (EXTENT - view.centre.x - view.span / 2) / RESOLUTION, sy = (EXTENT - view.centre.z - view.span / 2) / RESOLUTION;
       const [ox, oy] = [Math.max(0, -sx), Math.max(0, -sy)], [cx, cy] = [Math.max(0, sx), Math.max(0, sy)];
-      const sw = Math.min(size, sx + view.span / RESOLUTION) - cx, sh = Math.min(size, sy + view.span / RESOLUTION) - cy;
+      const sw = Math.min(ground.width, sx + view.span / RESOLUTION) - cx, sh = Math.min(ground.height, sy + view.span / RESOLUTION) - cy;
       if (sw > 0 && sh > 0) g.drawImage(ground, cx, cy, sw, sh, ox * RESOLUTION * k, oy * RESOLUTION * k, sw * RESOLUTION * k, sh * RESOLUTION * k);
 
       const unit = devicePixelRatio * Math.max(0.8, Math.min(1.7, size / 128)); // marks: about the same size on screen at any span

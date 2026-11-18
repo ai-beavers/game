@@ -1,4 +1,4 @@
-// Small quaternion and vector maths for the animator, no three.js: quaternions are [x, y, z, w] like glTF.
+// Small quaternion and vector maths for the animator, quaternions are [x, y, z, w] like glTF.
 
 export type Quat = [number, number, number, number];
 export type Vec = [number, number, number];

@@ -1,27 +1,22 @@
-// The beaver: loads assets/beaver.glb (built by tools/blender/build.py), lays fur over its body (fur.ts), prints its
-// shirt and takes poses. It has no clock of its own: an animator hands it a Pose every frame.
-//
-//   const beaver = await loadBeaver();   scene.add(beaver.root);
-//   beaver.pose(animator.pose(motion, dt));
-//   beaver.update(dt);                   once per frame, after pose()
-//   beaver.anger = 0.7;                  0 calm … 1 furious: redder, a bodybuilder's muscles, glowing eyes
-//   beaver.shirt = false;                without the T-shirt: fur all over
-//   beaver.hand                          the right hand's bone, to put a stick into
-//
-// The root is 1 m tall, stands on y = 0 and faces +z. It throws one shadow: the fur's shells are dropped to one (the
-// skin) while the shadow map is drawn, so the shadow pass costs one ordinary draw of the body.
-import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+// Register the GLB skeleton animation dependencies before Bun loads the model.
+import "@babylonjs/core/Animations/animatable.js";
+import "@babylonjs/core/Animations/animationGroup.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture.js";
+import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import "@babylonjs/loaders/glTF/2.0/glTFLoader.js";
+import "@babylonjs/loaders/glTF/2.0/Extensions/KHR_materials_specular.js";
+import { createCoat } from "./fur.ts";
 import beaverGlb from "../../assets/beaver.glb" with { type: "file" };
 import logoPng from "../../assets/logo.png" with { type: "file" };
-import { BONES, type Beaver, type LoadBeaver, type Pose } from "../contracts.ts";
-import { furMaterial, furUniforms, SHEEN, SHEEN_RED } from "./fur.ts";
+import { BONES, type LoadBeaver } from "../contracts.ts";
 
-export const SHELLS = [24, 128] as const; // fewest and most fur shells
-const SKIN_RED = new THREE.Color(0.16, 0.01, 0.008);
-
-// The shirt's print: the logo on the chest of a white T-shirt with ribbed collar and hem.
-async function shirtTexture() {
+async function shirtTexture(scene: Scene) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1024;
   const paint = canvas.getContext("2d")!;
@@ -43,91 +38,67 @@ async function shirtTexture() {
     paint.textAlign = "center";
     paint.fillText("BEAVER", 512, 310);
   });
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.flipY = false; // glTF texture coordinates start at the top
-  texture.anisotropy = 4;
+  const texture = new DynamicTexture("shirt print", canvas, scene, true);
+  texture.update(false);
   return texture;
 }
 
-export const loadBeaver: LoadBeaver = async () => {
-  const [gltf, print] = await Promise.all([new GLTFLoader().loadAsync(beaverGlb), shirtTexture()]);
-  const root = gltf.scene, uniforms = furUniforms();
-  const body = root.getObjectByName("body") as THREE.SkinnedMesh, shirt = root.getObjectByName("shirt") as THREE.SkinnedMesh;
-  root.traverse((part) => { part.castShadow = part.receiveShadow = true; });
-
-  const shells = new THREE.InstancedBufferGeometry().copy(body.geometry as unknown as THREE.InstancedBufferGeometry);
-  shells.setAttribute("furMask", shells.getAttribute("color"));
-  shells.deleteAttribute("color");
-  body.geometry = shells;
-  const fur = body.material = furMaterial(uniforms);
-  body.frustumCulled = shirt.frustumCulled = false; // the shells and the poses leave the rest pose's bounds
-  // A strand is about 2.6 pixels wide at any size on screen: finer than that it shimmers and shows moiré rings.
-  // As many shells as it takes to put them half a pixel apart, so no layers show close up.
-  const here = new THREE.Vector3(), eyeAt = new THREE.Vector3();
-  body.onBeforeRender = (renderer, _scene, camera) => {
-    const height = renderer.getRenderTarget()?.height ?? renderer.domElement.height;
-    const span = (camera as THREE.OrthographicCamera).isOrthographicCamera
-      ? (camera as THREE.OrthographicCamera).top - (camera as THREE.OrthographicCamera).bottom
-      : 2 * Math.tan(THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov) / 2) * camera.getWorldPosition(eyeAt).distanceTo(root.getWorldPosition(here));
-    const pixelsPerUnit = height * (camera as THREE.PerspectiveCamera).zoom / span * root.matrixWorld.getMaxScaleOnAxis();
-    uniforms.furDensity.value = Math.min(700, pixelsPerUnit / 2.6);
-    shells.instanceCount = uniforms.furShells.value = THREE.MathUtils.clamp(Math.ceil(uniforms.furLength.value * pixelsPerUnit / 0.5), ...SHELLS);
-  };
-  // The shadow map gets the skin alone; the next onBeforeRender sets the shells back.
-  body.onBeforeShadow = () => { shells.instanceCount = 1; };
-  body.onAfterShadow = () => { shells.instanceCount = uniforms.furShells.value; };
-
-  const shirtMaterial = shirt.material as THREE.MeshStandardMaterial;
-  shirtMaterial.map = print;
-  shirtMaterial.color.setScalar(0.8); // white cotton in full sun reads white, not a blown-out patch
-  shirtMaterial.roughness = 0.85;
-  const material = (name: string) => {
-    let found: THREE.MeshStandardMaterial | undefined;
-    root.traverse((part) => { const m = (part as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m?.name === name) found = m; });
-    if (!found) throw new Error(`beaver.glb has no material "${name}"`);
-    return found;
-  };
-  const skin = material("skin"), eye = material("eye"), skinCalm = skin.color.clone();
-  eye.emissive.set(1, 0.03, 0);
-
-  // Rest values of every bone, as loaded: what a bone left out of a pose returns to.
-  const bones = BONES.map((name) => {
-    const bone = root.getObjectByName(name);
-    if (!bone) throw new Error(`beaver.glb has no bone "${name}"`);
-    return { name, bone, position: bone.position.clone(), quaternion: bone.quaternion.clone(), scale: bone.scale.clone() };
+export const loadBeaver: LoadBeaver = async (scene) => {
+  const [asset, print] = await Promise.all([ImportMeshAsync(beaverGlb, scene, { pluginExtension: ".glb" }), shirtTexture(scene)]);
+  for (const group of asset.animationGroups) { group.stop(); group.dispose(); }
+  const root = asset.meshes[0]!;
+  const nodes = new Map<string, TransformNode>([...asset.transformNodes, ...asset.meshes].map(node => [node.name, node]));
+  const shirt = nodes.get("shirt")!;
+  const body = nodes.get("body");
+  if (!(body instanceof Mesh) || !(body.material instanceof PBRMaterial)) throw new Error("Missing beaver coat mesh");
+  const material = body.material;
+  const fur = createCoat(body, material);
+  const calm = new Color3(0.16, 0.072, 0.035), red = new Color3(0.48, 0.035, 0.018);
+  const shirtMat = asset.meshes.find(m => m.name === "shirt")!.material as PBRMaterial;
+  shirtMat.albedoTexture = print;
+  for (const part of asset.meshes) part.receiveShadows = true;
+  const bones = BONES.map(name => {
+    const node = nodes.get(name);
+    if (!node) throw new Error(`Missing beaver bone: ${name}`);
+    node.rotationQuaternion ??= Quaternion.Identity();
+    return { name, node, rotation: node.rotationQuaternion.clone(), position: node.position.clone(), scale: node.scaling.clone() };
   });
-
+  const morphs = asset.meshes.flatMap(mesh => mesh.morphTargetManager?.numTargets ? [mesh.morphTargetManager.getTarget(0)] : []);
+  const eye = asset.meshes.map(mesh => mesh.material).find(m => m?.name === "eye") as PBRMaterial | undefined;
+  const skin = asset.meshes.map(mesh => mesh.material).find(m => m?.name === "skin") as PBRMaterial | undefined;
+  const skinAtRest = skin?.albedoColor.clone(), redSkin = new Color3(0.16, 0.01, 0.008);
+  const managers = new Set(asset.meshes.map(mesh => mesh.morphTargetManager));
+  root.onDisposeObservable.addOnce(() => {
+    for (const manager of managers) manager?.dispose();
+    for (const skeleton of asset.skeletons) skeleton.dispose();
+  });
+  material.albedoColor.copyFrom(calm);
   let anger = 0;
-  function look() {
-    body.morphTargetInfluences![0] = shirt.morphTargetInfluences![0] = anger;
-    uniforms.anger.value = anger;
-    skin.color.copy(skinCalm).lerp(SKIN_RED, anger);
-    fur.sheenColor.copy(SHEEN).lerp(SHEEN_RED, anger);
-    eye.emissiveIntensity = 3 * Math.max(0, anger - 0.5) ** 2;
-  }
-  look();
-
-  const beaver: Beaver = {
-    root,
-    hand: root.getObjectByName("hand_R")!,
+  return {
+    root, hand: nodes.get("hand_R")!,
     get anger() { return anger; },
-    set anger(value) { anger = THREE.MathUtils.clamp(value, 0, 1); look(); },
-    get shirt() { return shirt.visible; },
-    set shirt(on) { shirt.visible = on; uniforms.dressed.value = on ? 1 : 0; }, // off: the animal as it is, fur all over
-    pose(pose: Pose) {
-      for (const { name, bone, position, quaternion, scale } of bones) {
-        const given = pose[name];
-        if (given) bone.quaternion.fromArray(given.rotation);
-        else bone.quaternion.copy(quaternion);
-        if (given?.translation) bone.position.fromArray(given.translation);
-        else bone.position.copy(position);
-        if (given?.scale !== undefined) bone.scale.setScalar(given.scale);
-        else bone.scale.copy(scale);
+    set anger(value) {
+      if (anger === value) return;
+      anger = Math.min(1, Math.max(0, value));
+      Color3.LerpToRef(calm, red, anger, material.albedoColor);
+      if (skin && skinAtRest) Color3.LerpToRef(skinAtRest, redSkin, anger, skin.albedoColor);
+      fur.coat.anger = anger;
+      for (const morph of morphs) morph.influence = anger;
+      eye?.emissiveColor.set(Math.max(0, anger - 0.5) * 2, 0, 0);
+    },
+    get shirt() { return shirt.isEnabled(false); },
+    set shirt(on) { shirt.setEnabled(on); fur.coat.dressed = on; },
+    pose(pose) {
+      for (const { name, node, rotation, position, scale } of bones) {
+        const p = pose[name];
+        if (p) Quaternion.FromArrayToRef(p.rotation, 0, node.rotationQuaternion!);
+        else node.rotationQuaternion!.copyFrom(rotation);
+        if (p?.translation) Vector3.FromArrayToRef(p.translation, 0, node.position);
+        else node.position.copyFrom(position);
+        if (p?.scale !== undefined) node.scaling.setAll(p.scale);
+        else node.scaling.copyFrom(scale);
       }
     },
-    // Fur density and shell count follow the size on screen by themselves (body.onBeforeRender); nothing else moves.
-    update() {},
+    update: fur.update,
   };
-  return beaver;
 };

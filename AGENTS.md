@@ -14,4 +14,8 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/ag
 
 ## Rendering rule for game UI
 
-All visible game UI, the HUD included, is rendered by Three.js with the game's one `WebGLRenderer`: draw it in the HUD overlay scene (`stage.hud` in `src/engine.ts`, CSS pixels, drawn after the 3D picture). Do not draw game UI with HTML/CSS (no CSS-drawn markers, borders, icons or text). DOM elements may stay as invisible semantic counterparts: they place UI with CSS layout, take clicks, taps and keyboard focus, and carry accessibility labels, while Three.js draws what is seen there (see `src/features/hud/map-display.ts`). Painting a 2D canvas and using it as a Three.js texture is fine. The stream overlay is separate and not game UI. The map is migrated; the rest of the HUD is still HTML and moves over piece by piece, so new or changed game UI goes to Three.js.
+Render the world and all visible game UI with Babylon.js. Use the fullscreen Babylon GUI texture `stage.hud` for menus, HUD and touch controls. Use `src/features/hud/overlay.ts` for interactive controls with transparent DOM counterparts for pointer input, keyboard focus and screen readers. The stream composition lives in OBS.
+
+## Playable feature tests
+
+Add a playable station in `src/features/tour/index.ts` for new player-facing behavior. Use `?play&tour=fast&station=Name` to test it in the feature branch. A station with an activity name joins that activity in live mode. A standalone station becomes its own live activity.

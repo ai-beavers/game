@@ -1,127 +1,94 @@
-// Photo mode: P stops the world and frees the camera to orbit, pan and dolly around the beaver; depth of field
-// focuses on the beaver; Enter saves the picture as a PNG; P or Escape goes back to the game, the camera where the
-// player left it.
-//
-//   const photo = photoMode(game, chain);
-//   photo.update(dt);     once per picture, after the player has placed the camera
-//   photo.on              true while it runs; document.body has the class "photo" then
-//
-// It does not take the follow camera (src/player/camera.ts) apart: that one keeps running and places stage.camera
-// first; photo mode then puts its own camera's place over it, and on leaving puts the follow camera's yaw, pitch and
-// distance back as they were (its drag and wheel listeners still see the mouse while the photo is framed).
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Game } from "../../game.ts";
+import { createPhotoStrip } from "../hud/photo-strip.ts";
 import type { Chain } from "./chain.ts";
 
-const FOCUS_HEIGHT = 0.6; // m above the feet: the beaver's chest and face
-const BLUR_STEP = 0.1; // how much [ and ] change the depth of field
-
 export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
-  const canvas = stage.renderer.domElement;
-  const eye = new THREE.PerspectiveCamera();
-  const controls = new OrbitControls(eye);
-  Object.assign(controls, { enableDamping: true, dampingFactor: 0.12, screenSpacePanning: true, minDistance: 0.4, maxDistance: 14, maxPolarAngle: Math.PI * 0.62 });
-  const point = new THREE.Vector3();
-  let held = { yaw: 0, pitch: 0, distance: 0 }, strength = 0.35;
-
-  const strip = document.createElement("div");
-  strip.className = "photo-strip";
-  strip.innerHTML = `<style>
-      .photo-strip { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: none; gap: 14px;
-        align-items: center; padding: 7px 14px; border-radius: 8px; background: rgba(16, 20, 26, 0.72); color: #eee;
-        font: 13px/1.3 system-ui, sans-serif; user-select: none; z-index: 10; }
-      body.photo .photo-strip { display: flex; }
-      .photo-strip b { font-weight: 600; letter-spacing: 0.04em; }
-      .photo-strip label { display: flex; gap: 6px; align-items: center; }
-      .photo-strip input { width: 110px; accent-color: #d9a066; }
-      .photo-strip button { font: inherit; color: inherit; background: rgba(255, 255, 255, 0.12); border: 0; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
-      .photo-strip span { opacity: 0.65; white-space: nowrap; }
-    </style>
-    <b>PHOTO</b>
-    <label>Blur <input type="range" min="0" max="1" step="0.05" aria-label="Depth of field strength"></label>
-    <span>drag orbit · right-drag pan · wheel closer · [ ] blur</span>
-    <button data-do="save">Save ⏎</button><button data-do="back">Back P</button>`;
-  document.body.append(strip);
-  const slider = strip.querySelector("input")!;
-  const setStrength = (value: number) => { strength = Math.max(0, Math.min(1, value)); slider.value = String(strength); };
-  setStrength(strength);
-  slider.addEventListener("input", () => setStrength(Number(slider.value)));
-  strip.addEventListener("click", (e) => {
-    const action = (e.target as HTMLElement).dataset.do;
-    if (action === "save") save();
-    if (action === "back") leave();
-  });
-
-  const photo = { on: false, update };
+  const { scene, canvas, camera, hud } = stage;
+  const eye = new ArcRotateCamera("photo", 0, Math.PI / 3, 4, Vector3.Zero(), scene);
+  eye.fov = camera.fov;
+  eye.minZ = camera.minZ;
+  eye.maxZ = camera.maxZ;
+  eye.lowerRadiusLimit = 0.4;
+  eye.upperRadiusLimit = 14;
+  eye.upperBetaLimit = Math.PI * 0.62;
+  eye.wheelDeltaPercentage = 0.02;
+  eye.inputs.removeByType("ArcRotateCameraKeyboardMoveInput");
+  let on = false, strength = 0.35;
+  let held = { yaw: 0, pitch: 0, distance: 0 };
+  const strip = createPhotoStrip(stage, { save, leave, setStrength });
+  strip.value(strength);
+  function setStrength(value: number) {
+    strength = Math.max(0, Math.min(1, value));
+    strip.value(strength);
+  }
 
   function enter() {
     const { yaw, pitch, distance } = player.camera;
     held = { yaw, pitch, distance };
-    stage.paused = true;
-    photo.on = true;
+    on = stage.paused = true;
     document.body.classList.add("photo");
-    eye.copy(stage.camera);
-    controls.target.copy(beaver.root.getWorldPosition(point)).y += FOCUS_HEIGHT;
-    controls.connect(canvas);
-    controls.update();
+    eye.setTarget(beaver.root.getAbsolutePosition().add(new Vector3(0, 0.6, 0)));
+    eye.setPosition(camera.position);
+    scene.activeCamera = eye;
+    chain.camera(eye);
+    eye.attachControl(false, false, 2);
+    strip.show(true);
   }
-
   function leave() {
-    if (!photo.on) return;
-    controls.disconnect();
+    eye.detachControl();
     Object.assign(player.camera, held);
-    photo.on = false;
-    chain.blur = 0;
-    stage.paused = false;
+    scene.activeCamera = camera;
+    chain.focus(1, 0);
+    chain.camera(camera);
+    on = stage.paused = false;
     document.body.classList.remove("photo");
-    (document.activeElement as HTMLElement | null)?.blur?.(); // the slider or a button keeps no keys from the game
+    strip.show(false);
+    canvas.focus();
   }
-
-  function update(dt: number) {
-    if (!photo.on) return;
-    eye.aspect = stage.camera.aspect;
-    eye.updateProjectionMatrix();
-    controls.update(dt);
-    stage.camera.position.copy(eye.position);
-    stage.camera.quaternion.copy(eye.quaternion);
-    stage.camera.updateMatrixWorld();
-    // Sharp on the beaver wherever the orbit's centre was panned to.
-    beaver.root.getWorldPosition(point).y += FOCUS_HEIGHT;
-    chain.focus = -point.applyMatrix4(stage.camera.matrixWorldInverse).z;
-    chain.blur = strength;
-  }
-
-  /** A canvas without preserveDrawingBuffer holds its picture only right after a draw: draw, then take it. */
   function save() {
-    stage.draw();
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `beaver-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.png`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    }, "image/png");
+    if (!on) return;
+    const layer = hud.layer;
+    if (layer) layer.isEnabled = false;
+    try {
+      scene.render();
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `beaver-${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.png`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }, "image/png");
+    } finally { if (layer) layer.isEnabled = true; }
   }
 
-  // Capture phase on window: these keys reach no other part (pause menu, player) while a photo is framed.
-  window.addEventListener("keydown", (e) => {
-    // A key typed into a text field (chat, name) is text, not a command.
-    if (e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return;
-    if (e.repeat && e.code !== "BracketLeft" && e.code !== "BracketRight") return;
-    if (!photo.on) {
-      if (e.code === "KeyP" && !stage.paused) { enter(); e.preventDefault(); }
-      return;
+  const key = (event: KeyboardEvent) => {
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      if (on && target.closest("#photo-strip") && event.code === "Enter" && target instanceof HTMLButtonElement) return;
+      if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement ||
+          (target instanceof HTMLInputElement && target.type !== "range")) return;
     }
-    if (e.code === "KeyP" || e.code === "Escape") leave();
-    else if (e.code === "Enter") save();
-    else if (e.code === "BracketLeft") setStrength(strength - BLUR_STEP);
-    else if (e.code === "BracketRight") setStrength(strength + BLUR_STEP);
+    if (event.repeat && !event.code.startsWith("Bracket")) return;
+    if (!on && event.code === "KeyP" && !stage.paused) enter();
+    else if (!on) return;
+    else if (event.code === "KeyP" || event.code === "Escape") leave();
+    else if (event.code === "Enter") save();
+    else if (event.code === "BracketLeft") setStrength(strength - 0.1);
+    else if (event.code === "BracketRight") setStrength(strength + 0.1);
     else return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-  }, { capture: true });
-
-  return photo;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  window.addEventListener("keydown", key, true);
+  scene.onDisposeObservable.add(() => window.removeEventListener("keydown", key, true));
+  return {
+    update() {
+      if (!on) return;
+      const point = beaver.root.getAbsolutePosition().add(new Vector3(0, 0.6, 0));
+      chain.focus(-Vector3.TransformCoordinates(point, eye.getViewMatrix()).z, strength);
+    },
+  };
 }

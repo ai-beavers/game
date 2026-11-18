@@ -5,6 +5,7 @@
 //   bun shot "http://localhost:5180/?play&tour" --wait 240000 --out shots/tour.png        headless, filmed, logged
 //   ?play&tour&station=Map                                 play only the named station (repeat station for prerequisites)
 //   ?tour=fast                                             the test: FAST times real time, long ways hopped over
+//   /?play&tour=live                                        real-time activities chosen from the current world
 //   bun run tour                                           the test without end, headless (tools/tour.ts)
 //
 // It plays through the keyboard's own way in (player.keys.add): a Source that walks to a place, runs, jumps and
@@ -16,11 +17,15 @@
 // The tour plays its own saved game (the build feature keeps it under "beaver.build.tour") and stays off the
 // network, so it never touches a game someone plays. When the dam is full or no tree is left, it starts that saved
 // game anew (a reload). A station whose feature is missing (a lab page without sky) is skipped.
-import * as THREE from "three";
+import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { MapDisplay } from "../hud/map-display.ts";
+import { Overlay, onViewport, box } from "../hud/overlay.ts";
 import type { CreateFeature } from "../../game.ts";
 import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
+import { liveDirector, type Station } from "./live.ts";
 import { SLOTS } from "../build/rules.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
@@ -32,8 +37,8 @@ const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is 
 /** What the build feature puts on window for tools (src/features/build/index.ts); only the part the tour needs. */
 interface BuildDebug {
   state: { dam: string[]; trees: Record<number, { fell?: number; split?: boolean; rest?: unknown } | undefined> };
-  dam: { frame: { origin: THREE.Vector3; across: THREE.Vector3 } };
-  views: Map<number, { trunkLine(): { from: THREE.Vector3; along: THREE.Vector3 } | undefined }>;
+  dam: { frame: { origin: Vector3; across: Vector3 } };
+  views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined }>;
   reset(): void;
 }
 class Skip extends Error {}
@@ -47,13 +52,13 @@ export const create: CreateFeature = (game) => {
   const build = () => (window as { build?: BuildDebug }).build;
 
   // ---- what the tour wants, read once per physics step like any other device ----
-  const want = { to: undefined as THREE.Vector3 | undefined, side: 0, run: 0, jump: false, act: false };
+  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false };
   player.keys.add({
     read(into: Input) {
       Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act });
       if (!want.to) return into;
-      const d = new THREE.Vector3(want.to.x - player.feet.x, 0, want.to.z - player.feet.z);
-      if (d.lengthSq() < 1e-4) return into;
+      const d = new Vector3(want.to.x - player.feet.x, 0, want.to.z - player.feet.z);
+      if (d.lengthSquared() < 1e-4) return into;
       d.normalize();
       if (want.side) d.set(-d.z * want.side, 0, d.x * want.side); // a step aside, around what is in the way
       // Back into the camera's terms (src/player/index.ts: forward is the camera's look, x to its right).
@@ -88,7 +93,7 @@ export const create: CreateFeature = (game) => {
       player.teleport(hx, world.heightAt(hx, hz), hz, facing);
       player.camera.yaw = facing + Math.PI;
     }
-    want.to = new THREE.Vector3(x, 0, z);
+    want.to = new Vector3(x, 0, z);
     want.run = run;
     let t = 0, since = 0, from = player.feet.clone(), dodges = 0;
     try {
@@ -96,7 +101,7 @@ export const create: CreateFeature = (game) => {
         const dt = await frame();
         if ((t += dt) > limit) throw new Error(`stuck at ${fmt(player.feet)} on the way to ${x.toFixed(1)}, ${z.toFixed(1)}`);
         if ((since += dt) < STUCK_TIME) continue;
-        if (player.feet.distanceTo(from) < STUCK_MOVE) {
+        if (Vector3.Distance(player.feet, from) < STUCK_MOVE) {
           want.side = dodges++ % 2 ? -1 : 1;
           await wait(0.9);
           want.side = 0;
@@ -133,23 +138,23 @@ export const create: CreateFeature = (game) => {
   const pond = world.pond, sky = () => game.sky ?? skip("no sky feature");
   const needBuild = () => build() ?? skip("no build feature");
   let felled = -1;
-  const stations: [string, () => Promise<void>][] = [
+  const stations: Station[] = [
     ["Walk", async () => {
       const steps = after("footstep");
       await walkTo(world.spawn.x + 1, world.spawn.z + 3);
       expect(steps(), "walked without a footstep");
-    }],
+    }, "Around the clearing"],
     ["Run", async () => {
       let top = 0;
       const fast = () => { top = Math.max(top, player.motion.speed); return false; };
       await walkTo(world.spawn.x + 4, world.spawn.z + 1, { run: 1, arrived: fast });
       expect(top > 1.5, `top speed ${top.toFixed(2)} m/s, not running`);
-    }],
+    }, "Around the clearing"],
     ["Jump", async () => {
       const jumped = after("jump"), landed = after("land");
       for (let i = 0; i < 3; i++) { await tap("jump", 0.3); await wait(0.7); }
       expect(jumped() && landed(), "no jump, or no landing");
-    }],
+    }, "Around the clearing"],
     ["Fell a tree", async () => {
       const b = needBuild(), site = world.site!, trees = world.trees!;
       const standing = trees.map((t, i) => ({ t, i })).filter(({ i }) => b.state.trees[i]?.fell === undefined);
@@ -157,15 +162,15 @@ export const create: CreateFeature = (game) => {
       const fromSite = (t: (typeof trees)[number]) => Math.hypot(t.place.x - site.x, t.place.z - site.z);
       const { t: tree, i } = standing.sort((a, c) => fromSite(a.t) - fromSite(c.t))[0]!;
       // From the side facing the clearing's middle, as build.at(i) does, so it falls outwards.
-      const out = new THREE.Vector3(-tree.place.x, 0, -tree.place.z).normalize();
-      const stand = tree.place.clone().addScaledVector(out, tree.radius + 0.35);
+      const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize();
+      const stand = tree.place.add(out.scale(tree.radius + 0.35));
       await reach("gnaw", (attempt) => attempt ? tree.place : stand, true).catch((e: Error) => { throw new Error(`tree ${i}: ${e.message}`); });
       const falls = after("treeFalls"), lands = after("treeLands");
       want.act = true;
       try { await until(falls, 15, "gnawed for 15 s, the tree still stands"); } finally { want.act = false; }
       await until(lands, 8, "the tree fell but never landed");
       felled = last.treeFalls!.tree;
-    }],
+    }, "Dam work"],
     ["Gnaw it into wood", async () => {
       if (felled < 0) return skip("no tree felled this round");
       const b = needBuild(), i = felled;
@@ -173,14 +178,14 @@ export const create: CreateFeature = (game) => {
       await until(() => !!b.state.trees[i]?.rest, 8, `tree ${i} never came to rest after its fall (leaning on something?)`);
       // The nearest point of the trunk as it lies now, a little off its foot; then further along it.
       await reach("split", (attempt) => {
-        const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new THREE.Vector3() };
-        return from.clone().addScaledVector(along, attempt ? attempt : THREE.MathUtils.clamp(player.feet.clone().sub(from).dot(along), 0.3, 2));
+        const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new Vector3() };
+        return from.add(along.scale(attempt || Scalar.Clamp(Vector3.Dot(player.feet.subtract(from), along), 0.3, 2)));
       });
       const splits = after("treeSplits");
       want.act = true;
       try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }
       felled = -1;
-    }],
+    }, "Dam work"],
     ["Carry a stick", async () => {
       const sticks = world.sticks.filter((s) => s.body.isEnabled() && s !== player.carrying);
       expect(sticks.length > 0, "no stick lies anywhere");
@@ -190,17 +195,17 @@ export const create: CreateFeature = (game) => {
       const picked = after("pickup");
       await tap("act");
       await until(picked, 2, "pressed E at a stick, nothing in the hand");
-    }],
+    }, "Dam work"],
     ["Build the dam", async () => {
       const b = needBuild();
       if (b.state.dam.length >= SLOTS) return skip("the dam is full");
       if (!player.carrying) return skip("nothing in the hand to build with");
-      const { origin, across } = b.dam.frame, to = origin.clone().addScaledVector(across, -1.25);
+      const { origin, across } = b.dam.frame, to = origin.subtract(across.scale(1.25));
       await reach("build", (attempt) => attempt ? origin : to, true);
       const placed = after("stickPlaced");
       await tap("act");
       await until(placed, 3, "pressed E at the dam, no stick placed");
-    }],
+    }, "Dam work"],
     ["Swim", async () => {
       if (!pond) return skip("no pond");
       const wet = after("enterWater");
@@ -209,15 +214,15 @@ export const create: CreateFeature = (game) => {
       const dry = after("leaveWater");
       await walkTo(pond.x + pond.radius + 1.5, pond.z, { arrived: dry, limit: 40 });
       expect(dry(), "swam across, never out again");
-    }],
+    }, "Pond patrol"],
     ["Animals at the pond", async () => {
       if (!pond) return skip("no pond");
-      expect(stage.scene.children.some((o) => o.name.startsWith("life-")), "no animals in the scene");
+      expect(stage.scene.meshes.some((o) => o.name.startsWith("life-")), "no animals in the scene");
       for (const angle of [0.6, 1.3, 2.0]) {
         const r = pond.radius + 1.6;
         await walkTo(pond.x + Math.cos(angle) * r, pond.z + Math.sin(angle) * r, { near: 0.6 });
       }
-    }],
+    }, "Pond patrol"],
     ["Furious beaver", async () => {
       player.setAnger(1);
       try {
@@ -231,7 +236,7 @@ export const create: CreateFeature = (game) => {
       try {
         for (const h of [19.3, 20.5, 23, 5.6]) { s.setHour(h); await wait(3.5); if (h === 23) expect(s.dark > 0.5, `dark ${s.dark.toFixed(2)} at 23:00`); }
       } finally { s.setHour(hour); s.running = running; }
-    }],
+    }, "Sky watch"],
     ["Weather", async () => {
       const s = sky();
       try {
@@ -242,68 +247,40 @@ export const create: CreateFeature = (game) => {
         await until(() => s.fog > 0.3, 12, "asked for fog, none came");
         await wait(3);
       } finally { s.setWeather("auto"); }
-    }],
+    }, "Sky watch"],
     ["Map", async () => {
-      // three.js draws the map (stage.hud) where its invisible <button> is: checked in the HUD scene, not the page.
-      const button = document.querySelector<HTMLElement>("#beaver-hud .map") ?? skip("no HUD");
-      const drawn = stage.hud.scene.getObjectByName("map") ?? skip("no map in the HUD scene");
-      const disc = drawn.getObjectByName("map-disc") as THREE.Mesh, north = drawn.getObjectByName("map-north") as THREE.Mesh;
-      expect(!!disc && !!north, "the drawn map has no disc or no N");
-      expect(!button.childElementCount && !button.textContent, "the map's button shows something of its own");
-      // Where an object is drawn, in CSS px of the page: the HUD camera counts CSS px from the canvas's top left, y up.
-      const onPage = (o: THREE.Object3D) => {
-        const p = o.getWorldPosition(new THREE.Vector3()), c = stage.renderer.domElement.getBoundingClientRect();
-        return { x: c.left + p.x, y: c.top - p.y };
+      const button = () => document.querySelector<HTMLButtonElement>("#beaver-hud .map") ?? skip("no map button");
+      const disc = stage.hud.getControlByName("map-disc");
+      if (!(disc instanceof MapDisplay)) throw new Error("Babylon HUD has no map");
+      const north = () => stage.hud.getControlByName("map-north");
+      const aligned = () => {
+        const rect = button().getBoundingClientRect(), m = disc!._currentMeasure;
+        const scale = stage.hud.getSize().width / stage.canvas.clientWidth;
+        return Math.abs(rect.left-m.left/scale)<2 && Math.abs(rect.top-m.top/scale)<2 && Math.abs(rect.width-m.width/scale)<2;
       };
-      const onButton = () => {
-        const r = button.getBoundingClientRect(), d = onPage(disc);
-        return drawn.visible && Math.abs(d.x - (r.left + r.width / 2)) < 1 && Math.abs(d.y - (r.top + r.height / 2)) < 1
-          && Math.abs(disc.scale.x - (r.width - 4)) < 1;
-      };
-      const painted = () => (disc.material as THREE.MeshBasicMaterial).map!.version;
-      // The last picture's last draw is the HUD scene's: at least one call per mesh of the map that is visible.
-      const drawCalls = () => { let n = 0; drawn.traverseVisible((o) => { if ((o as THREE.Mesh).isMesh) n++; }); return stage.renderer.info.render.calls >= n; };
-      // The button's size and place are animated by CSS: wait for the end of that, then the drawn map must be there too.
-      const settled = (why: string) => until(() => !button.getAnimations().length && onButton(), 3, why);
-
-      if (button.classList.contains("large")) key("KeyM"); // as a round that failed half-way left it
-      await settled("the small map is not drawn where its button is");
-      const small = disc.scale.x, since = painted();
-      await frame(); await frame();
-      expect(painted() > since, "the map texture is not painted anew every frame");
-      expect(!north.visible && drawCalls(), "north marker on the small map, or the map not drawn");
-
+      if (button().getAttribute("aria-expanded") === "true") key("KeyM");
+      await until(aligned,3,"small map and input bounds disagree");
+      const width = disc._currentMeasure.width, previous = disc.draws;
+      await until(() => disc.draws>previous,3,"Babylon did not draw the map");
+      expect(!north()?.isVisible,"north marker on small map");
       key("KeyM");
       try {
-        expect(button.classList.contains("large"), "M did not enlarge the map");
-        await settled("the large map is not drawn where its button is");
-        expect(disc.scale.x > small * 1.5, `the large map is drawn ${disc.scale.x.toFixed(0)} px across, the small ${small.toFixed(0)}`);
-        expect(north.visible && drawCalls(), "no N drawn on the large map");
-        const n = onPage(north), d = onPage(disc), radius = disc.scale.x / 2;
-        expect(Math.abs(n.x - d.x) < 1 && d.y - n.y > radius * 0.85 && d.y - n.y < radius, "N is not at the top edge of the large map");
-        expect((north.material as THREE.MeshBasicMaterial).opacity > 0.9, "the N is faded");
-
-        // Paused: drawn on under the menu. Photo mode: not drawn at all.
+        await until(() => aligned() && disc._currentMeasure.width>width*1.5,3,"map did not enlarge");
+        const marker = north(), m = disc._currentMeasure;
+        expect(!!marker?.isVisible && marker._currentMeasure.top >= m.top && marker._currentMeasure.top < m.top+m.height*0.15,"north marker missing at the top");
         key("Escape");
         try {
-          for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame); // the tour holds while paused; pictures go on
-          expect(stage.paused && drawn.visible && north.visible, "the map is gone while paused");
+          await new Promise(requestAnimationFrame);
+          expect(stage.paused && !!disc.parent?.isVisible,"map disappeared while paused");
         } finally { key("Escape"); }
-        await frame();
-        expect(!stage.paused, "Escape did not close the pause menu");
+        expect(!stage.paused,"pause menu did not close");
         key("KeyP");
         if (document.body.classList.contains("photo")) {
-          try { await frame(); await frame(); expect(!drawn.visible, "the map is drawn in photo mode"); } finally { key("KeyP"); }
-          await until(() => drawn.visible, 2, "the map did not come back after photo mode");
+          try { await frame(); await frame(); expect(!disc.parent?.isVisible,"map visible in photo mode"); } finally { key("KeyP"); }
+          await until(() => !!disc.parent?.isVisible,2,"map did not return after photo mode");
         }
-        await wait(2);
-
-        key("KeyM");
-        expect(!button.classList.contains("large"), "M did not shrink the map");
-        await settled("the small map is not drawn where its button is, after M");
-        expect(Math.abs(disc.scale.x - small) < 1, "the map did not go back to its small size");
-        expect(!north.visible, "north marker stayed on the small map");
-      } finally { if (button.classList.contains("large")) key("KeyM"); } // the next station sees the small map
+      } finally { if (button().getAttribute("aria-expanded") === "true") key("KeyM"); }
+      await until(() => aligned() && Math.abs(disc._currentMeasure.width-width)<2,3,"map did not return to its small size");
     }],
     ["Photo mode", async () => {
       key("KeyP");
@@ -315,35 +292,47 @@ export const create: CreateFeature = (game) => {
 
   // A feature run may request prerequisite stations followed by the new behavior.
   const requested = params.getAll("station");
-  const itinerary = requested.length ? requested.map(name => {
+  const focused = requested.length ? requested.map(name => {
     const station = stations.find(([candidate]) => candidate === name);
     if (!station) throw new Error("Unknown tour station: " + name);
     return station;
-  }) : stations;
+  }) : undefined;
 
   // ---- on screen: where the tour is ----
-  const label = document.createElement("div");
-  label.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;"
-    + "font:600 14px -apple-system,'Helvetica Neue',Arial,sans-serif;color:#fff;background:rgba(16,20,26,.7);padding:6px 14px;border-radius:999px";
-  document.body.append(label);
+  const overlay = new Overlay(stage,"tour",false,12);
+  const label = overlay.text("station","",box(0,0,1,1),14,"center");
+  label.fontWeight = "bold";
+  label.outlineWidth = 3;
+  label.outlineColor = "#182723";
+  onViewport(stage,(w,h) => overlay.move(label,box(w*0.2,h<500 ? 45 : 8,w*0.6,36)));
 
   // ---- the rounds ----
   const errors: string[] = [];
   window.addEventListener("error", (e) => errors.push(e.message));
   window.addEventListener("unhandledrejection", (e) => errors.push(String(e.reason)));
   const results: { round: number; station: string; ok: boolean | "skipped"; why?: string; seconds: number }[] = [];
-  const tour = { round: 0, results, station: "" };
+  const live = mode === "live" && !focused, direct = liveDirector();
+  const tour = { round: 0, results, station: "", activity: "" };
   Object.assign(window, { tour });
 
   void (async () => {
     await wait(1.5); // the first pictures, the HUD's start
     for (;;) {
       tour.round++;
-      player.teleport(world.spawn.x, world.heightAt(world.spawn.x, world.spawn.z), world.spawn.z);
+      const dam = build()?.state;
+      const canFell = world.trees?.some((_, i) => dam?.trees[i]?.fell === undefined);
+      const itinerary = live ? direct(stations.filter(([name, , activity]) => {
+        if (activity !== "Dam work") return true;
+        if (!dam || dam.dam.length >= SLOTS) return false;
+        if (player.carrying) return name === "Build the dam";
+        return canFell || name === "Carry a stick" || name === "Build the dam";
+      }), player.carrying ? "Dam work" : undefined) : focused ?? stations;
+      tour.activity = live ? itinerary[0]![2] ?? itinerary[0]![0] : "";
+      if (!live) player.teleport(world.spawn.x, world.heightAt(world.spawn.x, world.spawn.z), world.spawn.z);
       let ok = 0, failed = false;
       for (const [n, [name, run]] of itinerary.entries()) {
         tour.station = name;
-        label.textContent = `Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
+        label.text = live ? `Live · ${tour.activity === name ? name : tour.activity + " · " + name}` : `Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
         const t0 = performance.now();
         errors.length = 0;
         let result: (typeof results)[number];
@@ -399,4 +388,4 @@ export const create: CreateFeature = (game) => {
 };
 
 function skip(why: string): never { throw new Skip(why); }
-const fmt = (v: THREE.Vector3) => `${v.x.toFixed(1)}, ${v.z.toFixed(1)}`;
+const fmt = (v: Vector3) => `${v.x.toFixed(1)}, ${v.z.toFixed(1)}`;

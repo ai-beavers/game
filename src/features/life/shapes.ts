@@ -1,72 +1,62 @@
-// The animals' bodies, built from code: smooth stretched spheres and cones merged into one geometry per kind, painted
-// with vertex colours, and a material that moves wings, tails and legs in the vertex shader.
-//
-//   const mesh = animalMesh(birdShape(), count);      an InstancedMesh, one draw call for all birds
-//   mesh.userData.anim                                 its per-animal vec4 (see each shape), set .needsUpdate after writing
-//
-// Every vertex knows which part it belongs to (attribute `part`); each shape's GLSL `pose()` turns parts around their
-// joints from the per-animal `aAnim`. Animals face +z, y up, stand on y = 0, sizes in metres.
-import * as THREE from "three";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
+import { hex as C } from "../../world/color.ts";
+import { smoothstep } from "../../world/noise.ts";
 
-export interface Shape {
-  name: string;
-  geometry: THREE.BufferGeometry;
-  /** GLSL: void pose(float part, vec4 anim, inout vec3 p, inout vec3 n) — moves a vertex and its normal. */
-  pose: string;
-  /** GLSL run in the fragment shader after the colour is known (diffuseColor, vPart, vLifeY are there). */
-  fragment?: string;
-  material?: THREE.MeshStandardMaterialParameters;
-  /** A second colour set (attribute color2), chosen per animal with anim.w = 1. */
-  variant?: boolean;
-}
+const smooth = (x: number, a: number, b: number) => smoothstep(a, b, x);
+type Paint = (p: Vector3, n: Vector3, out: Color3) => void;
+interface Piece { data: VertexData; part: number[]; second: number[] }
+interface Shape { name: string; geometry: Piece; pose: string; fragment?: string; variant?: boolean }
 
-const C = (hex: number) => new THREE.Color(hex);
-type Paint = (p: THREE.Vector3, n: THREE.Vector3, out: THREE.Color) => void;
-
-/** One smooth part: a sphere (or another geometry) moved into shape by `place`, painted by `paint`. */
-function piece(base: THREE.BufferGeometry, part: number, place: (p: THREE.Vector3) => void, paint: Paint, paint2?: Paint) {
-  const g = base;
-  g.deleteAttribute("uv");
-  const pos = g.attributes.position as THREE.BufferAttribute, p = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) { place(p.fromBufferAttribute(pos, i)); pos.setXYZ(i, p.x, p.y, p.z); }
-  g.computeVertexNormals();
-  const n = new THREE.Vector3(), c = new THREE.Color(), colors = new Float32Array(pos.count * 3), colors2 = new Float32Array(pos.count * 3);
-  const normals = g.attributes.normal as THREE.BufferAttribute;
-  for (let i = 0; i < pos.count; i++) {
-    p.fromBufferAttribute(pos, i); n.fromBufferAttribute(normals, i);
-    paint(p, n, c); c.toArray(colors, i * 3);
-    (paint2 ?? paint)(p, n, c); c.toArray(colors2, i * 3);
+function piece(data: VertexData, joint: number, place: (p: Vector3) => void, paint: Paint, paint2 = paint): Piece {
+  const positions = data.positions!, normals = data.normals!, c = new Color3(), colors = [], second = [], part = [];
+  for (let i = 0; i < positions.length; i += 3) {
+    const p = Vector3.FromArray(positions, i);
+    place(p);
+    p.toArray(positions, i);
   }
-  g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  g.setAttribute("color2", new THREE.BufferAttribute(colors2, 3));
-  g.setAttribute("part", new THREE.BufferAttribute(new Float32Array(pos.count).fill(part), 1));
-  return g;
+  VertexData.ComputeNormals(positions, data.indices!, normals);
+  for (let i = 0; i < positions.length; i += 3) {
+    const p = Vector3.FromArray(positions, i), n = Vector3.FromArray(normals, i);
+    paint(p, n, c);
+    colors.push(c.r, c.g, c.b, 1);
+    paint2(p, n, c);
+    second.push(c.r, c.g, c.b);
+    part.push(joint);
+  }
+  data.colors = colors;
+  return { data, part, second };
 }
 
-/** A sphere with its poles on z, stretched to half sizes (x, y, z), turned by `turn` (Euler), at `at`; `bend` shapes it first. */
-function ellipsoid(size: [number, number, number], at: [number, number, number], segments: [number, number], part: number, paint: Paint,
-  options: { turn?: [number, number, number]; bend?: (p: THREE.Vector3) => void; paint2?: Paint } = {}) {
-  const sphere = new THREE.SphereGeometry(1, segments[0], segments[1]).rotateX(Math.PI / 2);
-  const turn = new THREE.Quaternion().setFromEuler(new THREE.Euler(...(options.turn ?? [0, 0, 0])));
-  return piece(sphere, part, (p) => {
+function ellipsoid(size: [number, number, number], at: [number, number, number], segments: [number, number], joint: number, paint: Paint,
+  options: { turn?: [number, number, number]; bend?: (p: Vector3) => void; paint2?: Paint } = {}) {
+  const sphere = VertexData.CreateSphere({ diameter: 2, segments: Math.ceil(Math.max(...segments) / 2) });
+  const rotation = Quaternion.FromEulerAngles(...(options.turn ?? [0, 0, 0]));
+  const scale = new Vector3(...size), offset = new Vector3(...at);
+  return piece(sphere, joint, p => {
     options.bend?.(p);
-    p.multiply(new THREE.Vector3(...size)).applyQuaternion(turn).add(new THREE.Vector3(...at));
+    p.multiplyInPlace(scale).applyRotationQuaternionInPlace(rotation).addInPlace(offset);
   }, paint, options.paint2);
 }
 
-/** A tapered rod from a to b. */
-function rod(a: [number, number, number], b: [number, number, number], r0: number, r1: number, part: number, paint: Paint) {
-  const from = new THREE.Vector3(...a), to = new THREE.Vector3(...b), dir = to.clone().sub(from), length = dir.length();
-  const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
-  const g = new THREE.CylinderGeometry(r1, r0, length, 6, 1).translate(0, length / 2, 0);
-  return piece(g, part, (p) => p.applyQuaternion(turn).add(from), paint);
+function rod(a: [number, number, number], b: [number, number, number], r0: number, r1: number, joint: number, paint: Paint) {
+  const start = new Vector3(...a), delta = new Vector3(...b).subtract(start);
+  const data = VertexData.CreateCylinder({ height: delta.length(), diameterTop: 2 * r1, diameterBottom: 2 * r0, tessellation: 6 });
+  const rotation = Quaternion.Identity();
+  Quaternion.FromUnitVectorsToRef(Vector3.Up(), delta.normalizeToNew(), rotation);
+  const center = start.add(delta.scale(0.5));
+  return piece(data, joint, p => p.applyRotationQuaternionInPlace(rotation).addInPlace(center), paint);
 }
-
-const flat = (color: THREE.Color): Paint => (_p, _n, out) => void out.copy(color);
+const merge = (pieces: Piece[]) => ({
+  data: pieces[0]!.data.merge(pieces.slice(1).map(p => p.data)),
+  part: pieces.flatMap(p => p.part), second: pieces.flatMap(p => p.second),
+});
+const flat = (color: Color3): Paint => (_p, _n, out) => void out.copyFrom(color);
 const streak = (x: number, z: number, f = 1) => 0.5 + 0.5 * Math.sin(x * 310 * f + Math.sin(z * 170 * f) * 2.5);
-
-// The vertex shader's helpers for every shape.
 const POSE_GLSL = /* glsl */`
 mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
 mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
@@ -74,53 +64,46 @@ mat3 rotZ(float a) { float c = cos(a), s = sin(a); return mat3(c, s, 0.0, -s, c,
 void turnAround(mat3 r, vec3 pivot, inout vec3 p, inout vec3 n) { p = r * (p - pivot) + pivot; n = r * n; }
 `;
 
-/** One InstancedMesh for all animals of a shape; its material poses them in the vertex shader, shadows included. */
-export function animalMesh(shape: Shape, count: number) {
-  const anim = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4).setUsage(THREE.DynamicDrawUsage);
-  shape.geometry.setAttribute("aAnim", anim);
-  const head = `${POSE_GLSL}\n${shape.pose}\nattribute float part;\nattribute vec4 aAnim;\nvarying float vPart;\nvarying float vLifeY;\n`
-    + (shape.variant ? "attribute vec3 color2;\n" : "");
-  const vertex = (withNormals: boolean) => (s: THREE.WebGLProgramParametersWithUniforms) => {
-    s.vertexShader = s.vertexShader.replace("#include <common>", `#include <common>\n${head}`)
-      .replace("#include <begin_vertex>", `vec3 transformed = position; vec3 posedNormal = vec3(0.0, 1.0, 0.0);
-        pose(part, aAnim, transformed, posedNormal); vPart = part;
-        vLifeY = (modelMatrix * ${"instanceMatrix"} * vec4(transformed, 1.0)).y;`);
-    if (withNormals) s.vertexShader = s.vertexShader.replace("#include <beginnormal_vertex>", `vec3 objectNormal = normal;
-        { vec3 posedPosition = position; pose(part, aAnim, posedPosition, objectNormal); }`);
-    if (shape.variant) s.vertexShader = s.vertexShader.replace("#include <color_vertex>", `#include <color_vertex>
-        vColor.rgb = mix(color, color2, aAnim.w);
-        #ifdef USE_INSTANCING_COLOR
-          vColor.rgb *= instanceColor.rgb;
-        #endif`);
-  };
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, ...shape.material });
-  material.onBeforeCompile = (s) => {
-    vertex(true)(s);
-    s.fragmentShader = s.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vPart;\nvarying float vLifeY;")
-      .replace("#include <color_fragment>", `#include <color_fragment>\n${shape.fragment ?? ""}`);
-  };
-  material.customProgramCacheKey = () => `life-${shape.name}`;
-  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
-  depth.onBeforeCompile = (s) => {
-    vertex(false)(s);
-    s.fragmentShader = s.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vPart;\nvarying float vLifeY;");
-  };
-  depth.customProgramCacheKey = () => `life-depth-${shape.name}`;
-  const mesh = new THREE.InstancedMesh(shape.geometry, material, count);
-  mesh.customDepthMaterial = depth;
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.frustumCulled = false; // they move every frame; all of them stay near the clearing
-  mesh.name = `life-${shape.name}`;
-  mesh.userData.anim = anim;
-  return mesh;
+export function animalMesh(scene: Scene, shape: Shape, count: number) {
+  const mesh = new Mesh("life-" + shape.name, scene), geometry = shape.geometry;
+  geometry.data.applyToMesh(mesh);
+  mesh.setVerticesData("part", geometry.part, false, 1);
+  mesh.setVerticesData("color2", geometry.second, false, 3);
+  const anim = new Float32Array(count * 4), tint = new Float32Array(count * 4).fill(1);
+  mesh.thinInstanceSetBuffer("matrix", new Float32Array(count * 16), 16, false);
+  mesh.thinInstanceSetBuffer("aAnim", anim, 4, false);
+  mesh.thinInstanceSetBuffer("tint", tint, 4, false);
+  const mat = new ShaderMaterial(mesh.name, scene, {
+    vertexSource: `precision highp float; attribute vec3 position, normal, color2; attribute vec4 color, aAnim, tint;
+      attribute float part; varying vec4 shade; varying float vPart,vLifeY; varying vec3 vWorld;
+      #include<instancesDeclaration>
+      uniform mat4 viewProjection;
+      ${POSE_GLSL}
+      ${shape.pose}
+      void main(){
+        #include<instancesVertex>
+        vec3 p=position,n=normal; pose(part,aAnim,p,n);
+        vec4 at=finalWorld*vec4(p,1.); vPart=part; vWorld=at.xyz; vLifeY=at.y;
+        shade=vec4(mix(color.rgb,color2,${shape.variant ? "aAnim.w" : "0."})*tint.rgb,1.);
+        shade.rgb*=.65+.35*max(0.,normalize(mat3(finalWorld)*n).y);
+        gl_Position=viewProjection*at;
+      }`,
+    fragmentSource: `precision highp float; varying vec4 shade; varying float vPart,vLifeY; varying vec3 vWorld; uniform float daylight, waterLevel; uniform vec3 cameraPosition;
+      void main(){vec4 diffuseColor=shade;
+        ${shape.fragment ?? ""}
+        gl_FragColor=vec4(diffuseColor.rgb*daylight,diffuseColor.a);
+      }`,
+  }, {
+    attributes: ["position", "normal", "color", "part", "aAnim", "color2", "tint"],
+    uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition"],
+    needAlphaBlending: shape.name === "fish" || shape.name === "dragonfly",
+  });
+  mesh.material = mat;
+  mesh.alwaysSelectAsActiveMesh = true;
+  mat.backFaceCulling = false;
+  mesh.isPickable = false;
+  return { mesh, material: mat, anim, tint };
 }
-
-const merge = (name: string, parts: THREE.BufferGeometry[]) => {
-  const g = mergeGeometries(parts);
-  if (!g) throw new Error(`life: the parts of ${name} do not fit together`);
-  return g;
-};
-
 // ---- a small songbird, 17 cm long --------------------------------------------------------------------------------
 // anim: x wingbeat phase, y how hard the wings beat, z 0 folded … 1 spread, w 1 for a bird of prey's long wings.
 // Parts: 0 body, 1 left wing, 2 right wing, 3 legs.
@@ -128,18 +111,18 @@ const merge = (name: string, parts: THREE.BufferGeometry[]) => {
 export function birdShape(): Shape {
   const back = C(0x6b4a2e), belly = C(0xd8c9a8), cap = C(0x5a5048), cheek = C(0xb9a58a), bill = C(0x3a332c), dark = C(0x2e241c);
   const body: Paint = (p, n, out) => {
-    out.copy(back).lerp(dark, streak(p.x, p.z) * 0.35);
-    out.lerp(belly, THREE.MathUtils.smoothstep(-n.y + p.z * 4, -0.2, 0.5));
+    Color3.LerpToRef(back, dark, streak(p.x, p.z) * 0.35, out);
+    Color3.LerpToRef(out, belly, smooth(-n.y + p.z * 4, -0.2, 0.5), out);
   };
   const head: Paint = (p, n, out) => {
-    out.copy(cap).lerp(cheek, THREE.MathUtils.smoothstep(-n.y, -0.3, 0.2));
-    if (Math.abs(n.x) > 0.55 && n.y > -0.15 && n.y < 0.45 && n.z > 0.15 && n.z < 0.6) out.copy(dark); // the eye
-    if (n.y < -0.3) out.copy(belly);
+    Color3.LerpToRef(cap, cheek, smooth(-n.y, -0.3, 0.2), out);
+    if (Math.abs(n.x) > 0.55 && n.y > -0.15 && n.y < 0.45 && n.z > 0.15 && n.z < 0.6) out.copyFrom(dark); // the eye
+    if (n.y < -0.3) out.copyFrom(belly);
   };
   const wing: Paint = (p, _n, out) => {
-    out.copy(back).lerp(dark, 0.25 + streak(p.z, p.x, 0.6) * 0.3);
-    if (Math.abs(p.x) > 0.11) out.lerp(dark, 0.6); // dark flight feathers at the tips
-    if (Math.abs(p.z - 0.005) < 0.006) out.lerp(belly, 0.7); // a pale wing bar
+    Color3.LerpToRef(back, dark, 0.25 + streak(p.z, p.x, 0.6) * 0.3, out);
+    if (Math.abs(p.x) > 0.11) Color3.LerpToRef(out, dark, 0.6, out); // dark flight feathers at the tips
+    if (Math.abs(p.z - 0.005) < 0.006) Color3.LerpToRef(out, belly, 0.7, out); // a pale wing bar
   };
   const wingShape = (side: number) => ellipsoid([0.06, 0.004, 0.034], [side * 0.085, 0.072, -0.004], [10, 5], side > 0 ? 1 : 2, wing, {
     bend: (p) => { p.z += -0.35 * p.x * p.x * side - 0.3 * (p.x * side > 0 ? p.x * side : 0); }, // swept back at the tip
@@ -147,11 +130,11 @@ export function birdShape(): Shape {
   const leg = flat(C(0x8a6a58));
   return {
     name: "bird",
-    geometry: merge("bird", [
+    geometry: merge([
       ellipsoid([0.034, 0.036, 0.064], [0, 0.058, -0.004], [14, 10], 0, body, { bend: (p) => { p.y *= 1 + p.z * 0.12; } }),
       ellipsoid([0.026, 0.025, 0.027], [0, 0.093, 0.05], [12, 8], 0, head),
-      piece(new THREE.ConeGeometry(0.0075, 0.022, 7).rotateX(Math.PI / 2), 0, (p) => p.add(new THREE.Vector3(0, 0.089, 0.083)), flat(bill)),
-      ellipsoid([0.02, 0.0035, 0.048], [0, 0.064, -0.098], [8, 4], 0, (p, _n, o) => void o.copy(back).lerp(dark, 0.5), { turn: [-0.25, 0, 0] }),
+      piece(VertexData.CreateCylinder({ diameterTop: 0, diameterBottom: 0.015, height: 0.022, tessellation: 7 }).transform(Matrix.RotationX(Math.PI / 2)), 0, (p) => p.addInPlace(new Vector3(0, 0.089, 0.083)), flat(bill)),
+      ellipsoid([0.02, 0.0035, 0.048], [0, 0.064, -0.098], [8, 4], 0, (p, _n, o) => void Color3.LerpToRef(back, dark, 0.5, o), { turn: [-0.25, 0, 0] }),
       wingShape(1), wingShape(-1),
       rod([0.013, 0, 0.01], [0.012, 0.03, 0.0], 0.0022, 0.003, 3, leg), rod([-0.013, 0, 0.01], [-0.012, 0.03, 0.0], 0.0022, 0.003, 3, leg),
       rod([0.013, 0.001, 0.01], [0.013, 0.001, 0.03], 0.0018, 0.0015, 3, leg), rod([-0.013, 0.001, 0.01], [-0.013, 0.001, 0.03], 0.0018, 0.0015, 3, leg),
@@ -173,7 +156,6 @@ export function birdShape(): Shape {
           p.y = 0.03 + (p.y - 0.03) * (1.0 - anim.z); // legs tucked away in flight
         }
       }`,
-    material: { roughness: 0.85 },
   };
 }
 
@@ -184,12 +166,13 @@ export function birdShape(): Shape {
 export function fishShape(): Shape {
   const back = C(0x2a3324), side = C(0x9aa294), belly = C(0xe2e0d2), fin = C(0xb4502c);
   const body: Paint = (_p, n, out) => {
-    out.copy(back).lerp(side, THREE.MathUtils.smoothstep(n.y, 0.75, 0.15)).lerp(belly, THREE.MathUtils.smoothstep(-n.y, 0.2, 0.7));
-    if (Math.abs(n.x) > 0.5 && n.z > 0.5 && n.y > 0) out.copy(C(0x1a1a14)); // the eye
+    Color3.LerpToRef(back, side, smooth(n.y, 0.75, 0.15), out);
+    Color3.LerpToRef(out, belly, smooth(-n.y, 0.2, 0.7), out);
+    if (Math.abs(n.x) > 0.5 && n.z > 0.5 && n.y > 0) out.copyFrom(C(0x1a1a14)); // the eye
   };
   return {
     name: "fish",
-    geometry: merge("fish", [
+    geometry: merge([
       ellipsoid([0.02, 0.034, 0.11], [0, 0, 0], [12, 10], 0, body, {
         bend: (p) => { const t = p.z < 0 ? 1 + p.z * 0.62 : 1 - p.z * p.z * 0.15; p.x *= t; p.y *= t; p.y += 0.06 * (1 - p.z * p.z) * 0.2; },
       }),
@@ -207,13 +190,12 @@ export function fishShape(): Shape {
         n = normalize(n);
       }`,
     fragment: /* glsl */`
-      float under = clamp(-vLifeY, 0.0, 1.0);
+      float under = clamp(waterLevel-vLifeY, 0.0, 1.0);
       // Murky green-grey shapes, lighter than the deep water behind them, so the school shows from the bank.
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.2, 0.15), clamp(0.35 + under * 1.2, 0.0, 0.75));
       // At a glancing look the surface mirrors the sky and hides what is under it.
-      float facing = abs(dot(normalize(vViewPosition), normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz)));
+      float facing = abs(normalize(cameraPosition-vWorld).y);
       diffuseColor.a = clamp(0.8 - under * 1.2, 0.3, 0.75) * smoothstep(0.06, 0.35, facing);`,
-    material: { roughness: 0.45, transparent: true, depthWrite: false },
   };
 }
 
@@ -224,31 +206,31 @@ export function duckShape(): Shape {
   const green = C(0x0e3a22), collar = C(0xf0f0e8), chest = C(0x5a2e1c), grey = C(0xa8a6a0), back = C(0x5e5444), black = C(0x16161a);
   const yellow = C(0xc8b03a), hen = C(0x8a6a44), henDark = C(0x3e2c1c), speculum = C(0x2a3cb0), orange = C(0xb87a30);
   const drakeBody: Paint = (p, n, out) => {
-    out.copy(grey).lerp(back, THREE.MathUtils.smoothstep(n.y, 0.55, 0.9));
-    if (p.z > 0.13) out.copy(chest);
-    if (p.z < -0.17) out.copy(black);
-    if (Math.abs(n.x) > 0.75 && p.z > -0.11 && p.z < -0.06 && p.y > 0.07 && p.y < 0.1) out.copy(speculum);
+    Color3.LerpToRef(grey, back, smooth(n.y, 0.55, 0.9), out);
+    if (p.z > 0.13) out.copyFrom(chest);
+    if (p.z < -0.17) out.copyFrom(black);
+    if (Math.abs(n.x) > 0.75 && p.z > -0.11 && p.z < -0.06 && p.y > 0.07 && p.y < 0.1) out.copyFrom(speculum);
   };
   const henBody: Paint = (p, n, out) => {
-    out.copy(hen).lerp(henDark, streak(p.x * 0.5, p.z * 0.5, 0.5) * 0.55);
-    out.lerp(C(0xa88a64), THREE.MathUtils.smoothstep(-n.y, 0.0, 0.6));
-    if (Math.abs(n.x) > 0.75 && p.z > -0.11 && p.z < -0.06 && p.y > 0.07 && p.y < 0.1) out.copy(speculum);
+    Color3.LerpToRef(hen, henDark, streak(p.x * 0.5, p.z * 0.5, 0.5) * 0.55, out);
+    Color3.LerpToRef(out, C(0xa88a64), smooth(-n.y, 0.0, 0.6), out);
+    if (Math.abs(n.x) > 0.75 && p.z > -0.11 && p.z < -0.06 && p.y > 0.07 && p.y < 0.1) out.copyFrom(speculum);
   };
   const drakeHead: Paint = (p, n, out) => {
-    out.copy(green).lerp(C(0x1c5a38), Math.max(0, n.x * n.x - 0.3));
-    if (p.y < 0.15) out.copy(collar);
-    if (p.y < 0.138) out.copy(chest);
-    if (Math.abs(n.x) > 0.6 && n.z > 0.35 && n.y > 0.1 && n.y < 0.5 && p.y > 0.17) out.copy(black);
+    Color3.LerpToRef(green, C(0x1c5a38), Math.max(0, n.x * n.x - 0.3), out);
+    if (p.y < 0.15) out.copyFrom(collar);
+    if (p.y < 0.138) out.copyFrom(chest);
+    if (Math.abs(n.x) > 0.6 && n.z > 0.35 && n.y > 0.1 && n.y < 0.5 && p.y > 0.17) out.copyFrom(black);
   };
   const henHead: Paint = (p, n, out) => {
-    out.copy(hen).lerp(henDark, streak(p.x * 0.6, p.y * 0.6, 0.6) * 0.4);
-    if (Math.abs(n.x) > 0.5 && n.y > 0.05 && n.y < 0.25 && p.y > 0.17) out.copy(henDark); // the eye stripe
+    Color3.LerpToRef(hen, henDark, streak(p.x * 0.6, p.y * 0.6, 0.6) * 0.4, out);
+    if (Math.abs(n.x) > 0.5 && n.y > 0.05 && n.y < 0.25 && p.y > 0.17) out.copyFrom(henDark); // the eye stripe
   };
-  const neckBase = new THREE.Vector3(0, 0.09, 0.16);
+  const neckBase = new Vector3(0, 0.09, 0.16);
   return {
     name: "duck",
     variant: true,
-    geometry: merge("duck", [
+    geometry: merge([
       ellipsoid([0.125, 0.1, 0.26], [0, 0.04, 0], [18, 12], 0, drakeBody, {
         bend: (p) => {
           if (p.y < 0) p.y *= 0.6;
@@ -263,13 +245,12 @@ export function duckShape(): Shape {
       }),
       ellipsoid([0.046, 0.046, 0.066], [0, 0.21, 0.21], [14, 10], 1, drakeHead, { paint2: henHead, bend: (p) => { p.y *= 1 - Math.max(0, p.z) * 0.25; } }),
       ellipsoid([0.026, 0.009, 0.055], [0, 0.196, 0.29], [8, 5], 1, flat(yellow), { turn: [0.25, 0, 0], paint2: flat(orange) }),
-    ]).translate(0, -0.02, 0),
+    ]),
     pose: /* glsl */`
       void pose(float part, vec4 anim, inout vec3 p, inout vec3 n) {
         if (part > 0.5) turnAround(rotX(anim.z * 1.1 + sin(anim.x * 0.5) * 0.06), vec3(${neckBase.x}, ${neckBase.y}, ${neckBase.z}), p, n);
         p.x += sin(anim.x) * 0.004 * smoothstep(-0.1, -0.3, p.z);
       }`,
-    material: { roughness: 0.7 },
   };
 }
 
@@ -279,11 +260,11 @@ export function duckShape(): Shape {
 export function frogShape(): Shape {
   const green = C(0x4f7a26), olive = C(0x3a4e1e), spot = C(0x22301a), belly = C(0xd8d098), gold = C(0xc8a038);
   const skin: Paint = (p, n, out) => {
-    out.copy(green).lerp(olive, streak(p.x * 1.5, p.z * 1.5, 0.4) * 0.6);
-    if (Math.sin(p.x * 260) * Math.sin(p.z * 230 + 1) > 0.55) out.copy(spot);
-    out.lerp(belly, THREE.MathUtils.smoothstep(-n.y, 0.1, 0.6));
+    Color3.LerpToRef(green, olive, streak(p.x * 1.5, p.z * 1.5, 0.4) * 0.6, out);
+    if (Math.sin(p.x * 260) * Math.sin(p.z * 230 + 1) > 0.55) out.copyFrom(spot);
+    Color3.LerpToRef(out, belly, smooth(-n.y, 0.1, 0.6), out);
   };
-  const eye: Paint = (_p, n, out) => void out.copy(n.z > 0.2 && n.y > -0.1 ? (Math.abs(n.x) > 0.75 ? C(0x0a0a08) : gold) : green);
+  const eye: Paint = (_p, n, out) => void out.copyFrom(n.z > 0.2 && n.y > -0.1 ? (Math.abs(n.x) > 0.75 ? C(0x0a0a08) : gold) : green);
   const leg = (side: number) => [
     ellipsoid([0.013, 0.012, 0.032], [side * 0.032, 0.02, -0.022], [8, 6], side > 0 ? 1 : 2, skin, { turn: [0.15, side * 0.35, 0] }),
     ellipsoid([0.009, 0.007, 0.034], [side * 0.042, 0.009, -0.004], [8, 5], side > 0 ? 1 : 2, skin, { turn: [0, -side * 0.3, 0] }),
@@ -291,7 +272,7 @@ export function frogShape(): Shape {
   ];
   return {
     name: "frog",
-    geometry: merge("frog", [
+    geometry: merge([
       ellipsoid([0.031, 0.02, 0.046], [0, 0.03, 0], [14, 10], 0, skin, { turn: [-0.35, 0, 0], bend: (p) => { if (p.y < 0) p.y *= 0.7; } }),
       ellipsoid([0.026, 0.016, 0.026], [0, 0.045, 0.035], [12, 8], 0, skin, { bend: (p) => { p.z += p.z > 0 ? -p.y * 0.2 : 0; } }),
       ellipsoid([0.0085, 0.0085, 0.0085], [0.016, 0.058, 0.041], [8, 6], 0, eye),
@@ -316,7 +297,6 @@ export function frogShape(): Shape {
           p.y -= sin(anim.x * 6.0) * 0.0015 * smoothstep(0.035, 0.015, p.y); // the throat
         }
       }`,
-    material: { roughness: 0.4 },
   };
 }
 
@@ -327,9 +307,9 @@ export function butterflyShape(): Shape {
   const body = C(0x1c1814), white = C(0xffffff), edge = C(0x2a2018);
   const wing: Paint = (p, _n, out) => {
     const r = Math.hypot(p.x, p.z);
-    out.copy(white);
-    if (r > 0.038 && p.z > 0) out.copy(edge); // dark tips of the forewings
-    if (Math.hypot(Math.abs(p.x) - 0.028, p.z - 0.02) < 0.006) out.copy(edge).lerp(C(0x7080ff), 0.4); // an eye spot
+    out.copyFrom(white);
+    if (r > 0.038 && p.z > 0) out.copyFrom(edge); // dark tips of the forewings
+    if (Math.hypot(Math.abs(p.x) - 0.028, p.z - 0.02) < 0.006) Color3.LerpToRef(edge, C(0x7080ff), 0.4, out); // an eye spot
   };
   const pair = (side: number) => [
     ellipsoid([0.027, 0.0012, 0.018], [side * 0.026, 0, 0.012], [10, 4], side > 0 ? 1 : 2, wing, { turn: [0, side * -0.45, 0] }),
@@ -337,7 +317,7 @@ export function butterflyShape(): Shape {
   ];
   return {
     name: "butterfly",
-    geometry: merge("butterfly", [
+    geometry: merge([
       ellipsoid([0.0035, 0.0035, 0.018], [0, 0, 0], [6, 6], 0, flat(body)),
       ellipsoid([0.004, 0.004, 0.004], [0, 0.001, 0.02], [6, 4], 0, flat(body)),
       ...pair(1), ...pair(-1),
@@ -350,7 +330,6 @@ export function butterflyShape(): Shape {
         }
       }`,
     fragment: /* glsl */`if (vPart < 0.5) diffuseColor.rgb = vec3(0.02);`,
-    material: { roughness: 0.75, side: THREE.DoubleSide },
   };
 }
 
@@ -358,7 +337,7 @@ export function butterflyShape(): Shape {
 // anim: x wingbeat phase. Body colour per animal from instanceColor; the wings are clear, dithered (alphaHash).
 
 export function dragonflyShape(): Shape {
-  const body: Paint = (p, _n, out) => void out.setScalar(Math.sin(p.z * 400) > 0.6 ? 0.25 : 1);
+  const body: Paint = (p, _n, out) => void out.setAll(Math.sin(p.z * 400) > 0.6 ? 0.25 : 1);
   const wing = flat(C(0xe8f0f4));
   const wings = (side: number) => [
     ellipsoid([0.034, 0.0008, 0.0075], [side * 0.036, 0.007, 0.014], [8, 3], side > 0 ? 1 : 2, wing, { turn: [0, side * -0.12, 0] }),
@@ -366,7 +345,7 @@ export function dragonflyShape(): Shape {
   ];
   return {
     name: "dragonfly",
-    geometry: merge("dragonfly", [
+    geometry: merge([
       ellipsoid([0.0032, 0.0032, 0.034], [0, 0.003, -0.034], [6, 8], 0, body),
       ellipsoid([0.0065, 0.0065, 0.01], [0, 0.004, 0.008], [8, 6], 0, body),
       ellipsoid([0.007, 0.006, 0.0055], [0, 0.005, 0.022], [8, 6], 0, flat(C(0x203040))),
@@ -380,36 +359,5 @@ export function dragonflyShape(): Shape {
         }
       }`,
     fragment: /* glsl */`if (vPart > 0.5) { diffuseColor.rgb = vec3(0.85, 0.9, 0.92); diffuseColor.a = 0.35; }`,
-    material: { roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide, alphaHash: true },
   };
-}
-
-// ---- rings on the water, where something went in -------------------------------------------------------------------
-
-/** A flat ring that spreads and fades: instance matrix places and sizes it; attribute aAge 0 … 1 is how far along. */
-export function ringMesh(count: number) {
-  const geometry = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
-  const age = new THREE.InstancedBufferAttribute(new Float32Array(count).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
-  geometry.setAttribute("aAge", age);
-  const material = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false,
-    vertexShader: /* glsl */`
-      attribute float aAge; varying float vAge; varying vec2 vXY;
-      void main() { vAge = aAge; vXY = position.xz; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
-    fragmentShader: /* glsl */`
-      varying float vAge; varying vec2 vXY;
-      void main() {
-        float r = length(vXY), edge = 0.15 + vAge * 0.85;
-        float ring = smoothstep(edge - 0.12, edge - 0.02, r) * smoothstep(edge + 0.04, edge - 0.02, r);
-        float inner = smoothstep(edge - 0.45, edge - 0.15, r) * smoothstep(edge - 0.1, edge - 0.2, r) * 0.4;
-        gl_FragColor = vec4(vec3(0.85, 0.9, 0.88), (ring + inner) * (1.0 - vAge) * 0.55);
-      }`,
-  });
-  const mesh = new THREE.InstancedMesh(geometry, material, count);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 2;
-  mesh.name = "life-rings";
-  mesh.userData.age = age;
-  return mesh;
 }

@@ -1,20 +1,21 @@
+import { hex } from "../../world/color.ts";
 // The day's numbers and the weather's rules: the tuned afternoon at the start, a believable sun, no jumps.
 import { describe, expect, test } from "bun:test";
 import { ENVIRONMENT, EXPOSURE, SUN_COLOR, SUN_DIRECTION, SUN_INTENSITY } from "../../light.ts";
 import { dayAt, START } from "./clock.ts";
 import { holdWeather, newWeather, nextKind, stepWeather } from "./weather.ts";
-import * as THREE from "three";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
 const seeded = (seed: number) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 
 describe("clock", () => {
   test("at the start hour the light is daylight()'s own", () => {
     const day = dayAt(START);
-    expect(day.light.distanceTo(SUN_DIRECTION)).toBeLessThan(1e-6);
+    expect(Vector3.Distance(day.light, SUN_DIRECTION)).toBeLessThan(1e-6);
     expect(day.intensity).toBeCloseTo(SUN_INTENSITY, 6);
     expect(day.exposure).toBeCloseTo(EXPOSURE, 6);
     expect(day.environment).toBeCloseTo(ENVIRONMENT, 6);
-    expect(day.color.getHex()).toBe(new THREE.Color(SUN_COLOR).getHex());
+    expect(day.color.toHexString()).toBe(hex(SUN_COLOR).toHexString());
     expect(day.night).toBe(0);
     expect(day.mist).toBe(0);
   });
@@ -44,7 +45,7 @@ describe("clock", () => {
       expect(Math.abs(a.environment - b.environment)).toBeLessThan(0.05); // half a second of play: a ramp, not a step
       expect(Math.abs(a.night - b.night)).toBeLessThan(0.02);
       // Where the light's direction switches (sun to moon) it is dark.
-      if (a.light.distanceTo(b.light) > 0.05) expect(Math.min(a.intensity, b.intensity)).toBeLessThan(0.02);
+      if (Vector3.Distance(a.light, b.light) > 0.05) expect(Math.min(a.intensity, b.intensity)).toBeLessThan(0.02);
     }
   });
   test("mist only in the morning", () => {

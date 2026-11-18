@@ -21,7 +21,7 @@
 //
 // The place (feet, facing, camera) is kept in sessionStorage, so a reload (the dev server's live reload, or the
 // player's) comes back where it was.
-import * as THREE from "three";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { RAPIER, STEP } from "../../engine.ts";
 import type { CreateFeature } from "../../game.ts";
 import { HEIGHT, RADIUS } from "../../player/index.ts";
@@ -106,7 +106,7 @@ export const create: CreateFeature = (game) => {
   const send = (m: ClientMessage) => { if (connected && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(m)); };
   const nameOf = (id: number) => remotes.get(id)?.name ?? "Someone";
 
-  const ui = createUi(stage.camera, {
+  const ui = createUi(stage, {
     send(text) { send({ t: "chat", text }); ui.say("me", settings.values.name, text); },
     rename: () => void rename(),
     canChat: () => connected,
@@ -123,7 +123,7 @@ export const create: CreateFeature = (game) => {
   async function rename() {
     if (askingName) return;
     askingName = true;
-    const name = await askName(document.body, settings.values.name, address);
+    const name = await askName(stage, settings.values.name, address);
     askingName = false;
     if (name !== settings.values.name) settings.set({ name });
   }
@@ -276,7 +276,7 @@ export const create: CreateFeature = (game) => {
   }, 1000 / SEND_RATE);
 
   let started = false;
-  const collision = new THREE.Vector3(), eye = new THREE.Vector3(), ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+  const collision = new Vector3(), eye = new Vector3(), ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
   const walls = RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
   Object.assign(window, { net: { things, remotes, history, shared, get me() { return me; }, get host() { return host; }, get connected() { return connected; }, ui } });
 
@@ -321,7 +321,7 @@ export const create: CreateFeature = (game) => {
         if (!settings.values.name && !document.getElementById("beaver-hud")) void rename();
       }
       const moving = stage.paused ? 0 : dt;
-      eye.copy(stage.camera.position);
+      eye.copyFrom(stage.camera.position);
       for (const r of remotes.values()) {
         r.update(moving);
         // The stick in its hand, as its last state says.

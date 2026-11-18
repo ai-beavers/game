@@ -1,170 +1,84 @@
-// The sky that changes: a day that passes in twelve minutes of play (from the tuned afternoon through evening,
-// night and morning) and weather that comes and goes by itself (fair, cloudy, rain, fog). It drives the one
-// daylight (src/light.ts), the haze and clouds (src/world/sky.ts) and the pond (src/world/water.ts), and adds rain,
-// morning mist and fireflies (effects.ts).
-//
-//   createGame(canvas, [sky])         the feature; everything else in the game keeps working without it
-//   game.sky.hour                     0 … 24, now
-//   game.sky.dark                     0 … 1, how dark it is (0 day, 1 deep night): for owls, crickets, animals
-//   game.sky.weather                  "fair" | "cloudy" | "rain" | "fog", the spell now (or coming)
-//   game.sky.rain / clouds / fog / wind / wet     0 … 1 each, how strong now
-//   game.sky.setHour(19.5)   game.sky.setWeather("rain" | "auto")   game.sky.running = false
-//
-// Address parameters: ?hour=19.5 starts there; ?weather=rain holds a spell; ?clock=stop holds the hour;
-// ?speed=10 runs the day ten times faster. All of it stands still while stage.paused.
-//
-// Cost: the environment (sky drawn into a cube, then filtered by PMREM) is made anew every ENV_EVERY seconds and
-// the haze read back from it then; the rest is a few uniforms a frame. See the report in lab/sky.ts.
-import * as THREE from "three";
-import type { CreateFeature, Game } from "../../game.ts";
-import { daylightOf, ENVIRONMENT, SUN_INTENSITY } from "../../light.ts";
-import { airOf } from "../../world/sky.ts";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { Vector2 } from "@babylonjs/core/Maths/math.vector.js";
+import type { CreateFeature } from "../../game.ts";
+import { daylightOf, SUN_INTENSITY } from "../../light.ts";
 import { waterOf } from "../../world/water.ts";
-import { DAY_SECONDS, dayAt, START, type Day } from "./clock.ts";
+import { DAY_SECONDS, dayAt, START } from "./clock.ts";
+import { createDome } from "./dome.ts";
 import { makeFireflies, makeMist, makeRain } from "./effects.ts";
-import { horizonReader } from "./haze.ts";
 import { holdWeather, KINDS, newWeather, releaseWeather, stepWeather, type Kind } from "./weather.ts";
-
-const ENV_EVERY = 0.5; // seconds between new environments
-const HAZE_DENSITY = 0.011; // scene.fog's density in the tuned afternoon
-const NIGHT_SKY = new THREE.Color(0.011, 0.025, 0.075); // radiance of the night sky at the horizon, linear
-const WATER_ENV = 0.26; // the pond's own envMapIntensity at ENVIRONMENT
 
 export interface SkyState {
   hour: number; dark: number; weather: Kind; clouds: number; rain: number; fog: number; wind: number; wet: number;
-  /** false: the hour stands still. */
   running: boolean;
-  /** Days run this many times faster than DAY_SECONDS. */
   speed: number;
   setHour(hour: number): void;
-  /** A spell held from now on, or "auto" to let the weather go its own way again. */
   setWeather(kind: Kind | "auto"): void;
-  /** Milliseconds the last new environment took on the CPU side (the GPU work runs behind it). */
-  envMs: number;
-  /** Milliseconds a frame of this feature takes on the CPU, averaged (new environments included). */
-  frameMs: number;
 }
 
-const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const WHITE = Color3.White();
+const DAY_HORIZON = new Color3(0.76, 0.86, 0.92), DUSK = new Color3(0.99, 0.61, 0.41);
+const NIGHT = new Color3(0.054, 0.079, 0.155), GREY = new Color3(0.53, 0.59, 0.65);
 
-export const create: CreateFeature = (game: Game) => {
-  const { scene, renderer, camera } = game.stage;
-  const light = daylightOf(scene), air = airOf(scene), water = waterOf(scene);
+export const create: CreateFeature = game => {
+  const { scene } = game.stage;
+  const light = daylightOf(scene);
   if (!light) return {};
+  const { sun, sky } = light;
   const params = new URLSearchParams(location.search);
-  const haze = horizonReader(light);
-  haze.read(renderer); // the tuned afternoon, before anything changes: the haze's calibration
-  const rain = makeRain(scene), mist = makeMist(scene), flies = makeFireflies(scene);
-
-  const weather = newWeather();
-  const held = params.get("weather") as Kind | null;
+  const hour = Number(params.get("hour") ?? START), speed = Number(params.get("speed") ?? 1);
+  const weather = newWeather(), held = params.get("weather") as Kind | null;
   if (held && KINDS.includes(held)) holdWeather(weather, held);
   const state: SkyState = {
-    hour: Number(params.get("hour") ?? START), dark: 0, weather: weather.kind, clouds: 0, rain: 0, fog: 0, wind: 0, wet: 0,
-    running: params.get("clock") !== "stop", speed: Number(params.get("speed") ?? 1), envMs: 0, frameMs: 0,
-    setHour(hour) { state.hour = ((hour % 24) + 24) % 24; sinceEnv = ENV_EVERY; },
-    setWeather(kind) { if (kind === "auto") releaseWeather(weather); else holdWeather(weather, kind); sinceEnv = ENV_EVERY; },
+    hour: Number.isFinite(hour) ? ((hour % 24) + 24) % 24 : START,
+    speed: Number.isFinite(speed) && speed >= 0 ? speed : 1,
+    running: params.get("clock") !== "stop", dark: 0, weather: weather.kind,
+    clouds: weather.clouds, rain: weather.rain, fog: weather.fog, wind: weather.wind, wet: weather.wet,
+    setHour(value) { if (Number.isFinite(value)) state.hour = ((value % 24) + 24) % 24; },
+    setWeather(kind) { if (kind === "auto") releaseWeather(weather); else if (KINDS.includes(kind)) holdWeather(weather, kind); },
   };
-  Object.assign(game, { sky: state });
+  game.sky = state;
   Object.assign(window, { sky: state });
 
-  // Wet ground: the world's own vertex-coloured materials (ground, grass, trees, rocks) darken and shine a little.
-  const wettable: { material: THREE.MeshStandardMaterial; color: THREE.Color; roughness: number }[] = [];
-  scene.traverse((o) => {
-    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-    if (!m || Array.isArray(m) || !m.isMeshStandardMaterial || (m as THREE.MeshPhysicalMaterial).isMeshPhysicalMaterial || !m.vertexColors) return;
-    if (!wettable.some((w) => w.material === m)) wettable.push({ material: m, color: m.color.clone(), roughness: m.roughness });
-  });
-
-  const random = Math.random, wind = new THREE.Vector2(), fogColor = new THREE.Color(), tint = new THREE.Color();
-  const overcastColor = new THREE.Color(), forward = new THREE.Vector3(), white = new THREE.Color(1, 1, 1);
-  let time = 0, sinceEnv = ENV_EVERY, day: Day = dayAt(state.hour), lastWet = -1;
-
-  const apply = () => {
-    day = dayAt(state.hour);
-    const { clouds, fog } = weather, showers = weather.rain;
-    const lit = Math.min(1, day.intensity / SUN_INTENSITY) * (day.sunHeight > -1 ? 1 : 0); // sunlight, not moon
-    // The sun and moon: dimmer under clouds and in fog.
-    const cover = smooth(0.3, 1, clouds);
-    light.sun.color.copy(day.color).lerp(white, cover * 0.5);
-    light.sun.intensity = day.intensity * (1 - 0.82 * cover) * (1 - 0.5 * fog);
-    light.towards.copy(day.light);
-    light.follow(light.place);
-    renderer.toneMappingExposure = day.exposure * (1 + (0.12 + 0.33 * (1 - day.night)) * cover + 0.06 * fog); // by day the eye opens up under a grey sky
-    scene.environmentIntensity = day.environment * (1 + (0.5 + 1.1 * (1 - day.night)) * cover); // under clouds the light comes from all of the sky
-    if (water) water.material.envMapIntensity = WATER_ENV * scene.environmentIntensity / ENVIRONMENT;
-
-    // The sky dome.
-    const u = light.air;
-    u.sunPosition!.value.copy(day.sun);
-    u.moonPosition!.value.copy(day.moon);
-    u.night!.value = day.night;
-    u.nightColor!.value.copy(NIGHT_SKY).multiplyScalar(1 + 2.5 * day.twilight);
-    u.cloudCoverage!.value = 0.4 + 0.45 * clouds;
-    u.cloudDensity!.value = 0.4 + 0.5 * clouds;
-    u.time!.value = time * (0.5 + 2 * weather.wind); // the dome's own clouds drift
-    // A grey layer under the clouds, as bright as the light that comes through them.
-    overcastColor.setRGB(0.8, 0.85, 0.92).multiplyScalar((0.12 + 0.88 * Math.sqrt(lit)) * (0.12 + 0.88 * smooth(-1, 25, day.sunHeight))).lerp(day.color, 0.15 * lit * day.golden);
-    overcastColor.lerp(tint.copy(NIGHT_SKY).multiplyScalar(1.3), day.night);
-    u.overcastColor!.value.copy(overcastColor);
-    u.overcast!.value = Math.min(1, smooth(0.5, 1, clouds) * 0.92 + fog * 0.75);
-    u.stars!.value = 1 - cover;
-
-    // The cloud cards far away: lit by the sun, warm when it is low, dark at night, greyer and thinner in overcast.
-    if (air) {
-      tint.copy(white).lerp(day.color, 0.6 * day.golden).multiplyScalar(0.06 + 0.94 * Math.sqrt(lit)).lerp(overcastColor.clone().multiplyScalar(2.2), cover);
-      for (const card of air.clouds) {
-        card.material.color.copy(tint);
-        card.material.opacity = 0.85 * (0.35 + 0.65 * Math.sqrt(lit)) * (1 - 0.6 * cover);
-      }
+  const water = waterOf(scene), rain = makeRain(scene), mist = makeMist(scene), fireflies = makeFireflies(scene), dome = createDome(scene);
+  const ground = scene.getMeshByName("ground")?.material;
+  const dry = ground instanceof StandardMaterial ? ground.diffuseColor.clone() : null;
+  const horizon = new Color3(), wind = new Vector2();
+  scene.fogMode = Scene.FOGMODE_EXP2;
+  let time = 0;
+  function update() {
+    const day = dayAt(state.hour), { clouds, fog, wet } = weather;
+    Color3.LerpToRef(DAY_HORIZON, DUSK, day.golden, horizon);
+    Color3.LerpToRef(horizon, GREY, Math.min(1, clouds * 0.8 + fog * 0.45), horizon);
+    Color3.LerpToRef(horizon, NIGHT, day.night, horizon);
+    dome(day, horizon, clouds, time);
+    scene.fogColor.copyFrom(horizon);
+    scene.fogDensity = 0.012 + fog * 0.058 + weather.rain * 0.012 + day.mist * 0.006;
+    sun.direction.copyFrom(day.light);
+    sun.diffuse.copyFrom(day.color);
+    sun.intensity = day.intensity / SUN_INTENSITY * 1.6 * (1 - clouds * 0.77) * (1 - fog * 0.35);
+    sky.intensity = (1.15 - day.night * 0.94) * (1 - clouds * 0.23);
+    Color3.LerpToRef(WHITE, NIGHT, day.night * 0.6, sky.diffuse);
+    if (water) water.rain.value = weather.rain;
+    if (dry && ground instanceof StandardMaterial) {
+      dry.scaleToRef(1 - wet * 0.32, ground.diffuseColor);
+      ground.specularColor.setAll(0.06 + wet * 0.2);
     }
-
-    // Haze: thicker in fog, rain and morning mist; its colour is the horizon's, read from the sky.
-    camera.getWorldDirection(forward);
-    const sideways = (1 - smooth(4, 22, day.sunHeight)) * (1 - day.night) * (1 - cover);
-    haze.color(Math.atan2(forward.x, forward.z), renderer.toneMappingExposure, sideways, fogColor);
-    if (scene.fog) {
-      scene.fog.color.copy(fogColor);
-      (scene.fog as THREE.FogExp2).density = HAZE_DENSITY + 0.055 * fog * fog + 0.012 * showers + 0.006 * day.mist;
-    }
-    if (water) water.rain.value = showers;
-
-    // Wet ground, changed only when it is wetter or drier by a step that cannot be seen.
-    if (Math.abs(weather.wet - lastWet) > 0.01) {
-      lastWet = weather.wet;
-      for (const w of wettable) {
-        w.material.color.copy(w.color).multiplyScalar(1 - 0.32 * weather.wet);
-        w.material.roughness = w.roughness - (w.roughness - 0.7) * weather.wet; // a little sheen, no glare
-      }
-    }
-
-    wind.set(0.8, 0.45).multiplyScalar(0.5 + 4 * weather.wind);
-        rain.update(time, showers, wind, camera.position, tint.copy(fogColor).multiplyScalar(1.5).addScalar(0.04));
-    // Mist is lit from above: lighter than the haze behind it, or it would not be seen against the trees.
-    mist.update(time, Math.min(1, day.mist * (1 - 0.7 * weather.wind) + 0.5 * fog), tint.copy(fogColor).multiplyScalar(1.7).addScalar(0.02));
-    flies.update(time, smooth(0.35, 0.8, day.dark) * (1 - showers) * (1 - fog * 0.7), renderer.domElement.height);
-
-    Object.assign(state, { dark: day.dark, weather: weather.kind, clouds, rain: showers, fog, wind: weather.wind, wet: weather.wet });
-  };
-
+    wind.set(0.8, 0.45).scaleInPlace(0.5 + 4 * weather.wind);
+    rain(time, weather.rain, wind, (scene.activeCamera ?? game.stage.camera).position, horizon);
+    mist(time, Math.min(1, day.mist + fog * 0.45), game.world.waterLevel, horizon);
+    fireflies(time, day.dark * (1 - weather.rain) * (1 - fog * 0.7), game.world.waterLevel);
+    Object.assign(state, { dark: day.dark, weather: weather.kind, clouds, fog, rain: weather.rain, wind: weather.wind, wet });
+  }
+  update();
   return {
     step(dt) {
       time += dt;
-      if (state.running) state.hour = (state.hour + (dt * 24 * state.speed) / DAY_SECONDS) % 24;
-      stepWeather(weather, dt, random);
+      if (state.running) state.hour = (state.hour + dt * 24 * state.speed / DAY_SECONDS) % 24;
+      stepWeather(weather, dt, Math.random);
     },
-    update(dt) {
-      const start = performance.now();
-      apply();
-      if (!game.stage.paused) sinceEnv += dt;
-      if (sinceEnv >= ENV_EVERY) {
-        sinceEnv = 0;
-        const t0 = performance.now();
-        light.relight();
-        haze.read(renderer);
-        state.envMs = performance.now() - t0;
-      }
-      state.frameMs += (performance.now() - start - state.frameMs) * 0.02;
-    },
+    update,
   };
 };

@@ -1,17 +1,27 @@
-// What the weather and the hour put into the air near the beaver, each one draw call, all moved on the GPU:
-//
-//   const rain = makeRain(scene);         rain.update(time, amount, wind, camera.position, color)
-//   const mist = makeMist(scene);         mist.update(time, amount, color)       low layers over the pond
-//   const flies = makeFireflies(scene);   flies.update(time, amount)             near the reeds at night
-//
-// time stands still while the game is paused (the caller only advances it then), so everything here does too.
-import * as THREE from "three";
-import { POND, WATER_LEVEL } from "../../world/terrain.ts";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { Material } from "@babylonjs/core/Materials/material.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { POND } from "../../world/terrain.ts";
 
-const DROPS = 6000, BOX = 26, HEIGHT = 14;
+const DROPS = 2600, BOX = 26, HEIGHT = 14, FLIES = 48;
+
+function atmosphere(scene: Scene, name: string, vertex: string, fragment: string, attributes: string[], uniforms: string[]) {
+  const material = new ShaderMaterial(name, scene, {
+    vertexSource: `precision highp float; uniform mat4 world, view, projection; uniform vec3 cameraPosition; attribute vec3 position; ${vertex}`,
+    fragmentSource: `precision highp float; ${fragment}`,
+  }, { attributes, uniforms: ["world", "view", "projection", "cameraPosition", ...uniforms], needAlphaBlending: true });
+  material.backFaceCulling = false;
+  material.disableDepthWrite = true;
+  return material;
+}
 
 /** Streaks that fall and are blown, in a box that travels with the camera. */
-export function makeRain(scene: THREE.Scene) {
+export function makeRain(scene: Scene) {
   const corners = new Float32Array(DROPS * 4 * 2), seeds = new Float32Array(DROPS * 4 * 4), index: number[] = [];
   for (let d = 0; d < DROPS; d++) {
     const seed = [Math.random(), Math.random(), Math.random(), Math.random()];
@@ -22,18 +32,14 @@ export function makeRain(scene: THREE.Scene) {
     const v = d * 4;
     index.push(v, v + 1, v + 2, v + 2, v + 1, v + 3);
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(DROPS * 4 * 3), 3)); // unused, three wants it
-  geometry.setAttribute("corner", new THREE.BufferAttribute(corners, 2));
-  geometry.setAttribute("seed", new THREE.BufferAttribute(seeds, 4));
-  geometry.setIndex(index);
-  const uniforms = {
-    time: { value: 0 }, amount: { value: 0 }, wind: { value: new THREE.Vector2() }, centre: { value: new THREE.Vector3() },
-    color: { value: new THREE.Color() },
-  };
-  const material = new THREE.ShaderMaterial({
-    uniforms, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, // streaks face either way
-    vertexShader: /* glsl */`
+  const mesh = new Mesh("rain", scene);
+  mesh.setVerticesData("position", new Float32Array(DROPS * 12), false, 3);
+  mesh.setVerticesData("corner", corners, false, 2);
+  mesh.setVerticesData("seed", seeds, false, 4);
+  mesh.setIndices(index);
+  mesh.alwaysSelectAsActiveMesh = true;
+  mesh.isPickable = false;
+  const material = atmosphere(scene, mesh.name, `
       attribute vec2 corner;
       attribute vec4 seed;
       uniform float time, amount;
@@ -54,45 +60,27 @@ export function makeRain(scene: THREE.Scene) {
         p += side * corner.x * (0.003 + 0.0012 * distance(p, cameraPosition)); // thin close by, a pixel or so far off
         vAlong = corner.y;
         vAlpha = step(seed.z, amount) * (1.0 - smoothstep(3.0, ${BOX / 2}.0, distance(p.xz, centre.xz)));
-        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-      }`,
-    fragmentShader: /* glsl */`
+        gl_Position = projection * view * vec4(p, 1.0);
+      }`, `
       uniform vec3 color;
       varying float vAlpha;
       varying float vAlong;
       void main() {
         if (vAlpha <= 0.0) discard;
         gl_FragColor = vec4(color, vAlpha * 0.4 * sin(vAlong * 3.14159));
-        #include <colorspace_fragment>
-      }`,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 2;
-  mesh.name = "rain";
-  scene.add(mesh);
-  return {
-    mesh,
-    update(time: number, amount: number, wind: THREE.Vector2, camera: THREE.Vector3, color: THREE.Color) {
-      mesh.visible = amount > 0.001;
-      uniforms.time.value = time;
-      uniforms.amount.value = amount;
-      uniforms.wind.value.copy(wind);
-      uniforms.centre.value.copy(camera);
-      uniforms.color.value.copy(color);
-    },
+
+      }`, ["position", "corner", "seed"], ["time", "amount", "wind", "centre", "color"]);
+  mesh.material = material;
+  return (time: number, amount: number, wind: Vector2, camera: Vector3, color: Color3) => {
+    mesh.setEnabled(amount > 0.001);
+    material.setFloat("time", time).setFloat("amount", amount).setVector2("wind", wind).setVector3("centre", camera).setColor3("color", color);
   };
 }
 
-/** Low layers of drifting mist over the pond and its banks. */
-export function makeMist(scene: THREE.Scene) {
-  const uniforms = { time: { value: 0 }, amount: { value: 0 }, color: { value: new THREE.Color() } };
-  const material = new THREE.ShaderMaterial({
-    uniforms, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
-    vertexShader: /* glsl */`
+export function makeMist(scene: Scene) {
+  const material = atmosphere(scene, "morning mist", `
       varying vec3 vWorld;
-      void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: /* glsl */`
+      void main() { vec4 w = world * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projection * view * w; }`, `
       uniform float time, amount;
       uniform vec3 color;
       varying vec3 vWorld;
@@ -108,76 +96,59 @@ export function makeMist(scene: THREE.Scene) {
         float a = amount * edge * smoothstep(0.2, 0.75, n) * 0.5;
         if (a < 0.003) discard;
         gl_FragColor = vec4(color, a);
-        #include <colorspace_fragment>
-      }`,
+
+      }`, ["position"], ["time", "amount", "color"]);
+  const sheets = [0.12, 0.3, 0.55].map(height => {
+    const mesh = MeshBuilder.CreateGround("mist", { width: POND.radius * 5, height: POND.radius * 5 }, scene);
+    mesh.position.set(POND.x, height, POND.z);
+    mesh.material = material;
+    mesh.isPickable = false;
+    return { mesh, height };
   });
-  const group = new THREE.Group();
-  group.name = "mist";
-  for (const [i, h] of [0.12, 0.3, 0.5, 0.75].entries()) {
-    const sheet = new THREE.Mesh(new THREE.PlaneGeometry(POND.radius * 5, POND.radius * 5).rotateX(-Math.PI / 2), material);
-    sheet.position.set(POND.x, WATER_LEVEL + h, POND.z);
-    sheet.renderOrder = 3 + i;
-    group.add(sheet);
-  }
-  scene.add(group);
-  return {
-    group,
-    update(time: number, amount: number, color: THREE.Color) {
-      group.visible = amount > 0.002;
-      uniforms.time.value = time;
-      uniforms.amount.value = amount;
-      uniforms.color.value.copy(color);
-    },
+  return (time: number, amount: number, level: number, color: Color3) => {
+    for (const { mesh, height } of sheets) {
+      mesh.setEnabled(amount > 0.002);
+      mesh.position.y = height + level;
+    }
+    material.setFloat("time", time).setFloat("amount", amount).setColor3("color", color);
   };
 }
 
-const FLIES = 48;
-
-/** Small lights that wander slowly around the pond's edge, between the reeds. */
-export function makeFireflies(scene: THREE.Scene) {
-  const seeds = new Float32Array(FLIES * 4);
-  for (let i = 0; i < FLIES * 4; i++) seeds[i] = Math.random();
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(FLIES * 3), 3));
-  geometry.setAttribute("seed", new THREE.BufferAttribute(seeds, 4));
-  const uniforms = { time: { value: 0 }, amount: { value: 0 }, scale: { value: 600 } };
-  const material = new THREE.ShaderMaterial({
-    uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
-    vertexShader: /* glsl */`
+export function makeFireflies(scene: Scene) {
+  const mesh = new Mesh("fireflies", scene);
+  const seeds = Float32Array.from({ length: FLIES * 4 }, () => Math.random());
+  mesh.setVerticesData("position", new Float32Array(FLIES * 3), false, 3);
+  mesh.setVerticesData("seed", seeds, false, 4);
+  mesh.setIndices(Array.from({length: FLIES}, (_, i) => i));
+  mesh.alwaysSelectAsActiveMesh = true;
+  mesh.isPickable = false;
+  const material = atmosphere(scene, mesh.name, `
       attribute vec4 seed;
-      uniform float time, amount, scale;
+      uniform float time, amount, scale, level;
       varying float vGlow;
       void main() {
         float a = seed.x * 6.2832 + time * (0.05 + 0.08 * seed.y) * (seed.z > 0.5 ? 1.0 : -1.0);
         float r = ${POND.radius.toFixed(2)} * (0.85 + 0.45 * seed.y) + 0.4 * sin(time * 0.3 + seed.w * 20.0);
-        vec3 p = vec3(${POND.x}.0 + cos(a) * r, ${WATER_LEVEL}.0 + 0.25 + 1.1 * seed.w + 0.25 * sin(time * 0.7 + seed.x * 30.0), ${POND.z}.0 + sin(a) * r);
-        vec4 view = viewMatrix * vec4(p, 1.0);
+        vec3 p = vec3(${POND.x}.0 + cos(a) * r, level + 0.25 + 1.1 * seed.w + 0.25 * sin(time * 0.7 + seed.x * 30.0), ${POND.z}.0 + sin(a) * r);
+        vec4 eye = view * vec4(p, 1.0);
         float blink = smoothstep(0.55, 1.0, sin(time * (0.8 + seed.z) + seed.y * 40.0));
         vGlow = amount * blink;
-        gl_PointSize = vGlow > 0.0 ? scale * 0.05 / -view.z : 0.0;
-        gl_Position = projectionMatrix * view;
-      }`,
-    fragmentShader: /* glsl */`
+        gl_PointSize = vGlow > 0.0 ? scale * 0.05 / -eye.z : 0.0;
+        gl_Position = projection * eye;
+      }`, `
       varying float vGlow;
       void main() {
         float d = length(gl_PointCoord - 0.5) * 2.0;
         float glow = ((1.0 - smoothstep(0.0, 1.0, d)) * 0.5 + (1.0 - smoothstep(0.0, 0.3, d))) * vGlow;
         if (glow < 0.004) discard;
-        gl_FragColor = vec4(vec3(0.85, 1.0, 0.35) * glow, 1.0);
-        #include <colorspace_fragment>
-      }`,
-  });
-  const points = new THREE.Points(geometry, material);
-  points.frustumCulled = false;
-  points.name = "fireflies";
-  scene.add(points);
-  return {
-    points,
-    update(time: number, amount: number, height: number) {
-      points.visible = amount > 0.01;
-      uniforms.time.value = time;
-      uniforms.amount.value = amount;
-      uniforms.scale.value = height; // drawing buffer height: points keep their size on any screen
-    },
+        gl_FragColor = vec4(0.85, 1.0, 0.35, glow);
+
+      }`, ["position", "seed"], ["time", "amount", "scale", "level"]);
+  material.fillMode = Material.PointListDrawMode;
+  material.alphaMode = Constants.ALPHA_ADD;
+  mesh.material = material;
+  return (time: number, amount: number, level: number) => {
+    mesh.setEnabled(amount > 0.01);
+    material.setFloat("time", time).setFloat("amount", amount).setFloat("scale", scene.getEngine().getRenderHeight()).setFloat("level", level);
   };
 }

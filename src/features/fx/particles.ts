@@ -1,33 +1,32 @@
-// Draws every particle of the fx feature in one draw call: one quad per particle, instanced, through three's
-// standard material with a few lines added. So dust and drops take the same sun, shadows, sky light, haze and tone
-// mapping as the ground, and are never brighter than the world around them.
-//
-//   const drawn = createParticles(stage, world, capacity);
-//   drawn.write(pool, camera);     each frame: copies the living particles in, far ones first; takes the way the light
-//                                  travels now (sun or moon, daylightOf(scene).towards) and the pond's level now
-//
-// Shapes are drawn in the shader, no textures. Particles fade softly where they meet the ground and the water:
-// the ground's height is baked once into a small texture the fragment shader reads.
-import * as THREE from "three";
+// Each visible particle occupies one billboard in the same instanced draw.
+import { Camera } from "@babylonjs/core/Cameras/camera.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { ToHalfFloat } from "@babylonjs/core/Misc/halfFloat.js";
+import { Vector4 } from "@babylonjs/core/Maths/math.vector.js";
 import type { World } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
-import { daylightOf, SUN_DIRECTION } from "../../light.ts";
+import { SUN_DIRECTION } from "../../light.ts";
 import { alpha, KIND, MODE, size, type Particle } from "./sim.ts";
 
 /** The ground baked into a texture: SPAN metres square around the middle, one sample every STEP metres. */
 const SPAN = 70, STEP = 0.5;
 
-function groundTexture(world: World) {
+function groundTexture(world: World, scene: Scene) {
   const n = Math.round(SPAN / STEP) + 1, data = new Uint16Array(n * n);
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    data[j * n + i] = THREE.DataUtils.toHalfFloat(world.heightAt(-SPAN / 2 + i * STEP, -SPAN / 2 + j * STEP));
+    data[j * n + i] = ToHalfFloat(world.heightAt(-SPAN / 2 + i * STEP, -SPAN / 2 + j * STEP));
   }
-  const texture = new THREE.DataTexture(data, n, n, THREE.RedFormat, THREE.HalfFloatType);
-  texture.magFilter = texture.minFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
+  const texture = RawTexture.CreateRTexture(data, n, n, scene, false, false, Texture.BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_HALF_FLOAT);
+  texture.wrapU = texture.wrapV = Texture.CLAMP_ADDRESSMODE;
   // Texel centres sit on the samples: uv = (xz - min) / span, with half a texel on each side.
   const scale = (n - 1) / n / SPAN, offset = 0.5 / n;
-  return { texture, rect: new THREE.Vector4(-SPAN / 2, -SPAN / 2, scale, offset) };
+  return { texture, rect: new Vector4(-SPAN / 2, -SPAN / 2, scale, offset) };
 }
 
 const VERTEX_HEAD = /* glsl */`
@@ -42,7 +41,7 @@ varying vec3 vWorld;
 varying float vKind, vMode, vSeed, vSoft;
 `;
 
-// Replaces beginnormal_vertex: places the corner, and picks a normal that lights the shape as wished.
+// All particle orientations share a quad.
 const VERTEX_PLACE = /* glsl */`
 vec3 centre = iPos.xyz;
 float kind = iPos.w, mode = iMove.w, sz = iShape.x;
@@ -52,8 +51,8 @@ vColor = iColor; vKind = kind; vMode = mode; vSeed = iShape.w;
 float c = cos(iShape.y), s = sin(iShape.y);
 vec2 q = vec2(corner.x * iShape.z, corner.y);
 q = vec2(c * q.x - s * q.y, s * q.x + c * q.y) * sz;
-vec3 camRight = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
-vec3 camUp = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+vec3 camRight = vec3(view[0][0], view[1][0], view[2][0]);
+vec3 camUp = vec3(view[0][1], view[1][1], view[2][1]);
 vec3 toCam = normalize(cameraPosition - centre);
 vec3 fxPos;
 vec3 objectNormal;
@@ -138,52 +137,68 @@ if (diffuseColor.a < 0.004) discard;
 `;
 
 export function createParticles({ scene }: Stage, world: World, capacity: number) {
-  const light = daylightOf(scene);
-  const base = new THREE.PlaneGeometry(1, 1);
-  const geometry = new THREE.InstancedBufferGeometry();
-  geometry.index = base.index;
-  geometry.setAttribute("position", base.attributes.position!);
-  geometry.setAttribute("normal", base.attributes.normal!);
-  const attribute = (name: string) => {
-    const a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-    a.setUsage(THREE.DynamicDrawUsage);
-    geometry.setAttribute(name, a);
-    return a;
+  const sun = scene.getLightByName("sun") as DirectionalLight | null;
+  const sky = scene.getLightByName("skylight");
+  const mesh = MeshBuilder.CreatePlane("fx", { size: 1 }, scene);
+  mesh.isPickable = false;
+  mesh.alwaysSelectAsActiveMesh = true;
+  mesh.alphaIndex = 2;
+  const buffers = ["iPos", "iShape", "iMove", "iColor"] as const;
+  const buffer = (name: (typeof buffers)[number]) => {
+    const data = new Float32Array(capacity * 4);
+    mesh.thinInstanceSetBuffer(name, data, 4, false);
+    return data;
   };
-  const pos = attribute("iPos"), shape = attribute("iShape"), move = attribute("iMove"), color = attribute("iColor");
-  geometry.instanceCount = 0;
+  const pos = buffer("iPos"), shape = buffer("iShape"), move = buffer("iMove"), color = buffer("iColor");
+  const ground = groundTexture(world, scene);
+  const material = new ShaderMaterial("particles", scene, {
+    vertexSource: `precision highp float;
+      attribute vec3 position;
+      uniform mat4 view, viewProjection;
+      uniform vec3 cameraPosition, sunColor;
+      uniform float skylight;
+      ${VERTEX_HEAD}
+      void main() {
+        ${VERTEX_PLACE}
+        vColor.rgb *= skylight + sunColor * max(0.,dot(objectNormal,sunTowards));
+        gl_Position = viewProjection * vec4(fxPos, 1.);
+      }`,
+    fragmentSource: `precision highp float;
+      uniform vec3 cameraPosition,fogColor;
+      uniform float fogDensity;
+      ${FRAGMENT_HEAD}
+      void main() {
+        vec4 diffuseColor;
+        ${FRAGMENT_COLOR}
+        float haze = distance(cameraPosition,vWorld)*fogDensity;
+        diffuseColor.rgb = mix(fogColor, diffuseColor.rgb, exp(-haze*haze));
+        gl_FragColor = diffuseColor;
+      }`,
+  }, { attributes: ["position", ...buffers], uniforms: ["view","viewProjection","cameraPosition","sunTowards","sunColor","skylight",
+    "groundRect","waterLevel","fogColor","fogDensity"], samplers: ["groundHeight"], needAlphaBlending: true });
+  material.backFaceCulling = false;
+  material.disableDepthWrite = true;
+  material.setTexture("groundHeight", ground.texture).setVector4("groundRect", ground.rect);
+  mesh.material = material;
 
-  const ground = groundTexture(world);
-  const sunTowards = { value: SUN_DIRECTION.clone().negate() }, waterLevel = { value: world.waterLevel };
-  const material = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, transparent: true, depthWrite: false });
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.sunTowards = sunTowards;
-    shader.uniforms.groundHeight = { value: ground.texture };
-    shader.uniforms.groundRect = { value: ground.rect };
-    shader.uniforms.waterLevel = waterLevel;
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", `#include <common>\n${VERTEX_HEAD}`)
-      .replace("#include <beginnormal_vertex>", VERTEX_PLACE)
-      .replace("#include <begin_vertex>", "vec3 transformed = fxPos;");
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\n${FRAGMENT_HEAD}`)
-      .replace("#include <color_fragment>", FRAGMENT_COLOR);
+  const write4 = (data: Float32Array, offset: number, x: number, y: number, z: number, w: number) => {
+    data[offset] = x;
+    data[offset + 1] = y;
+    data[offset + 2] = z;
+    data[offset + 3] = w;
   };
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = "fx";
-  mesh.frustumCulled = false;
-  mesh.receiveShadow = true;
-  mesh.renderOrder = 2; // after the water, so rings lie on it
-  scene.add(mesh);
-
-  const order: Particle[] = [], depth = new Map<Particle, number>(), forward = new THREE.Vector3();
+  const order: Particle[] = [], depth = new Map<Particle, number>();
   return {
     mesh,
-    write(pool: Particle[], camera: THREE.Camera) {
-      if (light) sunTowards.value.copy(light.towards).negate();
-      waterLevel.value = world.waterLevel;
-      camera.getWorldDirection(forward);
-      const eye = camera.position;
+    write(pool: Particle[], camera: Camera) {
+      const forward = camera.getForwardRay().direction;
+      material.setVector3("sunTowards", (sun?.direction ?? SUN_DIRECTION).negate())
+        .setColor3("sunColor", sun ? sun.diffuse.scale(sun.intensity * 0.45) : scene.ambientColor)
+        .setFloat("skylight", Math.min(1, sky?.intensity ?? 0.65))
+        .setColor3("fogColor", scene.fogColor)
+        .setFloat("fogDensity", scene.fogMode === Scene.FOGMODE_NONE ? 0 : scene.fogDensity)
+        .setVector3("cameraPosition", camera.globalPosition).setFloat("waterLevel", world.waterLevel);
+      const eye = camera.globalPosition;
       order.length = 0;
       for (const p of pool) {
         if (!p.alive || alpha(p) < 0.002) continue;
@@ -196,14 +211,15 @@ export function createParticles({ scene }: Stage, world: World, capacity: number
         const p = order[i]!, lift = p.mode === MODE.ground ? 0.012 : p.mode === MODE.water ? 0.004 : 0;
         // Leaves turn over while they fall: their width shrinks and grows.
         const squash = p.kind === KIND.leaf && p.mode === MODE.face ? p.squash * (0.25 + 0.75 * Math.abs(Math.cos(p.age * 3.1 + p.seed * 9))) : p.squash;
-        pos.setXYZW(i, p.x, p.y + lift, p.z, p.kind);
-        shape.setXYZW(i, size(p), p.rot, squash, p.seed);
-        move.setXYZW(i, p.vx, p.vy, p.vz, p.mode);
-        color.setXYZW(i, p.r, p.g, p.b, alpha(p));
+        write4(pos, i * 4, p.x, p.y + lift, p.z, p.kind);
+        write4(shape, i * 4, size(p), p.rot, squash, p.seed);
+        write4(move, i * 4, p.vx, p.vy, p.vz, p.mode);
+        write4(color, i * 4, p.r, p.g, p.b, alpha(p));
       }
       depth.clear();
-      geometry.instanceCount = count;
-      for (const a of [pos, shape, move, color]) { a.clearUpdateRanges(); a.addUpdateRange(0, count * 4); a.needsUpdate = true; }
+      mesh.setEnabled(count > 0);
+      mesh.forcedInstanceCount = count;
+      if (count) for (const name of buffers) mesh.thinInstancePartialBufferUpdate(name, count, 0);
     },
   };
 }

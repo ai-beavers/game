@@ -13,7 +13,9 @@
 // · build.fill(n) puts n sticks into the dam · build.toSite() stands at the dam with a stick in hand · build.reset()
 // forgets everything and reloads · build.state · build.trees() lists them by distance · build.keepLying() keeps where
 // the loose wood lies now (it is also kept every few seconds and when the page goes).
-import * as THREE from "three";
+import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
 import type { Stick } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
 import type { Offer } from "../../player/index.ts";
@@ -36,15 +38,8 @@ const REACH = 0.6; // m from the beaver's body to the bark it can gnaw
 export const create: CreateFeature = (game) => {
   const { world, stage, player, events } = game;
   if (!world.trees || !world.site || !world.pond || !world.addLoose || !world.removeLoose || !world.props) return {};
-  const addLoose = world.addLoose, removeLoose = world.removeLoose, props = world.props;
-  // The pond's level follows the dam (pondLevel of the sticks in it), so it is saved and restored with the dam: low
-  // at first, full (the world's own level) with the finished dam. The water owns the live level; World.waterLevel is
-  // made to read it, so every part that reads it when it needs it sees the rise.
-  // shortcut: World.waterLevel is redefined here because src/world/index.ts makes it a plain number; once the world
-  // makes it a getter of waterOf(scene).level itself, this does nothing.
+  const addLoose = world.addLoose, removeLoose = world.removeLoose;
   const water = waterOf(stage.scene), full = world.waterLevel;
-  if (water && !Object.getOwnPropertyDescriptor(world, "waterLevel")?.get)
-    Object.defineProperty(world, "waterLevel", { get: () => water.level, enumerable: true, configurable: true });
   const pondTo = (placed: number, smooth = true) => water?.setLevel(pondLevel(full, placed), smooth);
   let state = load(localStorage.getItem(KEY));
   pondTo(state.dam.length, false); // at once, before the features after this one look at the water
@@ -58,19 +53,19 @@ export const create: CreateFeature = (game) => {
   const name = (stick: Stick, id: string) => { names.set(stick, id); byName.set(id, stick); };
   world.sticks.forEach((stick, i) => name(stick, `w${i}`));
 
-  const UP = new THREE.Vector3(0, 1, 0);
-  const pose = (along: THREE.Vector3, yaw: number) => new THREE.Quaternion().setFromAxisAngle(UP, Math.atan2(along.x, along.z) + yaw);
+  const UP = new Vector3(0, 1, 0);
+  const pose = (along: Vector3, yaw: number) => Quaternion.RotationAxis(UP, Math.atan2(along.x, along.z) + yaw);
 
   /** The wood a lying tree breaks into, as loose things: logs to push, sticks to carry (those not in the dam). */
-  const spawnWood = (i: number, line: { from: THREE.Vector3; along: THREE.Vector3 }) => {
-    const m = measure(world.trees![i]!), flat = line.along.clone().setY(0).normalize(), side = new THREE.Vector3(-flat.z, 0, flat.x);
+  const spawnWood = (i: number, line: { from: Vector3; along: Vector3 }) => {
+    const m = measure(world.trees![i]!), flat = new Vector3(line.along.x, 0, line.along.z).normalize(), side = new Vector3(-flat.z, 0, flat.x);
     let logs = 0, sticks = 0;
     woodFrom(i, m.trunk, m.radius).forEach((piece, k) => {
       const id = `t${i}:${k}`;
       if (piece.kind === "stick" && state.dam.includes(id)) return;
-      const at = line.from.clone().addScaledVector(flat, piece.along).addScaledVector(side, piece.side);
+      const at = line.from.add(flat.scale(piece.along)).add(side.scale(piece.side));
       at.y = world.heightAt(at.x, at.z) + piece.thickness / 2 + 0.03;
-      const size = new THREE.Vector3(piece.thickness, piece.thickness, piece.length);
+      const size = new Vector3(piece.thickness, piece.thickness, piece.length);
       const thing = addLoose(piece.kind, piece.variant, size, at, pose(flat, piece.turn), piece.kind === "log" ? 25 * piece.length : 0.3);
       name(thing, id);
       if (piece.kind === "stick") sticks++; else logs++;
@@ -84,15 +79,15 @@ export const create: CreateFeature = (game) => {
     if (!stick || !world.sticks.includes(stick)) {
       const [, tree, k] = id.match(/^t(\d+):(\d+)$/) ?? [];
       const piece = tree !== undefined ? woodFrom(+tree, measure(world.trees![+tree]!).trunk, 0.2)[+k!] : undefined;
-      const size = piece ? new THREE.Vector3(piece.thickness, piece.thickness, piece.length) : new THREE.Vector3(0.04, 0.04, 0.65);
-      stick = addLoose("stick", piece?.variant ?? 0, size, new THREE.Vector3(0, -50, 0), new THREE.Quaternion(), 0.3);
+      const size = piece ? new Vector3(piece.thickness, piece.thickness, piece.length) : new Vector3(0.04, 0.04, 0.65);
+      stick = addLoose("stick", piece?.variant ?? 0, size, new Vector3(0, -50, 0), new Quaternion(), 0.3);
     }
     removeLoose(stick);
     return stick.mesh;
   };
 
   // ---- what each change does to the world ---------------------------------------------------------------------------
-  let flight: { mesh: THREE.Object3D; from: THREE.Vector3; turn: THREE.Quaternion; slot: number; t: number } | undefined;
+  let flight: { mesh: TransformNode; from: Vector3; turn: Quaternion; slot: number; t: number } | undefined;
   let finishing = -1; // seconds since the dam was finished, while the lodge rises; -1 before
 
   const placed = (slot: number) => {
@@ -108,17 +103,17 @@ export const create: CreateFeature = (game) => {
     }
   };
 
-  const react = (c: BuildChange, handed?: THREE.Object3D) => {
+  const react = (c: BuildChange, handed?: TransformNode) => {
     if (c.type === "bite") {
       const t = state.trees[c.tree]!, lying = t.rest !== undefined, m = measure(world.trees![c.tree]!);
-      const place = lying ? view(c.tree).crown() : world.trees![c.tree]!.place.clone().setY(world.trees![c.tree]!.place.y + BITE_HEIGHT);
+      const place = lying ? view(c.tree).crown() : world.trees![c.tree]!.place.add(new Vector3(0, BITE_HEIGHT, 0));
       events.emit("gnaw", { place, tree: c.tree, progress: lying ? t.splitBites / BITES_TO_SPLIT : Math.min(1, t.bites / bitesToFell(m.radius)) });
     } else if (c.type === "fell") {
-      const direction = new THREE.Vector3(Math.sin(c.direction), 0, Math.cos(c.direction));
+      const direction = new Vector3(Math.sin(c.direction), 0, Math.cos(c.direction));
       view(c.tree).fall(direction);
       events.emit("treeFalls", { place: world.trees![c.tree]!.place.clone(), tree: c.tree, direction });
     } else if (c.type === "rest") {
-      view(c.tree).lie(new THREE.Vector3(...c.at), new THREE.Quaternion(...c.turn));
+      view(c.tree).lie(new Vector3(...c.at), new Quaternion(...c.turn));
     } else if (c.type === "split") {
       const v = view(c.tree), line = v.trunkLine(), place = v.crown();
       v.dispose();
@@ -127,8 +122,8 @@ export const create: CreateFeature = (game) => {
     } else if (c.type === "place") {
       const slot = state.dam.length - 1, mesh = handed ?? stickMesh(c.stick);
       if (handed) {
-        stage.scene.attach(mesh); // keeps where the hand held it
-        flight = { mesh, from: mesh.position.clone(), turn: mesh.quaternion.clone(), slot, t: 0 };
+        mesh.setParent(null); // keeps where the hand held it
+        flight = { mesh, from: mesh.position.clone(), turn: mesh.rotationQuaternion!.clone(), slot, t: 0 };
       } else {
         dam.fit(mesh, slot);
         dam.freeze(mesh);
@@ -138,7 +133,7 @@ export const create: CreateFeature = (game) => {
   };
 
   /** The one way the world of this feature changes. False: the change did not fit the state and did nothing. */
-  const commit = (c: BuildChange, remote = false, handed?: THREE.Object3D) => {
+  const commit = (c: BuildChange, remote = false, handed?: TransformNode) => {
     const before = goals(state);
     if (!apply(state, c)) return false;
     save();
@@ -157,8 +152,8 @@ export const create: CreateFeature = (game) => {
       const i = +key;
       if (t.fell === undefined) continue; // bites only: drawn by update()
       const v = view(i);
-      if (t.rest) v.lie(new THREE.Vector3(...t.rest.at), new THREE.Quaternion(...t.rest.turn));
-      else v.fall(new THREE.Vector3(Math.sin(t.fell), 0, Math.cos(t.fell))); // saved mid-fall: it falls again
+      if (t.rest) v.lie(new Vector3(...t.rest.at), new Quaternion(...t.rest.turn));
+      else v.fall(new Vector3(Math.sin(t.fell), 0, Math.cos(t.fell))); // saved mid-fall: it falls again
       if (t.split) { const line = v.trunkLine(); v.dispose(); if (line) spawnWood(i, line); }
     }
     state.dam.forEach((id, slot) => {
@@ -190,7 +185,7 @@ export const create: CreateFeature = (game) => {
       thing.body.setTranslation({ x, y, z }, true);
       thing.body.setRotation({ x: qx, y: qy, z: qz, w: qw }, true);
       thing.mesh.position.set(x, y, z);
-      thing.mesh.quaternion.set(qx, qy, qz, qw);
+      thing.mesh.rotationQuaternion!.set(qx, qy, qz, qw);
     }
   } catch { /* nothing kept, or broken: where the world puts them */ }
   addEventListener("pagehide", keepLying);
@@ -207,13 +202,13 @@ export const create: CreateFeature = (game) => {
     world.trees!.forEach((tree, i) => {
       const t = state.trees[i];
       if (t?.split) return;
-      let point: THREE.Vector3, radius: number;
+      let point: Vector3, radius: number;
       if (t?.fell === undefined) { point = tree.place; radius = measure(tree).radius; }
       else {
         const line = t.rest ? views.get(i)?.trunkLine() : undefined;
         if (!line) return; // still falling
-        const k = THREE.MathUtils.clamp(feet.clone().sub(line.from).dot(line.along), 0, measure(tree).trunk);
-        point = line.from.clone().addScaledVector(line.along, k);
+        const k = Scalar.Clamp(feet.clone().subtract(line.from).dot(line.along), 0, measure(tree).trunk);
+        point = line.from.add(line.along.scale(k));
         if (point.y - feet.y > 1.1 || point.y - feet.y < -0.4) return;
         radius = measure(tree).radius;
       }
@@ -223,7 +218,7 @@ export const create: CreateFeature = (game) => {
     return best;
   };
   const atDam = () => {
-    const local = feet.clone().sub(dam.frame.origin).applyQuaternion(dam.frame.turn.clone().invert());
+    const local = feet.clone().subtract(dam.frame.origin).applyRotationQuaternion(Quaternion.Inverse(dam.frame.turn));
     return Math.abs(local.x) < DAM.base + 1 && Math.abs(local.z) < DAM.length / 2 + 0.7;
   };
 
@@ -294,15 +289,13 @@ export const create: CreateFeature = (game) => {
 
   // ---- debug --------------------------------------------------------------------------------------------------------
   const standAt = (i: number) => {
-    const tree = world.trees![i]!, m = measure(tree), away = feet.clone().sub(tree.place).setY(0);
-    if (away.lengthSq() < 1e-4) away.set(0, 0, -1);
-    away.normalize();
+    const tree = world.trees![i]!, m = measure(tree);
     // from the side facing the clearing, so it falls outwards
-    const toMiddle = new THREE.Vector3(-tree.place.x, 0, -tree.place.z).normalize();
-    const at = tree.place.clone().addScaledVector(toMiddle, m.radius + 0.3);
+    const toMiddle = new Vector3(-tree.place.x, 0, -tree.place.z).normalize();
+    const at = tree.place.add(toMiddle.scale(m.radius + 0.3));
     player.teleport(at.x, world.heightAt(at.x, at.z), at.z, Math.atan2(-toMiddle.x, -toMiddle.z));
     player.camera.yaw = Math.atan2(-toMiddle.x, -toMiddle.z) + Math.PI + 0.6;
-    return { tree: i, at: at.toArray().map((v) => +v.toFixed(2)) };
+    return { tree: i, at: at.asArray().map((v) => +v.toFixed(2)) };
   };
   Object.assign(window, {
     build: {
@@ -325,7 +318,7 @@ export const create: CreateFeature = (game) => {
       },
       fill(n: number) { while (state.dam.length < Math.min(SLOTS, n)) commit({ type: "place", slot: state.dam.length, stick: `d${state.dam.length}` }); return state.dam.length; },
       toSite() {
-        const o = dam.frame.origin.clone().addScaledVector(dam.frame.across, -1.25);
+        const o = dam.frame.origin.add(dam.frame.across.scale(-1.25));
         player.teleport(o.x, world.heightAt(o.x, o.z), o.z, Math.atan2(dam.frame.across.x, dam.frame.across.z));
         player.camera.yaw = Math.atan2(dam.frame.across.x, dam.frame.across.z) + Math.PI + 0.7;
       },
@@ -361,9 +354,9 @@ export const create: CreateFeature = (game) => {
       if (flight) {
         flight.t = Math.min(1, flight.t + moving / FLIGHT);
         const to = dam.slot(flight.slot), e = flight.t * flight.t * (3 - 2 * flight.t);
-        flight.mesh.position.lerpVectors(flight.from, to.position, e).y += Math.sin(Math.PI * flight.t) * 0.15;
-        flight.mesh.quaternion.slerpQuaternions(flight.turn, to.quaternion, e);
-        flight.mesh.scale.set(1, 1, 1).lerp(dam.laid, e);
+        Vector3.LerpToRef(flight.from, to.position, e, flight.mesh.position).y += Math.sin(Math.PI * flight.t) * 0.15;
+        Quaternion.SlerpToRef(flight.turn, to.quaternion, e, flight.mesh.rotationQuaternion!);
+        Vector3.LerpToRef(Vector3.One(), dam.laid, e, flight.mesh.scaling);
         if (flight.t >= 1) { dam.fit(flight.mesh, flight.slot); dam.freeze(flight.mesh); const slot = flight.slot; flight = undefined; placed(slot); }
       }
       if (finishing >= 0 && finishing < 4) { finishing += moving; dam.lodge(finishing / 3.5); }

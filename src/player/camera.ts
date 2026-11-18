@@ -10,7 +10,7 @@
 //   camera.invertY = true             mouse drag up and down turned round (settings.invertY; the controls feature sets it)
 //
 // Mouse and pen drag here; touches are left to whoever handles touch (src/features/controls).
-import * as THREE from "three";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { RAPIER, type Stage } from "../engine.ts";
 
 const LOOK_HEIGHT = 0.7; // m above the feet
@@ -22,8 +22,8 @@ const CLOSE = 1.4; // m: when the view has less room than this, it tries other a
 const TILT = 5; // 1/s, how fast it changes angle for that
 const BALL = 0.18; // m, radius of the cast ball: keeps the near plane out of walls
 
-export function followCamera({ camera, physics, renderer }: Stage, blocks: (collider: RAPIER.Collider) => boolean) {
-  const look = new THREE.Vector3(), direction = new THREE.Vector3(), ball = new RAPIER.Ball(BALL);
+export function followCamera({ camera, physics, canvas }: Stage, blocks: (collider: RAPIER.Collider) => boolean) {
+  const look = new Vector3(), direction = new Vector3(), ball = new RAPIER.Ball(BALL);
   const rotation = { x: 0, y: 0, z: 0, w: 1 };
   let started = false, shown = 4, shownPitch = 0.35;
   const freeAt = (yaw: number, pitch: number, distance: number) => {
@@ -46,10 +46,10 @@ export function followCamera({ camera, physics, renderer }: Stage, blocks: (coll
     zoom(scale: number) {
       state.distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, state.distance * scale));
     },
-    update(dt: number, feet: THREE.Vector3) {
+    update(dt: number, feet: Vector3) {
       const goal = direction.set(feet.x, feet.y + LOOK_HEIGHT, feet.z);
-      if (!started) { look.copy(goal); started = true; }
-      else look.lerp(goal, 1 - Math.exp(-FOLLOW * dt));
+      if (!started) { look.copyFrom(goal); started = true; }
+      else Vector3.LerpToRef(look, goal, 1 - Math.exp(-FOLLOW * dt), look);
       state.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, state.pitch));
       // Hemmed in (a wall right behind, a ramp overhead): look for a steeper or flatter angle with room, so the
       // camera does not end up inside the beaver's back.
@@ -65,12 +65,12 @@ export function followCamera({ camera, physics, renderer }: Stage, blocks: (coll
       shownPitch += (aim - shownPitch) * (1 - Math.exp(-TILT * dt));
       const free = freeAt(state.yaw, shownPitch, state.distance);
       shown = free < shown ? free : Math.min(free, shown + (free - shown) * (1 - Math.exp(-LET_OUT * dt)));
-      camera.position.copy(look).addScaledVector(direction, shown);
-      camera.lookAt(look);
+      camera.position.copyFrom(look.add(direction.scale(shown)));
+      camera.setTarget(look);
     },
   };
   // Drag to orbit, wheel to zoom; the page does not scroll or pan.
-  const canvas = renderer.domElement;
+
   let dragging = -1;
   canvas.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "touch") return;

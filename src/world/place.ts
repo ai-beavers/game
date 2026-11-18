@@ -1,5 +1,5 @@
 // Where everything in the world goes: plain numbers from a seeded random and a few rules, the same on every load.
-// No three.js here, so the tests can check the rules alone.
+// Placement is deterministic for saved games and all network peers.
 //
 //   const layout = placeAll();     layout.tree / .rock / … : lists of Spot; layout.spawn
 //

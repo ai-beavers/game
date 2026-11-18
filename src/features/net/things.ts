@@ -1,3 +1,4 @@
+import { holdInHand } from "../../player/grip.ts";
 // The loose things (sticks, crates, logs) shared between players. One player, the host, simulates them and sends
 // where they are; everyone else turns their copies into kinematic bodies that follow, so the local beaver still bumps
 // into them. Alone (no server, or the connection lost) every copy is dynamic again, as in the single-player game.
@@ -14,7 +15,8 @@
 // (world.removeLoose). Each has the same id in every browser (protocol.ts: the world's sticks, crates, then each
 // tree's wood piece by piece), worked out from the build state: which sticks went into the dam, which trees are
 // wood, in the order the build feature adds them.
-import * as THREE from "three";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Stick } from "../../contracts.ts";
 import { RAPIER } from "../../engine.ts";
 import type { Game } from "../../game.ts";
@@ -26,15 +28,11 @@ import { DELAY, Track } from "./track.ts";
 
 export type Mode = "alone" | "host" | "guest";
 /** Another player's beaver: its hand, and the node that turns it the way it faces. */
-export interface Holder { hand: THREE.Object3D; node: THREE.Object3D }
+export interface Holder { hand: TransformNode; node: TransformNode }
 
-// As the player holds a stick (src/player/index.ts, GRIP and GRIP_SHIFT): across the body, one end up.
-const GRIP = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.35, Math.PI / 2, 0, "YXZ"));
-const GRIP_SHIFT = new THREE.Vector3(0, 0, 0.12);
 const MOVED = 0.002; // m (or quaternion units): less than this since the last send is not sent again
 const PUSH_REACH = 1.5; // m from the pusher's feet to the crate's middle, at most
 
-const bound = (game: Game) => (game.stage as unknown as { bound: Map<THREE.Object3D, RAPIER.RigidBody> }).bound;
 /** A dynamic body bound to a mesh with one box collider: half extents, or undefined. */
 const box = (body: RAPIER.RigidBody) => {
   if (!body.isDynamic() || body.numColliders() !== 1) return undefined;
@@ -75,11 +73,11 @@ export function createThings(game: Game, state?: BuildState) {
     if (mode === "guest") follower(thing);
   };
   /** Boxes bound to a mesh that are not yet known, not sticks, not crates: logs, in the order they were added. */
-  const newLogs = () => [...bound(game).values()].filter((body) => {
+  const newLogs = () => [...stage.bound.values()].filter((body) => {
     const h = box(body);
     return h && !ids.has(body) && !isCrate(h) && Math.abs(h.x - h.y) < 1e-3 && !world.sticks.some((s) => s.body === body);
   });
-  const meshOf = (body: RAPIER.RigidBody) => [...bound(game)].find(([, b]) => b === body)?.[0];
+  const meshOf = (body: RAPIER.RigidBody) => [...stage.bound].find(([, b]) => b === body)?.[0];
 
   // What the game started with: the world's sticks not in the dam, then the wood of each split tree; the crates.
   {
@@ -95,7 +93,7 @@ export function createThings(game: Game, state?: BuildState) {
     for (let i = 0; order.length < Math.max(0, own); i++) if (!inDam.has(i)) order.push(i);
     if (own >= 0) order.push(...wood.sticks);
     order.forEach((id, j) => add(id, world.sticks[j]!, true));
-    const crates = [...bound(game)].filter(([, body]) => { const h = box(body); return h && isCrate(h); })
+    const crates = [...stage.bound].filter(([, body]) => { const h = box(body); return h && isCrate(h); })
       .sort(([, a], [, b]) => a.handle - b.handle);
     crates.forEach(([mesh, body], c) => add(CRATES + c, { mesh, body }, false));
     const logs = newLogs();
@@ -111,13 +109,10 @@ export function createThings(game: Game, state?: BuildState) {
     thing.body.setTranslation({ x: p[from]!, y: p[from + 1]!, z: p[from + 2]! }, true);
     thing.body.setRotation({ x: p[from + 3]!, y: p[from + 4]!, z: p[from + 5]!, w: p[from + 6]! }, true);
     thing.mesh.position.set(p[from]!, p[from + 1]!, p[from + 2]!);
-    thing.mesh.quaternion.set(p[from + 3]!, p[from + 4]!, p[from + 5]!, p[from + 6]!);
+    thing.mesh.rotationQuaternion!.set(p[from + 3]!, p[from + 4]!, p[from + 5]!, p[from + 6]!);
   };
 
   const shown = [0, 0, 0, 0, 0, 0, 0];
-  const handTurn = new THREE.Quaternion(), shift = new THREE.Vector3(), matrix = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
-  const inHand = new THREE.Vector3();
-
   return {
     get mode() { return mode; },
     get size() { return things.size; },
@@ -159,7 +154,7 @@ export function createThings(game: Game, state?: BuildState) {
     letGo(id: number) {
       const thing = things.get(id);
       if (!thing || !held.delete(id)) return;
-      stage.scene.attach(thing.mesh);
+      thing.mesh.setParent(null);
     },
 
     /** Host: what moved since the last call (every thing with `all`), except things in someone's hand. */
@@ -182,7 +177,7 @@ export function createThings(game: Game, state?: BuildState) {
     },
 
     /** Host: a guest at `from` pushes crate id towards (nx, nz) at `speed` m/s; given once a physics step. */
-    push(id: number, nx: number, nz: number, speed: number, from: THREE.Vector3) {
+    push(id: number, nx: number, nz: number, speed: number, from: Vector3) {
       const thing = things.get(id), length = Math.hypot(nx, nz);
       if (mode !== "host" || !thing || !thing.body.isDynamic() || !thing.body.isEnabled() || length < 0.1) return;
       const at = thing.body.translation();
@@ -200,13 +195,13 @@ export function createThings(game: Game, state?: BuildState) {
       thing.body.setEnabled(false);
       stage.unbind(thing.mesh);
       held.set(id, holder);
-      holder.hand.add(thing.mesh);
+      thing.mesh.parent = holder.hand;
     },
     /** It was let go here: back in the world, simulated by the host, followed by guests. */
     release(place: Place, velocity?: [number, number, number]) {
       const id = place[0], thing = things.get(id);
       if (!thing) return;
-      if (held.has(id)) { held.delete(id); stage.scene.add(thing.mesh); }
+      if (held.has(id)) { held.delete(id); thing.mesh.parent = null; thing.mesh.scaling.setAll(1); }
       thing.body.setEnabled(true);
       put(thing, place);
       stage.bind(thing.mesh, thing.body);
@@ -218,8 +213,8 @@ export function createThings(game: Game, state?: BuildState) {
     placeInHand(id: number): Place | undefined {
       const mesh = things.get(id)?.mesh;
       if (!mesh || !held.has(id)) return;
-      mesh.updateWorldMatrix(true, false);
-      const p = mesh.getWorldPosition(new THREE.Vector3()), q = mesh.getWorldQuaternion(new THREE.Quaternion());
+      mesh.computeWorldMatrix(true);
+      const p = mesh.absolutePosition, q = mesh.absoluteRotationQuaternion;
       return [id, p.x, Math.max(p.y, game.world.heightAt(p.x, p.z) + 0.1), p.z, q.x, q.y, q.z, q.w];
     },
     isHeld: (id: number) => held.has(id),
@@ -233,14 +228,7 @@ export function createThings(game: Game, state?: BuildState) {
         put(thing, track.at(now, shown), 0);
       }
       for (const [id, { hand, node }] of held) {
-        // Across the body wherever the hand is, as the player's own grip.
-        node.updateWorldMatrix(true, true);
-        handTurn.copy(node.quaternion).multiply(GRIP);
-        shift.copy(GRIP_SHIFT).applyQuaternion(handTurn);
-        matrix.compose(hand.getWorldPosition(inHand).sub(shift), handTurn, one);
-        matrix.premultiply(new THREE.Matrix4().copy(hand.matrixWorld).invert());
-        const mesh = things.get(id)!.mesh;
-        matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+        holdInHand(things.get(id)!.mesh, hand, node);
       }
     },
   };
