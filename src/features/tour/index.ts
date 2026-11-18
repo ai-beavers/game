@@ -7,6 +7,8 @@
 //   ?tour=fast                                             the test: FAST times real time, long ways hopped over
 //   /?play&tour=live                                        real-time activities chosen from the current world
 //   bun run tour                                           the test without end, headless (tools/tour.ts)
+//   bun run tour --once [--station Name ...]               one round as a check: a line per station, exit 0 or 1
+//   ?play&touch&tour=fast&station=Touch controls           the touch station needs touch controls on the page
 //
 // It plays through the keyboard's own way in (player.keys.add): a Source that walks to a place, runs, jumps and
 // holds E, the same Input a person would give, so the real rules decide what happens. Each station ends with a
@@ -15,18 +17,22 @@
 // round as "[tour] round <n>: <ok>/<all> ok". window.tour holds the same for --eval.
 //
 // The tour plays its own saved game (the build feature keeps it under "beaver.build.tour") and stays off the
-// network, so it never touches a game someone plays. When the dam is full or no tree is left, it starts that saved
-// game anew (a reload). A station whose feature is missing (a lab page without sky) is skipped.
+// network, so it never touches a game someone plays. The saved game lives on across rounds: the dam grows a few
+// sticks a visit (in fast mode half a dam a round), then the lodge; only when the lodge stands, or (not live) no wood
+// is left, it starts anew (a reload). A station whose feature is missing (a lab page without sky) is skipped.
+// Stations marked stream false test the player's controls (menus, a pad): the live stream leaves them out.
 import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import type { TextBlock } from "@babylonjs/gui";
 import { MapDisplay } from "../hud/map-display.ts";
 import { Overlay, onViewport, box } from "../hud/overlay.ts";
+import type { Stick } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
 import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import { liveDirector, shotFor, type Station } from "./live.ts";
-import { LODGE, REGROW, SLOTS, SPROUT } from "../build/rules.ts";
+import { live as standing, LODGE, REGROW, SLOTS, SPROUT, type BuildState } from "../build/rules.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
@@ -35,13 +41,18 @@ const FAST = 4; // ?tour=fast: the world runs this many times faster than real t
 const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is jumped over (teleport), but the last metre
 const EASE = 0.5; // 1/s: how fast the live camera drifts to its next shot (about 2 s), calm on a stream
 const LEAD = 1.2; // m: the live camera looks this far ahead of a walking beaver
+const BATCH = 3; // sticks built per visit, live and plain; fast builds to the next half of the dam, then the lodge
+const DUCKS_BACK = 120; // s after animals were startled until the ducks count as back on the pond
 
 /** What the build feature puts on window for tools (src/features/build/index.ts); only the part the tour needs. */
 interface BuildDebug {
-  state: { dam: string[]; trees: Record<number, { fell?: number; split?: boolean; rest?: unknown } | undefined> };
+  state: BuildState;
   dam: { frame: { origin: Vector3; across: Vector3 }; lodgeAt: Vector3 };
   fill(n: number): number;
   views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined }>;
+  saplings: Map<number, unknown>;
+  age(i: number, seconds: number): number | false;
+  split(i: number): boolean;
   reset(): void;
 }
 class Skip extends Error {}
@@ -75,15 +86,14 @@ export const create: CreateFeature = (game) => {
   // ---- waiting, in the game's own time: update() hands every waiter the frame's dt ----
   let waiters: ((dt: number) => void)[] = [];
   const frame = () => new Promise<number>((done) => waiters.push(done));
+  const paint = () => new Promise(requestAnimationFrame); // a picture, also while paused (frame() waits for the world)
   const wait = async (seconds: number) => { for (let t = 0; t < seconds;) t += await frame(); };
   const until = async (done: () => boolean, limit: number, why: string) => {
     for (let t = 0; !done();) if ((t += await frame()) > limit) throw new Error(why);
   };
   const tap = async (key: "act" | "jump" | "slap", hold = 0.15) => { want[key] = true; await wait(hold); want[key] = false; };
-  const key = (code: string) => {
-    window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
-    window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
-  };
+  const press = (code: string, type: "keydown" | "keyup") => window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true }));
+  const key = (code: string) => { press(code, "keydown"); press(code, "keyup"); };
   const flat = (x: number, z: number) => Math.hypot(x - player.feet.x, z - player.feet.z);
 
   /** Walks (or runs) to x, z until near it or `arrived` says so; steps aside when something is in the way. hop: in
@@ -128,7 +138,7 @@ export const create: CreateFeature = (game) => {
   };
 
   // ---- what happened: counts and the last of each event ----
-  const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "tailSlap", "startled"] as const;
+  const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "damFinished", "tailSlap", "startled"] as const;
   const count = {} as Record<(typeof NAMES)[number], number>, last: Partial<GameEvents> = {};
   for (const name of NAMES) {
     count[name] = 0;
@@ -136,10 +146,102 @@ export const create: CreateFeature = (game) => {
   }
   const expect = (ok: boolean, why: string) => { if (!ok) throw new Error(why); };
   const after = (name: (typeof NAMES)[number]) => { const n = count[name]; return () => count[name] > n; };
+  let clock = 0, startledAt = -Infinity; // s of the game's time; when animals last fled (the ducks fly off)
+  events.on("startled", () => { startledAt = clock; });
+  const hudText = (name: string) => (stage.hud.getControlByName(name) as TextBlock | null)?.text ?? "";
+
+  // ---- dam work, in parts the stations share: fell a tree, gnaw it into wood, pick up a stick, build it in ----
+  const needBuild = () => build() ?? skip("no build feature");
+  const pond = world.pond, sky = () => game.sky ?? skip("no sky feature");
+  // m south of the pond's middle to swim to: the lodge rises in the middle once the dam holds (and the pond is full).
+  const clear = () => (build()?.state.dam.length ?? 0) >= SLOTS ? 1.8 : 0;
+  /** Trees standing now, the first ones or grown back, nearest the building site first. */
+  const standingTrees = (b: BuildDebug) => {
+    const site = world.site!, from = (i: number) => Math.hypot(world.trees![i]!.place.x - site.x, world.trees![i]!.place.z - site.z);
+    return world.trees!.map((_, i) => i).filter((i) => standing(b.state.trees[i])?.fell === undefined && !!standing(b.state.trees[i])).sort((a, c) => from(a) - from(c));
+  };
+  const fell = async (i: number) => {
+    const tree = world.trees![i]!;
+    // From the side facing the clearing's middle, as build.at(i) does, so it falls outwards.
+    const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize();
+    const stand = tree.place.add(out.scale(tree.radius + 0.35));
+    await reach("gnaw", (attempt) => attempt ? tree.place : stand, true).catch((e: Error) => { throw new Error(`tree ${i}: ${e.message}`); });
+    const falls = after("treeFalls"), lands = after("treeLands");
+    want.act = true;
+    try { await until(falls, 15, `gnawed tree ${i} for 15 s, it still stands`); } finally { want.act = false; }
+    expect(last.treeFalls!.tree === i, `tree ${last.treeFalls!.tree} fell, not ${i}`);
+    await until(lands, 8, "the tree fell but never landed");
+  };
+  const split = async (i: number) => {
+    const b = needBuild();
+    // Only a tree lying still can be gnawed (build: the "rest" change); one leaning on another may never be.
+    await until(() => !!standing(b.state.trees[i])?.rest, 8, `tree ${i} never came to rest after its fall (leaning on something?)`);
+    // The nearest point of the trunk as it lies now, a little off its foot; then further along it.
+    await reach("split", (attempt) => {
+      const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new Vector3() };
+      return from.add(along.scale(attempt || Scalar.Clamp(Vector3.Dot(player.feet.subtract(from), along), 0.3, 2)));
+    });
+    const splits = after("treeSplits");
+    want.act = true;
+    try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }
+  };
+  const loose = () => world.sticks.filter((s) => s.body.isEnabled() && s !== player.carrying);
+  /** Picks up the nearest stick; one that cannot be got at (under a log) is left for the next, as a player would. */
+  const pickUp = async () => {
+    const away = (s: Stick) => flat(s.body.translation().x, s.body.translation().z), passed = new Set<Stick>();
+    for (;;) {
+      const sticks = loose().filter((s) => !passed.has(s)).sort((a, c) => away(a) - away(c));
+      expect(sticks.length > 0, "no stick lies anywhere that can be got at");
+      try { await reach("pickup", (attempt) => sticks[Math.min(attempt, sticks.length - 1)]!.body.translation(), true); break; } catch (e) {
+        sticks.slice(0, 3).forEach((s) => passed.add(s));
+        if (passed.size >= 9) throw e;
+      }
+    }
+    const picked = after("pickup");
+    await tap("act");
+    await until(picked, 2, "pressed E at a stick, nothing in the hand");
+  };
+  /** A stick into the hand: one lying about, or, when none is left, from a tree felled and gnawed into wood for it. */
+  const fetchStick = async () => {
+    if (player.carrying) return;
+    if (!loose().length) {
+      const i = standingTrees(needBuild())[0] ?? skip("no wood left: no stick lies about, no tree stands");
+      await fell(i);
+      await split(i);
+    }
+    await pickUp();
+  };
+  /** Builds sticks into the dam (or onto the lodge) until it holds `upTo`, fetching each; checks every stick goes in
+   *  and the moments a player sees: half a dam, the dam finished, the lodge standing. */
+  const buildUpTo = async (upTo: number, lodge: boolean) => {
+    const b = needBuild();
+    while (b.state.dam.length < upTo) {
+      await fetchStick();
+      const { origin, across } = b.dam.frame, to = origin.subtract(across.scale(1.25)), from = b.dam.lodgeAt.subtract(across.scale(1.7));
+      await reach("build", (attempt) => lodge ? (attempt ? b.dam.lodgeAt : from) : attempt ? origin : to, true);
+      const placed = after("stickPlaced"), finished = after("damFinished"), n = b.state.dam.length + 1;
+      await tap("act");
+      await until(placed, 3, `pressed E at the ${lodge ? "lodge" : "dam"}, no stick placed`);
+      expect(b.state.dam.length === n, `the dam and lodge hold ${b.state.dam.length} sticks, not ${n}`);
+      const moment = n * 2 === SLOTS ? "Half a dam!" : n === SLOTS ? "The dam holds!" : n === SLOTS + LODGE ? "The lodge stands!" : "";
+      if (moment) await until(() => hudText("announcement").startsWith(moment), 2, `${n} sticks in, but no "${moment}" on screen`);
+      if (n === SLOTS) expect(finished(), "the dam's last stick went in, the dam never finished");
+    }
+  };
+  /** What regrows: a tree grown back standing (to fell), or lying (to gnaw into wood), else a sapling on a stump. */
+  const regrowing = () => {
+    const b = build();
+    let found: { i: number; what: "stands" | "lies" | "sapling" } | undefined;
+    for (const [key, t] of Object.entries(b?.state.trees ?? {})) {
+      const i = +key, g = t.split ? t.grown : undefined;
+      if (g?.fell === undefined && g) return { i, what: "stands" as const };
+      if (g?.rest) found = { i, what: "lies" };
+      else if (!g && t.split && b!.saplings.has(i)) found ??= { i, what: "sapling" };
+    }
+    return found;
+  };
 
   // ---- the stations, in order ----
-  const pond = world.pond, sky = () => game.sky ?? skip("no sky feature");
-  const needBuild = () => build() ?? skip("no build feature");
   let felled = -1;
   const stations: Station[] = [
     ["Walk", async () => {
@@ -159,43 +261,32 @@ export const create: CreateFeature = (game) => {
       expect(jumped() && landed(), "no jump, or no landing");
     }, "Around the clearing"],
     ["Fell a tree", async () => {
-      const b = needBuild(), site = world.site!, trees = world.trees!;
-      const standing = trees.map((t, i) => ({ t, i })).filter(({ i }) => b.state.trees[i]?.fell === undefined);
-      if (!standing.length) return skip("no tree left");
-      const fromSite = (t: (typeof trees)[number]) => Math.hypot(t.place.x - site.x, t.place.z - site.z);
-      const { t: tree, i } = standing.sort((a, c) => fromSite(a.t) - fromSite(c.t))[0]!;
-      // From the side facing the clearing's middle, as build.at(i) does, so it falls outwards.
-      const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize();
-      const stand = tree.place.add(out.scale(tree.radius + 0.35));
-      await reach("gnaw", (attempt) => attempt ? tree.place : stand, true).catch((e: Error) => { throw new Error(`tree ${i}: ${e.message}`); });
-      const falls = after("treeFalls"), lands = after("treeLands");
-      want.act = true;
-      try { await until(falls, 15, "gnawed for 15 s, the tree still stands"); } finally { want.act = false; }
-      await until(lands, 8, "the tree fell but never landed");
-      felled = last.treeFalls!.tree;
+      const i = standingTrees(needBuild())[0] ?? skip("no tree left");
+      await fell(i);
+      felled = i;
     }, "Dam work"],
     ["Gnaw it into wood", async () => {
       if (felled < 0) return skip("no tree felled this round");
-      const b = needBuild(), i = felled;
-      // Only a tree lying still can be gnawed (build: the "rest" change); one leaning on another may never be.
-      await until(() => !!b.state.trees[i]?.rest, 8, `tree ${i} never came to rest after its fall (leaning on something?)`);
-      // The nearest point of the trunk as it lies now, a little off its foot; then further along it.
-      await reach("split", (attempt) => {
-        const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new Vector3() };
-        return from.add(along.scale(attempt || Scalar.Clamp(Vector3.Dot(player.feet.subtract(from), along), 0.3, 2)));
-      });
-      const splits = after("treeSplits");
-      want.act = true;
-      try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }
+      await split(felled);
       felled = -1;
     }, "Dam work"],
-    // The tree just gone into wood grows back, its clock wound on (build.age): a sapling, half grown, the tree; then
-    // it is gnawed down again and its wood, the same pieces, gathered where it lies.
+    // Live: time is real, so the beaver comes back to the stumps as they grow: it looks at a sapling, or fells the
+    // tree grown back and gnaws it into wood. Otherwise the tree just gone into wood grows back, its clock wound on
+    // (build.age): a sapling, half grown, the tree; then it is gnawed down again and its wood, the same pieces,
+    // gathered where it lies.
     ["Regrow a tree", async () => {
-      const b = needBuild() as BuildDebug & {
-        state: { trees: Record<number, { split?: boolean; grown?: { rest?: unknown } } | undefined> };
-        age(i: number, seconds: number): number | false; saplings: Map<number, unknown>; split(i: number): boolean;
-      };
+      const b = needBuild();
+      if (live) {
+        const r = regrowing() ?? skip("nothing grows back yet");
+        const tree = world.trees![r.i]!, out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize(), back = tree.place.add(out.scale(2.5));
+        if (r.what === "sapling") {
+          await walkTo(back.x, back.z, { near: 0.6, limit: 60 });
+          expect(b.saplings.has(r.i), `no sapling on stump ${r.i} any more, and no tree`);
+          return wait(8); // a look at it growing
+        }
+        if (r.what === "stands") await fell(r.i);
+        return split(r.i);
+      }
       const i = last.treeSplits?.tree, t = () => b.state.trees[i!];
       if (i === undefined || !t()?.split || t()!.grown) return skip("no tree went into wood this round");
       const tree = world.trees![i]!, toAge = (seconds: number) => b.age(i, Math.max(0, seconds - (b.age(i, 0) || 0)));
@@ -211,67 +302,58 @@ export const create: CreateFeature = (game) => {
       toAge(REGROW + 10);
       await until(() => !!t()?.grown, 3, `tree ${i} never grew back`);
       await wait(3);
-      const stand = tree.place.add(out.scale(tree.radius + 0.35));
-      await reach("gnaw", (attempt) => attempt ? tree.place : stand);
-      const falls = after("treeFalls");
-      want.act = true;
-      try { await until(falls, 15, `gnawed tree ${i} grown back for 15 s, it still stands`); } finally { want.act = false; }
-      expect(last.treeFalls!.tree === i, `tree ${last.treeFalls!.tree} fell, not ${i}`);
+      await fell(i);
       await until(() => !!t()?.grown?.rest, 10, `tree ${i} never came to rest again`);
       const splits = after("treeSplits");
       b.split(i);
       expect(splits() && last.treeSplits!.logs + last.treeSplits!.sticks > 0 && !t()?.grown, `tree ${i} grown back gave no wood`);
-    }],
-    ["Carry a stick", async () => {
-      const sticks = world.sticks.filter((s) => s.body.isEnabled() && s !== player.carrying);
-      expect(sticks.length > 0, "no stick lies anywhere");
-      // The nearest; when it cannot be got at (under a log), the next one, as a player would.
-      sticks.sort((a, b) => flat(a.body.translation().x, a.body.translation().z) - flat(b.body.translation().x, b.body.translation().z));
-      await reach("pickup", (attempt) => sticks[Math.min(attempt, sticks.length - 1)]!.body.translation(), true);
-      const picked = after("pickup");
-      await tap("act");
-      await until(picked, 2, "pressed E at a stick, nothing in the hand");
-    }, "Dam work"],
+    }, "Regrowth"],
+    ["Carry a stick", () => player.carrying ? skip("a stick is in the hand already") : pickUp(), "Dam work"],
+    // A few sticks a visit (fast: up to half the dam, then the rest), so the dam grows across rounds; the saved game
+    // lives on, so the lodge follows it.
     ["Build the dam", async () => {
-      const b = needBuild();
-      if (b.state.dam.length >= SLOTS) return skip("the dam is full");
-      if (!player.carrying) return skip("nothing in the hand to build with");
-      const { origin, across } = b.dam.frame, to = origin.subtract(across.scale(1.25));
-      await reach("build", (attempt) => attempt ? origin : to, true);
-      const placed = after("stickPlaced");
-      await tap("act");
-      await until(placed, 3, "pressed E at the dam, no stick placed");
+      const n = needBuild().state.dam.length;
+      if (n >= SLOTS) return skip("the dam is full");
+      await buildUpTo(Math.min(SLOTS, fast ? (n * 2 < SLOTS ? SLOTS / 2 : SLOTS) : n + BATCH), false);
     }, "Dam work"],
-    // After the dam: swim the stick out to the lodge. Run alone (station=Carry a stick&station=Build the lodge) it
-    // finishes the tour's own dam first, so the lodge is there; in the whole tour it waits for a full dam.
+    // After the dam: swim sticks out to the lodge. Run alone (station=Build the lodge) it finishes the tour's own dam
+    // first, so the lodge is there; in the whole tour it waits for a full dam.
     ["Build the lodge", async () => {
       const b = needBuild();
       if (b.state.dam.length < SLOTS) {
         if (!requested.includes("Build the lodge")) return skip("the dam is not finished yet");
         b.fill(SLOTS);
       }
-      if (b.state.dam.length >= SLOTS + LODGE) return skip("the lodge is finished");
-      if (!player.carrying) return skip("nothing in the hand to build with");
-      const { lodgeAt, frame } = b.dam, from = lodgeAt.subtract(frame.across.scale(1.7));
-      await reach("build", (attempt) => attempt ? lodgeAt : from);
-      const placed = after("stickPlaced"), n = b.state.dam.length;
-      await tap("act");
-      await until(placed, 3, "pressed E at the lodge, no stick placed");
-      expect(b.state.dam.length === n + 1, `the lodge holds ${b.state.dam.length - SLOTS} sticks, not ${n + 1 - SLOTS}`);
-    }],
+      const n = b.state.dam.length;
+      if (n >= SLOTS + LODGE) return skip("the lodge is finished");
+      await buildUpTo(fast ? SLOTS + LODGE : Math.min(SLOTS + LODGE, n + BATCH), true);
+      if (live && b.state.dam.length >= SLOTS + LODGE) await wait(10); // the lodge standing, before the world starts anew
+    }, "Dam work"],
     ["Swim", async () => {
       if (!pond) return skip("no pond");
+      if (player.afloat) await walkTo(world.spawn.x, world.spawn.z, { arrived: () => !player.afloat, limit: 40 }); // out first, from the lodge
       const wet = after("enterWater");
-      await walkTo(pond.x, pond.z, { arrived: wet, limit: 30 });
+      await walkTo(pond.x, pond.z - clear(), { arrived: wet, limit: 30 });
       expect(wet(), "walked into the pond, never afloat");
       const dry = after("leaveWater");
       await walkTo(pond.x + pond.radius + 1.5, pond.z, { arrived: dry, limit: 40 });
       expect(dry(), "swam across, never out again");
     }, "Pond patrol"],
+    // On land Q thumps the tail on the ground: a tail slap, not on the water.
+    ["Tail slap on land", async () => {
+      if (player.afloat) await walkTo(world.spawn.x, world.spawn.z, { arrived: () => !player.afloat, limit: 40 });
+      await wait(0.6);
+      expect(!player.afloat, "wanted to slap on land, still afloat");
+      const slapped = after("tailSlap");
+      await tap("slap");
+      await until(slapped, 2, "pressed Q on land, the tail never came down");
+      expect(!last.tailSlap!.water, "slapped on land, but it came down on water");
+      await wait(2);
+    }, "Tail slap"],
     // Out on the pond, the alarm: Q slaps the tail; the crack (tailSlap) must send at least one animal off (startled).
     ["Tail slap", async () => {
       if (!pond) return skip("no pond");
-      await walkTo(pond.x - 0.5, pond.z, { near: 0.8, limit: 40 });
+      await walkTo(pond.x - 0.5, pond.z - clear(), { near: 0.8, limit: 40 });
       expect(player.afloat, "out in the pond, yet not afloat");
       await wait(0.4);
       const slapped = after("tailSlap"), startled = after("startled");
@@ -281,7 +363,7 @@ export const create: CreateFeature = (game) => {
       await until(startled, 1, "the tail came down, no animal heard it");
       expect(last.startled!.count > 0, "the tail came down, no animal fled");
       await wait(4); // the ducks circle, the fish dart off: something to see
-    }, "Pond patrol"],
+    }, "Tail slap"],
     ["Animals at the pond", async () => {
       if (!pond) return skip("no pond");
       expect(stage.scene.meshes.some((o) => o.name.startsWith("life-")), "no animals in the scene");
@@ -348,13 +430,85 @@ export const create: CreateFeature = (game) => {
         }
       } finally { if (button().getAttribute("aria-expanded") === "true") key("KeyM"); }
       await until(() => aligned() && Math.abs(disc._currentMeasure.width-width)<2,3,"map did not return to its small size");
-    }],
+    }, undefined, false],
     ["Photo mode", async () => {
       key("KeyP");
       if (!document.body.classList.contains("photo")) return skip("no photo mode");
       try { await wait(4); } finally { key("KeyP"); }
       expect(!document.body.classList.contains("photo") && !stage.paused, "P did not leave photo mode");
-    }],
+    }, undefined, false],
+    // Tab held: who plays, the beaver itself first; let go, the list goes.
+    ["Player list", async () => {
+      if (!stage.hud.getControlByName("players-list")) return skip("no HUD");
+      const me = `${game.settings.values.name} · you`;
+      press("Tab", "keydown");
+      try {
+        await frame(); await frame();
+        expect(hudText("players-list").startsWith("Players\n" + me), `Tab held, the list reads "${hudText("players-list")}"`);
+      } finally { press("Tab", "keyup"); }
+      await frame(); await frame();
+      expect(!hudText("players-list"), "Tab let go, the player list stays");
+    }, undefined, false],
+    // Escape, Settings, Picture quality round once through low, medium and high, as a player clicks it, and back.
+    ["Settings", async () => {
+      const menu = document.querySelector<HTMLDialogElement>("dialog#game-menu") ?? skip("no menu");
+      const button = (label: string) => menu.querySelector<HTMLButtonElement>(`button[aria-label^="${label}"]`) ?? skip(`no "${label}" in the menu`);
+      const was = game.settings.values.quality, seen: string[] = [];
+      key("Escape");
+      try {
+        await paint();
+        expect(stage.paused && menu.open, "Escape opened no pause menu");
+        button("Settings").click();
+        for (let k = 0; k < 3; k++) {
+          await paint();
+          button("Picture quality").click();
+          seen.push(game.settings.values.quality);
+          expect(button("Picture quality").getAttribute("aria-label")!.endsWith(game.settings.values.quality), `the button says "${button("Picture quality").getAttribute("aria-label")}", the game ${game.settings.values.quality}`);
+        }
+        expect(new Set(seen).size === 3 && seen[2] === was, `picture quality went ${was} → ${seen.join(" → ")}`);
+        button("Back").click();
+        await paint();
+        expect(!!button("Resume"), "Back did not lead to the pause menu");
+      } finally {
+        if (game.settings.values.quality !== was) game.settings.set({ quality: was });
+        for (let k = 0; k < 2 && stage.paused; k++) { key("Escape"); await paint(); }
+      }
+      expect(!stage.paused && !menu.open, "the menu did not close");
+    }, undefined, false],
+    // A standard gamepad (a stand-in for navigator.getGamepads): the left stick walks, A jumps.
+    ["Gamepad", async () => {
+      const pad = { connected: true, index: 0, mapping: "standard", axes: [0, -1, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
+      Object.defineProperty(navigator, "getGamepads", { value: () => [pad], configurable: true });
+      try {
+        const from = player.feet.clone(), steps = after("footstep");
+        await wait(1.5);
+        const moved = Vector3.Distance(from, player.feet);
+        expect(moved > 0.5 && steps(), `the left stick pushed for 1.5 s, the beaver went ${moved.toFixed(2)} m`);
+        pad.axes[1] = 0;
+        await wait(0.5);
+        const jumped = after("jump");
+        pad.buttons[0]!.pressed = true;
+        await wait(0.3);
+        pad.buttons[0]!.pressed = false;
+        await until(jumped, 1, "A pressed on the pad, no jump");
+      } finally { delete (navigator as { getGamepads?: unknown }).getGamepads; }
+      await wait(1);
+    }, undefined, false],
+    // With a touch screen (or ?touch): a thumb on the left half walks, the Jump button jumps.
+    ["Touch controls", async () => {
+      const jump = document.querySelector<HTMLButtonElement>('#touch-controls button[aria-label="Jump"]') ?? skip("no touch controls (add &touch)");
+      const touch = (type: string, x: number, y: number) => (type === "pointerdown" ? stage.canvas : window).dispatchEvent(new PointerEvent(type, { pointerId: 41, pointerType: "touch", clientX: x, clientY: y, bubbles: true, cancelable: true }));
+      const x = stage.canvas.clientWidth * 0.2, y = stage.canvas.clientHeight * 0.7, from = player.feet.clone();
+      touch("pointerdown", x, y);
+      try { touch("pointermove", x, y - 60); await wait(1.5); } finally { touch("pointerup", x, y - 60); }
+      const moved = Vector3.Distance(from, player.feet);
+      expect(moved > 0.5, `a thumb pushed up for 1.5 s, the beaver went ${moved.toFixed(2)} m`);
+      await wait(0.5);
+      const jumped = after("jump");
+      jump.click(); // a tap without a pointer (detail 0) counts once, as from a screen reader
+      await until(jumped, 1, "Jump tapped, no jump");
+      await wait(1);
+    }, undefined, false],
   ];
 
   // A feature run may request prerequisite stations followed by the new behavior.
@@ -364,7 +518,7 @@ export const create: CreateFeature = (game) => {
     if (!station) throw new Error("Unknown tour station: " + name);
     return station;
   }) : undefined;
-  const live = mode === "live" && !focused, direct = liveDirector();
+  const live = mode === "live" && !focused, shown: Record<string, number> = {};
   // Low over open water but never under it; on land above the grass, and highest over the pond's edge, above the
   // reeds there (place.ts). None of them stops the camera's cast. Smooth in the ground's height, so never a jump.
   if (live) player.camera.floor = (x, z) => {
@@ -388,6 +542,13 @@ export const create: CreateFeature = (game) => {
     overlay.move(label, at);
   });
 
+  /** Live: the activity and its station, and how far the long work is, so viewers see the dam grow over the hour. */
+  const caption = () => {
+    const a = tour.activity, name = tour.station, n = build()?.state.dam.length ?? 0, line = a === name ? name : a + " · " + name;
+    if (a !== "Dam work") return line;
+    return line + (n < SLOTS ? ` · ${n} of ${SLOTS}` : ` · lodge ${n - SLOTS} of ${LODGE}`);
+  };
+
   // ---- the rounds ----
   const errors: string[] = [];
   window.addEventListener("error", (e) => errors.push(e.message));
@@ -400,21 +561,25 @@ export const create: CreateFeature = (game) => {
     await wait(1.5); // the first pictures, the HUD's start
     for (;;) {
       tour.round++;
-      const dam = build()?.state;
-      const canFell = world.trees?.some((_, i) => dam?.trees[i]?.fell === undefined);
-      const itinerary = live ? direct(stations.filter(([name, , activity]) => {
-        if (name === "Map" || name === "Photo mode") return false; // tests of player controls: a pause menu on the stream
+      const b = build(), placed = b?.state.dam.length ?? 0, canFell = !!b && standingTrees(b).length > 0;
+      // Live: what can be played now; the dam work only while there is something to build, its stations as they apply.
+      const itinerary = live ? liveDirector(stations.filter(([name, , activity, stream]) => {
+        if (stream === false) return false;
+        if (name === "Regrow a tree") return !!regrowing();
         if (activity !== "Dam work") return true;
-        if (!dam || dam.dam.length >= SLOTS) return false;
-        if (player.carrying) return name === "Build the dam";
-        return canFell || name === "Carry a stick" || name === "Build the dam";
-      }), player.carrying ? "Dam work" : undefined) : focused ?? stations;
-      tour.activity = live ? itinerary[0]![2] ?? itinerary[0]![0] : "";
+        if (!b || placed >= SLOTS + LODGE) return false;
+        if (name === "Build the dam") return placed < SLOTS;
+        if (name === "Build the lodge") return placed >= SLOTS;
+        if (player.carrying) return false;
+        if (name === "Carry a stick") return loose().length > 0;
+        return canFell; // fell a tree and gnaw it into wood
+      }), { now: clock, shown, previous: tour.activity, hour: game.sky?.hour, weather: game.sky?.weather, ducks: clock - startledAt > DUCKS_BACK, carrying: !!player.carrying }) : focused ?? stations;
+      if (live) shown[tour.activity = itinerary[0]![2] ?? itinerary[0]![0]] = clock;
       if (!live) player.teleport(world.spawn.x, world.heightAt(world.spawn.x, world.spawn.z), world.spawn.z);
       let ok = 0, failed = false;
       for (const [n, [name, run]] of itinerary.entries()) {
         tour.station = name;
-        label.text = live ? (tour.activity === name ? name : tour.activity + " · " + name) :`Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
+        label.text = live ? caption() : `Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
         const t0 = performance.now();
         errors.length = 0;
         let result: (typeof results)[number];
@@ -443,10 +608,10 @@ export const create: CreateFeature = (game) => {
         await wait(PAUSE);
       }
       console.log(`[tour] round ${tour.round}: ${ok}/${itinerary.length} ok`);
-      // Its own saved game: start it anew once there is nothing left to build with or into.
-      const b = build();
-      if (b && (b.state.dam.length >= SLOTS || world.trees!.every((_, i) => b.state.trees[i]?.fell !== undefined))) {
-        console.log("[tour] the saved game is used up: starting it anew");
+      // Its own saved game: start it anew once the lodge stands; in a test also once no wood is left (live waits for
+      // the trees to grow back).
+      if (b && (b.state.dam.length >= SLOTS + LODGE || (!live && !player.carrying && !loose().length && !standingTrees(b).length))) {
+        console.log(`[tour] the saved game is ${b.state.dam.length >= SLOTS + LODGE ? "done: the lodge stands" : "used up"}: starting it anew`);
         b.reset();
         return;
       }
@@ -457,6 +622,8 @@ export const create: CreateFeature = (game) => {
     update(dt) {
       // Photo mode pauses the world but not the tour; the pause menu holds both.
       if (stage.paused && !document.body.classList.contains("photo")) return;
+      if (!stage.paused) clock += dt;
+      if (live && tour.activity === "Dam work") label.text = caption();
       if (live && !stage.paused) {
         // Live: every activity has its shot (live.ts); yaw, height, distance and aim drift there over seconds, so a
         // new activity or a stop to gnaw is a slow camera move, never a cut. Rounds alternate the side it films from.
