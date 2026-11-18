@@ -7,6 +7,7 @@ import { clean, INFO_PATH, NAME_LENGTH } from "../net/protocol.ts";
 import type { Remote } from "../net/remote.ts";
 import { CONTROLS, DEVICE_NAMES, USE, type Device } from "./devices.ts";
 import { MapDisplay } from "./map-display.ts";
+import { menuNav } from "./nav.ts";
 import { EXTENT, type MapView } from "./map.ts";
 import { box, onViewport, Overlay, safeArea } from "./overlay.ts";
 import { skyLabel } from "./sky.ts";
@@ -108,7 +109,8 @@ export const create: CreateFeature = game => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
   function play() {
-    const name = clean(startName, NAME_LENGTH);
+    // A pad cannot type: its player starts as "Beaver" and can rename on a keyboard later.
+    const name = clean(startName, NAME_LENGTH) || (device === "pad" ? "Beaver" : "");
     if (!name) {
       dialog.dom.querySelector<HTMLInputElement>("input")?.focus();
       const error = dialog.group.getChildByName("name-error") as TextBlock;
@@ -172,6 +174,7 @@ export const create: CreateFeature = game => {
       dialog.range("Volume",box(v.x+labelW,v.y,v.w-labelW,v.h),settings.values.volume,volume => settings.set({volume}));
       for (const [key,label] of [["mute","Mute"],["music","Music"],["effects","Picture effects"],["invertY","Invert vertical look"],["fps","Show FPS"]] as const) {
         const b = action("",() => { settings.set({[key]: !settings.values[key]}); sync(); });
+        b.element.dataset.adjust = "";
         const sync = () => {
           b.element.setAttribute("aria-label",label); b.element.setAttribute("aria-pressed",String(settings.values[key]));
           b.caption.text = label + (settings.values[key] ? "   ✓" : "   –");
@@ -182,6 +185,7 @@ export const create: CreateFeature = game => {
         const values = ["low","medium","high"] as const;
         settings.set({quality: values[(values.indexOf(settings.values.quality)+1)%3]!}); syncQuality();
       });
+      quality.element.dataset.adjust = "";
       const syncQuality = () => { quality.caption.text = "Picture quality   ·   " + settings.values.quality; quality.element.setAttribute("aria-label",quality.caption.text); };
       syncQuality();
       action("Back",back);
@@ -243,9 +247,11 @@ export const create: CreateFeature = game => {
   const params = new URLSearchParams(location.search);
   if (params.has("play")) { startName ||= "Beaver"; play(); } else open("start");
   let padWas: boolean[] = [], oldOffer = "";
+  const nav = menuNav();
   return {
     step(dt) { if (started) played += dt; },
     update() {
+      nav.update();
       const pad = firstPad(navigator.getGamepads?.());
       if (pad) {
         const pressed = pad.buttons.map((_,i) => down(pad,i));

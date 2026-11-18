@@ -1,8 +1,12 @@
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Game } from "../../game.ts";
+import { BUTTON, deadZone, down, firstPad } from "../controls/pad.ts";
+import type { Device } from "../hud/devices.ts";
 import { createPhotoStrip } from "../hud/photo-strip.ts";
 import type { Chain } from "./chain.ts";
+
+const ORBIT = 1.8, ZOOM = 1.4; // rad/s, and e-folds of distance per s, with a stick fully pushed
 
 export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
   const { scene, canvas, camera, hud } = stage;
@@ -19,6 +23,11 @@ export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
   let held = { yaw: 0, pitch: 0, distance: 0 };
   const strip = createPhotoStrip(stage, { save, leave, setStrength });
   strip.value(strength);
+  // The help names the inputs of the device last used: pointer, keys, or the pad (in update).
+  let device: Device = document.getElementById("touch-controls") ? "touch" : "keys", padWas: boolean[] = [];
+  const armed = new Set<number>();
+  const use = (d: Device) => { device = d; strip.device(d); };
+  window.addEventListener("pointerdown", e => use(e.pointerType === "touch" ? "touch" : "keys"), true);
   function setStrength(value: number) {
     strength = Math.max(0, Math.min(1, value));
     strip.value(strength);
@@ -34,6 +43,9 @@ export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
     scene.activeCamera = eye;
     chain.camera(eye);
     eye.attachControl(false, false, 2);
+    // The pad's Back sends P (features/controls): still held as photo mode opens.
+    const pad = firstPad(navigator.getGamepads?.());
+    use(pad?.buttons.some((_, i) => down(pad, i)) ? "pad" : device);
     strip.show(true);
   }
   function leave() {
@@ -66,6 +78,7 @@ export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
 
   const key = (event: KeyboardEvent) => {
     const target = event.target;
+    if (on && event.isTrusted) use("keys");
     if (target instanceof HTMLElement) {
       if (on && target.closest("#photo-strip") && event.code === "Enter" && target instanceof HTMLButtonElement) return;
       if (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement ||
@@ -85,8 +98,26 @@ export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
   window.addEventListener("keydown", key, true);
   scene.onDisposeObservable.add(() => window.removeEventListener("keydown", key, true));
   return {
-    update() {
-      if (!on) return;
+    update(dt: number) {
+      const pad = firstPad(navigator.getGamepads?.()), now = pad ? pad.buttons.map((_, i) => down(pad, i)) : [];
+      const was = padWas;
+      padWas = now;
+      if (!on) { armed.clear(); return; }
+      if (pad) {
+        // A saves and B leaves when let go, so the game does not find them held afterwards.
+        for (const b of [BUTTON.a, BUTTON.b]) {
+          if (now[b] && !was[b]) armed.add(b);
+          else if (!now[b] && armed.delete(b)) { if (b === BUTTON.a) save(); else leave(); }
+        }
+        if (now[BUTTON.left] && !was[BUTTON.left]) setStrength(strength - 0.1);
+        if (now[BUTTON.right] && !was[BUTTON.right]) setStrength(strength + 0.1);
+        const orbit = deadZone(pad.axes[0] ?? 0, pad.axes[1] ?? 0), zoom = deadZone(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
+        if (orbit.x || orbit.y || zoom.x || zoom.y || now.some((v, i) => v && !was[i])) use("pad");
+        eye.alpha -= (orbit.x + zoom.x) * ORBIT * dt;
+        eye.beta = Math.max(eye.lowerBetaLimit ?? 0.01, Math.min(eye.upperBetaLimit ?? Math.PI, eye.beta - orbit.y * ORBIT * dt));
+        eye.radius = Math.max(eye.lowerRadiusLimit ?? 0, Math.min(eye.upperRadiusLimit ?? 14, eye.radius * Math.exp(zoom.y * ZOOM * dt)));
+        if (!on) return; // B just left
+      }
       const point = beaver.root.getAbsolutePosition().add(new Vector3(0, 0.6, 0));
       chain.focus(-Vector3.TransformCoordinates(point, eye.getViewMatrix()).z, strength);
     },

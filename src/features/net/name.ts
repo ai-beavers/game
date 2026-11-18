@@ -4,10 +4,13 @@ import { clean, NAME_LENGTH } from "./protocol.ts";
 
 export function askName(stage: Stage, current: string, address?: string): Promise<string> {
   const layer = new Overlay(stage,"net-name",true,40);
+  // Paused while open, so the pad's A that confirms does not jump the beaver as well.
+  const paused = stage.paused;
   let draft = current, field: HTMLInputElement;
+  stage.paused = true;
   return new Promise(resolve => {
     function finish(value: string) {
-      layer.show(false); stop(); layer.dom.remove(); layer.group.dispose(); resolve(value);
+      layer.show(false); stop(); stage.paused = paused; layer.dom.remove(); layer.group.dispose(); resolve(value);
     }
     const stop = onViewport(stage,(w,h) => {
       layer.clear();
