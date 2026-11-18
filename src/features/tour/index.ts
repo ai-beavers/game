@@ -25,7 +25,7 @@ import type { CreateFeature } from "../../game.ts";
 import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
-import { liveDirector, type Station } from "./live.ts";
+import { liveDirector, shotFor, type Station } from "./live.ts";
 import { SLOTS } from "../build/rules.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
@@ -33,6 +33,8 @@ const STUCK_MOVE = 0.25;
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
 const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is jumped over (teleport), but the last metre
+const EASE = 0.5; // 1/s: how fast the live camera drifts to its next shot (about 2 s), calm on a stream
+const LEAD = 1.2; // m: the live camera looks this far ahead of a walking beaver
 
 /** What the build feature puts on window for tools (src/features/build/index.ts); only the part the tour needs. */
 interface BuildDebug {
@@ -52,7 +54,7 @@ export const create: CreateFeature = (game) => {
   const build = () => (window as { build?: BuildDebug }).build;
 
   // ---- what the tour wants, read once per physics step like any other device ----
-  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false };
+  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false }, aimAt = new Vector3();
   player.keys.add({
     read(into: Input) {
       Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act });
@@ -297,21 +299,35 @@ export const create: CreateFeature = (game) => {
     if (!station) throw new Error("Unknown tour station: " + name);
     return station;
   }) : undefined;
+  const live = mode === "live" && !focused, direct = liveDirector();
+  // Low over open water but never under it; on land above the grass, and highest over the pond's edge, above the
+  // reeds there (place.ts). None of them stops the camera's cast. Smooth in the ground's height, so never a jump.
+  if (live) player.camera.floor = (x, z) => {
+    const ground = world.heightAt(x, z), edge = Math.max(0, 1 - Math.abs(ground - world.waterLevel) / 0.8);
+    return Math.max(world.waterLevel + 0.3, ground + 1.6 + 0.9 * edge);
+  };
 
-  // ---- on screen: where the tour is ----
+  // ---- on screen: where the tour is; live, a caption big enough for a 1080p stream, top centre, clear of the
+  // corners and the bottom third where stream overlays (webcam, chat, alerts) usually sit ----
   const overlay = new Overlay(stage,"tour",false,12);
+  const backing = live ? overlay.rect("station-backing",box(0,0,1,1)) : undefined;
   const label = overlay.text("station","",box(0,0,1,1),14,"center");
   label.fontWeight = "bold";
   label.outlineWidth = 3;
   label.outlineColor = "#182723";
-  onViewport(stage,(w,h) => overlay.move(label,box(w*0.2,h<500 ? 45 : 8,w*0.6,36)));
+  onViewport(stage,(w,h) => {
+    if (!backing) return overlay.move(label,box(w*0.2,h<500 ? 45 : 8,w*0.6,36));
+    const size = Math.max(18, Math.round(h * 0.03)), at = box((w - Math.min(w - 24, size * 24)) / 2, Math.round(h * 0.025), Math.min(w - 24, size * 24), size * 1.9);
+    label.fontSize = size;
+    overlay.move(backing, at);
+    overlay.move(label, at);
+  });
 
   // ---- the rounds ----
   const errors: string[] = [];
   window.addEventListener("error", (e) => errors.push(e.message));
   window.addEventListener("unhandledrejection", (e) => errors.push(String(e.reason)));
   const results: { round: number; station: string; ok: boolean | "skipped"; why?: string; seconds: number }[] = [];
-  const live = mode === "live" && !focused, direct = liveDirector();
   const tour = { round: 0, results, station: "", activity: "" };
   Object.assign(window, { tour });
 
@@ -322,6 +338,7 @@ export const create: CreateFeature = (game) => {
       const dam = build()?.state;
       const canFell = world.trees?.some((_, i) => dam?.trees[i]?.fell === undefined);
       const itinerary = live ? direct(stations.filter(([name, , activity]) => {
+        if (name === "Map" || name === "Photo mode") return false; // tests of player controls: a pause menu on the stream
         if (activity !== "Dam work") return true;
         if (!dam || dam.dam.length >= SLOTS) return false;
         if (player.carrying) return name === "Build the dam";
@@ -332,7 +349,7 @@ export const create: CreateFeature = (game) => {
       let ok = 0, failed = false;
       for (const [n, [name, run]] of itinerary.entries()) {
         tour.station = name;
-        label.text = live ? `Live · ${tour.activity === name ? name : tour.activity + " · " + name}` : `Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
+        label.text = live ? (tour.activity === name ? name : tour.activity + " · " + name) :`Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
         const t0 = performance.now();
         errors.length = 0;
         let result: (typeof results)[number];
@@ -375,8 +392,18 @@ export const create: CreateFeature = (game) => {
     update(dt) {
       // Photo mode pauses the world but not the tour; the pause menu holds both.
       if (stage.paused && !document.body.classList.contains("photo")) return;
-      // The camera swings round behind the beaver while it goes somewhere, so the way ahead is in the picture.
-      if (want.to && !stage.paused) {
+      if (live && !stage.paused) {
+        // Live: every activity has its shot (live.ts); yaw, height, distance and aim drift there over seconds, so a
+        // new activity or a stop to gnaw is a slow camera move, never a cut. Rounds alternate the side it films from.
+        const walking = !!want.to, shot = shotFor(tour.activity, walking), cam = player.camera, k = 1 - Math.exp(-EASE * dt);
+        const goal = player.facing + Math.PI + shot.side * (tour.round % 2 ? 1 : -1);
+        cam.yaw += Math.atan2(Math.sin(goal - cam.yaw), Math.cos(goal - cam.yaw)) * k;
+        cam.pitch += (shot.pitch - cam.pitch) * k;
+        cam.distance += (shot.distance - cam.distance) * k;
+        const lead = walking ? LEAD : 0; // looks a little ahead of where it walks
+        Vector3.LerpToRef(cam.aim, aimAt.set(Math.sin(player.facing) * lead, shot.lift, Math.cos(player.facing) * lead), k, cam.aim);
+      } else if (want.to && !stage.paused) {
+        // The camera swings round behind the beaver while it goes somewhere, so the way ahead is in the picture.
         const behind = player.facing + Math.PI, turn = Math.atan2(Math.sin(behind - player.camera.yaw), Math.cos(behind - player.camera.yaw));
         player.camera.yaw += turn * Math.min(1, dt * 1.2);
       }
