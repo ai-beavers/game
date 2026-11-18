@@ -2,6 +2,7 @@
 // trees and the pond's edge around the beaver, and goes out at dawn. Nothing to press. Only the local beaver has one.
 // It is not parented to the hand bone (that turns with the wrist and grows into a fist): each picture it is put below
 // where the paw is, upright, turned the way the beaver faces, so it swings with the arm and its light sways along.
+// Cost per picture: the world matrices from the beaver's root down to the left hand (under ten nodes), recomputed once.
 //
 // One PointLight, made once and always enabled, its intensity 0 by day: the standard and PBR materials keep the same
 // lights all day, so nothing recompiles at dusk. The shaders that light themselves (grass, leaves, the larger animals)
@@ -19,7 +20,9 @@ import { daylightOf, LANTERN_REACH } from "../../light.ts";
 import { smoothstep } from "../../world/noise.ts";
 
 const WARM = new Color3(1, 0.5, 0.17); // deeper than candlelight: the night's grade takes colour out of the midtones
-const HANG = 0.03 + 0.081; // m from the paw down to the glass's middle: a gap, then the handle's top above the glass
+const HANDLE = { y: 0.075, diameter: 0.045, thickness: 0.006 }; // m: the ring on top of the glass that the paw holds
+const HANDLE_TOP = HANDLE.y + HANDLE.diameter / 2 + HANDLE.thickness / 2; // m above the glass's middle
+const HANG = 0.01 + HANDLE_TOP; // m from the hand bone (the wrist) down to the glass's middle: the handle sits in the paw
 const LIGHT = 2.4, GLOW = 1.0, SHADERS = 1.8; // at full dark: the PointLight, the glass, the self-lit shaders
 
 export const create: CreateFeature = ({ stage: { scene }, beaver, player, settings, sky }) => {
@@ -37,7 +40,7 @@ export const create: CreateFeature = ({ stage: { scene }, beaver, player, settin
   const frame = Mesh.MergeMeshes([ // one draw call
     at(MeshBuilder.CreateCylinder("cap", { height: 0.025, diameterTop: 0.025, diameterBottom: 0.08, tessellation: 8 }, scene), 0.052),
     at(MeshBuilder.CreateCylinder("base", { height: 0.014, diameter: 0.075, tessellation: 8 }, scene), -0.047),
-    at(MeshBuilder.CreateTorus("handle", { diameter: 0.045, thickness: 0.006, tessellation: 12 }, scene), 0.075, Math.PI / 2),
+    at(MeshBuilder.CreateTorus("handle", { diameter: HANDLE.diameter, thickness: HANDLE.thickness, tessellation: 12 }, scene), HANDLE.y, Math.PI / 2),
   ], true)!;
   frame.name = "lantern-frame";
   frame.material = frameMat;
