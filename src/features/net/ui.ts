@@ -2,7 +2,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { type TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { TextBlock } from "@babylonjs/gui";
 import type { Stage } from "../../engine.ts";
-import { Overlay, box, onViewport } from "../hud/overlay.ts";
+import { Overlay, box, onViewport, safeArea } from "../hud/overlay.ts";
 import { CHAT_LENGTH } from "./protocol.ts";
 
 const SHOW = 8000, SAY = 6000, HEAD = 1.15;
@@ -19,13 +19,14 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
     const draft = input?.value || "";
     layer.clear();
     layer.dom.append(log);
-    const touch = !!document.getElementById("touch-controls"), narrow = w < 640;
-    const bottom = touch ? 145 : 10, x = 12, width = Math.min(w-24,narrow ? w*.66 : 350);
-    const y = h-bottom-30;
-    me = layer.button("rename",name || "Set name",box(x,y,Math.min(102,width*.42),30),actions.rename);
+    const touch = !!document.getElementById("touch-controls"), narrow = w < 640, {right: R, bottom: B, left: L} = safeArea();
+    // On a touch screen: finger-sized buttons, above the thumbstick's resting place (controls/touch.ts).
+    const rowH = touch ? 44 : 30, bottom = B + (touch ? 145 : 10), x = L+12, width = Math.min(w-24-L-R,narrow ? w*.66 : 350);
+    const y = h-bottom-rowH;
+    me = layer.button("rename",name || "Set name",box(x,y,Math.min(102,width*.42),rowH),actions.rename);
     me.element.setAttribute("aria-label","Change player name");
-    layer.button("chat-open","Chat",box(x+Math.min(102,width*.42)+5,y,55,30),openChat);
-    join = layer.text("join",address,box(x+165,y,Math.max(0,width-150),30),11);
+    layer.button("chat-open","Chat",box(x+Math.min(102,width*.42)+5,y,55,rowH),openChat);
+    join = layer.text("join",address,box(x+165,y,Math.max(0,width-150),rowH),11);
     join.isVisible = !narrow;
     messages = layer.text("chat-log","",box(x,y-150,width,typing ? 102 : 150),14);
     messages.textVerticalAlignment = 1; // bottom
