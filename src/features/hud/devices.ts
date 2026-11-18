@@ -1,6 +1,6 @@
 // The three ways to play and what each control is called on them, for the hints, the prompt and the controls page.
 // The buttons are those src/features/controls gives them (standard gamepad mapping, the touch overlay), plus the
-// HUD's own: M / Y for the map, Tab for the players.
+// HUD's own: M / Y for the map, Tab for the players, and the photo mode's P (features/post; Back and Photo send it).
 //
 //   CONTROLS.pad      [{ caps: ["A"], what: "Jump", hint: true }, …]
 //   USE.touch         "Use": the cap the prompt shows for the context action
@@ -20,19 +20,22 @@ export const CONTROLS: Record<Device, Control[]> = {
   keys: [
     { caps: ["W", "A", "S", "D"], what: "Move", hint: true }, { caps: ["Shift"], what: "Run", hint: true },
     { caps: ["Space"], what: "Jump", hint: true }, { caps: ["E"], what: "Use", hint: true },
+    { caps: ["Q"], what: "Slap the tail", hint: true },
     { caps: ["Drag"], what: "Look around", hint: true }, { caps: ["Wheel"], what: "Zoom" },
     { caps: ["M"], what: "Map", hint: true }, { caps: ["Tab"], what: "Players", net: true },
     { caps: ["Enter"], what: "Chat", net: true }, { caps: ["P"], what: "Photo mode" }, { caps: ["Esc"], what: "Pause", hint: true },
   ],
   pad: [
     { caps: ["L"], what: "Move", hint: true }, { caps: ["LB"], what: "Run", hint: true }, { caps: ["A"], what: "Jump", hint: true },
-    { caps: ["X"], what: "Use (B too)", hint: true }, { caps: ["R"], what: "Look around", hint: true },
-    { caps: ["Y"], what: "Map", hint: true }, { caps: ["Start"], what: "Pause", hint: true },
+    { caps: ["X"], what: "Use (B too)", hint: true }, { caps: ["RB"], what: "Slap the tail", hint: true },
+    { caps: ["R"], what: "Look around", hint: true }, { caps: ["R", "click"], what: "Zoom" },
+    { caps: ["Y"], what: "Map", hint: true }, { caps: ["Back"], what: "Photo mode" }, { caps: ["Start"], what: "Pause", hint: true },
   ],
   touch: [
     { caps: ["Left side"], what: "Move", hint: true }, { caps: ["Right side"], what: "Look around", hint: true },
     { caps: ["Pinch"], what: "Zoom" }, { caps: ["Jump"], what: "Jump" }, { caps: ["Use"], what: "Use: gnaw, carry, build" },
-    { caps: ["Run"], what: "Run, until you let go" }, { caps: ["Map"], what: "Tap to enlarge", hint: true }, { caps: ["Pause"], what: "Menu: settings, players" },
+    { caps: ["Run"], what: "Run, until you let go" }, { caps: ["Slap"], what: "the tail", hint: true },
+    { caps: ["Map"], what: "Tap to enlarge", hint: true }, { caps: ["Photo"], what: "Photo mode" }, { caps: ["Pause"], what: "Menu: settings, players" },
   ],
 };
 

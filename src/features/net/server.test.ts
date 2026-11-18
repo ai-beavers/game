@@ -4,7 +4,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, type ServerMessage } from "./protocol.ts";
+import { apply, REGROW, type BuildChange } from "../build/rules.ts";
+import { HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, sameWorld, type ServerMessage } from "./protocol.ts";
 
 const root = join(import.meta.dir, "../../..");
 let running: Bun.Subprocess | undefined;
@@ -42,7 +43,7 @@ function client(port: number, ip?: string) {
   const hello = () => ws.send(JSON.stringify({ t: "hello", name: "Tester" }));
   return { ws, messages, opened, closed, next, hello };
 }
-const info = async (port: number) => (await fetch(`http://localhost:${port}/net/info`)).json();
+const info = async (port: number, query = "?build") => (await fetch(`http://localhost:${port}/net/info${query}`)).json();
 
 describe("server.ts", () => {
   test("lets one address hold only so many sockets, and closes those that never say hello", async () => {
@@ -103,6 +104,69 @@ describe("server.ts", () => {
     expect((await info(port)).build).toEqual([]);
     expect(existsSync(`${file}.bad`)).toBe(true);
   }, 30000);
+
+  test("compacts the log over regrow cycles; a joiner gets the live world, a refused change the whole world", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "beaver-")), "world.json"), env = { WORLD_FILE: file };
+    const life = (direction: number): BuildChange[] => [...Array(8).fill({ type: "bite", tree: 2 }), { type: "fell", tree: 2, direction },
+      { type: "rest", tree: 2, at: [direction, 0, 1], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree: 2 }), { type: "split", tree: 2 }];
+    /** The kept world with every split long ago, as if REGROW had passed while the server was down. */
+    const age = () => {
+      const kept = JSON.parse(readFileSync(file, "utf8")) as { epoch: string; build: BuildChange[] };
+      for (const c of kept.build) if (c.type === "split") c.at = Date.now() - (REGROW + 60) * 1000;
+      writeFileSync(file, JSON.stringify(kept));
+      return kept;
+    };
+    writeFileSync(file, JSON.stringify({ epoch: "k3x9", build: [{ type: "find" }, ...life(0.5)] }));
+    // The live one: a world built from every change it is told, counted as the browser does (index.ts).
+    const live = { state: replay(age().build), epoch: "k3x9", have: 16 };
+    for (let cycle = 1; cycle <= 3; cycle++) {
+      const { port } = await start(env), a = client(port);
+      await a.opened;
+      a.ws.send(JSON.stringify({ t: "hello", name: "Tester", epoch: live.epoch, have: live.have }));
+      let read = 0;
+      const hear = async (until: (m: ServerMessage) => boolean) => {
+        for (let i = 0; i < 200; i++, await Bun.sleep(10)) for (; read < a.messages.length;) {
+          const m = a.messages[read++]!;
+          if (m.t === "welcome") expect([m.epoch, m.from, m.build]).toEqual([live.epoch, live.have, []]); // holds it all already
+          if (m.t === "build") { for (const c of m.c) apply(live.state, c); live.have = m.n + m.c.length; }
+          if (m.t === "epoch") { live.epoch = m.epoch; live.have = m.n; }
+          if (until(m)) return m;
+        }
+        throw new Error("not told");
+      };
+      await hear((m) => m.t === "welcome");
+      const grow: BuildChange = { type: "grow", tree: 2 };
+      apply(live.state, grow); // as the browser does: its own change applied, then sent
+      a.ws.send(JSON.stringify({ t: "build", c: [grow] }));
+      a.ws.send(JSON.stringify({ t: "build", c: life(cycle) }));
+      expect(await hear((m) => m.t === "epoch")).toMatchObject({ n: 1 + 15 }); // the tree's earlier life left out
+      // Asked again too soon (by a clock further along): refused, and told the whole world to take instead.
+      a.ws.send(JSON.stringify({ t: "build", c: [grow] }));
+      const world = await hear((m) => m.t === "world") as Extract<ServerMessage, { t: "world" }>;
+      expect([world.epoch, world.build.length]).toEqual([live.epoch, live.have]);
+      // A joiner now gets the present world, the same as the one who saw every change; its name already taken.
+      const b = client(port);
+      await b.opened;
+      b.hello();
+      const welcome = await b.next("welcome") as Extract<ServerMessage, { t: "welcome" }>;
+      expect(welcome.build).toHaveLength(16);
+      expect(sameWorld(replay(welcome.build), live.state)).toBe(true);
+      expect(await b.next("name")).toMatchObject({ t: "name", id: welcome.id, name: "Tester 2" });
+      // The health check is small; the page asks for the changes.
+      const small = await info(port, ""), whole = await info(port);
+      expect([small.build, small.changes, whole.build.length, whole.epoch]).toEqual([undefined, 16, 16, live.epoch]);
+      await stop();
+      age();
+    }
+  }, 30000);
+
+  test("opens the socket only for pages from here", async () => {
+    const { port } = await start({ PUBLIC_URL: "https://beaver.example/" });
+    const from = (origin: string) => fetch(`http://localhost:${port}/net`, { headers: { Origin: origin, Upgrade: "websocket", Connection: "Upgrade" } });
+    expect((await from("https://evil.example")).status).toBe(403);
+    expect((await from(`http://localhost:${port}`)).status).not.toBe(403);
+    expect((await from("https://beaver.example")).status).not.toBe(403);
+  });
 
   test("without the new variables: no build id, no file, every local socket", async () => {
     const { port, out } = await start();

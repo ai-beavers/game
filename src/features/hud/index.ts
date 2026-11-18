@@ -190,7 +190,8 @@ export const create: CreateFeature = game => {
       devices.forEach((d,i) => dialog.button(d,DEVICE_NAMES[d],box(r.x+i*r.w/3,r.y,r.w/3-4,r.h),() => { helpDevice = d; drawPage(); }, d===helpDevice));
       const here = CONTROLS[helpDevice].filter(c => !c.net || !!address);
       const list = here.map(c => c.caps.join(" ") + "    " + c.what).join("\n");
-      dialog.text("bindings",list,box(left,cy,inner,row*6.35),Math.min(15,row*.46));
+      // Small enough that every line fits the box (a line is about 1.5 font sizes tall), however many the device has.
+      dialog.text("bindings",list,box(left,cy,inner,row*6.35),Math.min(15,row*.46,row*6.35/(here.length*1.5)));
       cy += row*6.6; action("Back",back);
     }
     function copyAddress() {

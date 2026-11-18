@@ -5,6 +5,7 @@
 //   hostOf(players)                         who simulates the loose things: the one who has been in longest
 //   admit(world, change)                    the server's check of one build change against its world
 //   changesOf(state) · replay(changes)      a build state as the changes that make it, and back
+//   compact(work)                           the server's log shortened to the present world
 //
 // Every message is JSON with a type `t`. The server never takes a player id from a client: it adds the sender's own.
 import type { Action, Motion } from "../../contracts.ts";
@@ -111,8 +112,10 @@ export type ServerMessage =
   | { t: "need" }
   /** Build changes the server took, numbered from n in its list; to everyone, the sender (id) too. */
   | { t: "build"; id: number; n: number; c: BuildChange[] }
-  /** The server's whole world, to a player whose "bring" came too late: take this one. */
+  /** The server's whole world, to a player whose "bring" came too late or whose change it refused: take this one. */
   | { t: "world"; epoch: string; build: BuildChange[] }
+  /** The server shortened its list (compact): the same world, from now on n changes long under this epoch. */
+  | { t: "epoch"; epoch: string; n: number }
   /** The world was reset on the server: forget yours. */
   | { t: "reset" };
 
@@ -216,8 +219,8 @@ export const MAX_BITES = bitesToFell(Infinity);
 /** The server's check of a change against its world: it must fit the world as it is (rules.ts apply: in order, not
  *  twice, a stick not used twice), no tree takes more bites than any tree needs, and a tree grows back only REGROW
  *  s after its wood went by `now`, the server's clock (rules.ts, the rule). Applies it when it passes; a split it
- *  takes is stamped with now (change.at, whatever the sender wrote), so the log and its file keep when. Bounded but
- *  for trees growing back: each adds at most one tree's changes (about 17) every REGROW. */
+ *  takes is stamped with now (change.at, whatever the sender wrote), so the log and its file keep when. The log
+ *  stays bounded as trees grow back because the server compacts it. */
 export function admit(world: BuildState, change: BuildChange, now = Date.now()): boolean {
   const t = "tree" in change ? world.trees[change.tree] : undefined;
   if (change.type === "bite") {
@@ -271,6 +274,22 @@ export function restore(text: string): { epoch: string; world: BuildState; log: 
   return { epoch: saved.epoch, world, log, whole: log.length === saved.build.length };
 }
 
+export const newEpoch = () => Math.random().toString(36).slice(2, 10);
+
+/** The server's world: its epoch, its state and the changes that made it, in order (what a joiner replays). */
+export interface Work { epoch: string; world: BuildState; log: BuildChange[] }
+
+/** Shortens the log to the present world (changesOf, each split with the time the server took it) when it holds
+ *  more: a tree grown back and broken into wood again leaves the changes of its earlier life behind. Under a new
+ *  epoch, since the changes are numbered anew. True when it did. */
+export function compact(work: Work): boolean {
+  const present = changesOf(work.world).map((c) => c.type === "split" ? { ...c, at: work.world.trees[c.tree]!.gone } : c);
+  if (present.length >= work.log.length) return false;
+  work.log = present;
+  work.epoch = newEpoch();
+  return true;
+}
+
 /** Whether two states hold the same world (trees touched without effect do not count). */
 export const sameWorld = (a: BuildState, b: BuildState) => JSON.stringify(changesOf(a)) === JSON.stringify(changesOf(b));
 
@@ -302,6 +321,25 @@ export function clientAddress(headers: Headers, socket: string | undefined, head
   const [head = "", tail = ""] = ip.split("::"), h = head ? head.split(":") : [], t = tail ? tail.split(":") : [];
   const groups = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
   return `${groups.slice(0, 4).map((g) => (parseInt(g, 16) || 0).toString(16)).join(":")}::/64`;
+}
+
+/** Whether a socket may open from this page (its Origin header): only from the server's own pages, by the Host they
+ *  were asked under or the public address (PUBLIC_URL, for a proxy that changes the Host), so another website cannot
+ *  drive a visitor's socket. No Origin: not a browser (bots, tools), which no website can drive. */
+export function sameOrigin(origin: string | null, host: string | null, publicUrl?: string): boolean {
+  if (origin === null) return true;
+  try {
+    const page = new URL(origin);
+    return page.host === host || (!!publicUrl && page.origin === new URL(publicUrl).origin);
+  } catch { return false; }
+}
+
+/** The name, or with a number appended (" 2", " 3", …, still within NAME_LENGTH) when someone else already holds it. */
+export function uniqueName(name: string, taken: Iterable<string>): string {
+  const held = new Set([...taken].map((n) => n.toLowerCase()));
+  let out = name;
+  for (let k = 2; held.has(out.toLowerCase()); k++) out = `${[...name].slice(0, NAME_LENGTH - 1 - String(k).length).join("").trim()} ${k}`;
+  return out;
 }
 
 /** Whether a page should reload for the server's build: only when both are known and differ, and not again for a
