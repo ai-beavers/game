@@ -38,6 +38,8 @@ export interface Beaver {
   anger: number;
   /** Wears its T-shirt; false: fur all over. */
   shirt: boolean;
+  /** Wears its small felt hat (on the head bone, so it follows every pose); false: bare-headed. */
+  hat: boolean;
   /** Puts every bone where the pose says; bones left out go to rest. */
   pose(pose: Pose): void;
   /** Once per frame, after pose(): whatever the look needs (fur density for the size on screen, …). */

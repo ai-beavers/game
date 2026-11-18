@@ -13,6 +13,8 @@ import "@babylonjs/loaders/glTF/2.0/glTFLoader.js";
 import "@babylonjs/loaders/glTF/2.0/Extensions/KHR_materials_specular.js";
 import "@babylonjs/loaders/glTF/2.0/Extensions/EXT_texture_webp.js"; // the textures of both glb files (tools/blender)
 import "@babylonjs/loaders/glTF/2.0/Extensions/KHR_mesh_quantization.js"; // their normals, uvs, weights as integers
+import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { createCoat } from "./fur.ts";
 import beaverGlb from "../../assets/beaver.glb" with { type: "file" };
 import logoPng from "../../assets/logo.png" with { type: "file" };
@@ -45,6 +47,41 @@ async function shirtTexture(scene: Scene) {
   return texture;
 }
 
+// The felt hat: a short crown on a thin brim, a band round the crown's foot. One mesh with its colours in the
+// vertices: one draw call a beaver. In the head bone's space (y up the head and a little forward, z ahead): on top of
+// the head between the ears, tipped back a little and cocked to one side. The brim is narrower than the head.
+const FELT = new Color3(0.075, 0.062, 0.058), BAND = new Color3(0.8, 0.7, 0.52); // charcoal felt, a band the cream of the shirt
+const HAT_AT = new Vector3(0, 0.14, 0.005), HAT_TILT = new Vector3(-0.1, 0, 0.18);
+
+function makeHat(scene: Scene, head: TransformNode) {
+  const part = (name: string, height: number, top: number, bottom: number, y: number, colour: Color3) => {
+    const mesh = CreateCylinder(name, { height, diameterTop: top, diameterBottom: bottom, tessellation: 16 }, scene);
+    mesh.position.y = y;
+    const n = mesh.getTotalVertices(), colours = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) colours.set([colour.r, colour.g, colour.b, 1], i * 4);
+    mesh.setVerticesData(VertexBuffer.ColorKind, colours);
+    return mesh;
+  };
+  const hat = Mesh.MergeMeshes([
+    part("brim", 0.01, 0.165, 0.165, 0.005, FELT),
+    part("crown", 0.075, 0.088, 0.104, 0.047, FELT),
+    part("band", 0.022, 0.103, 0.108, 0.024, BAND),
+  ], true)!;
+  hat.name = "hat";
+  const felt = new PBRMaterial("hat felt", scene);
+  felt.albedoColor = Color3.White(); // times the vertex colours
+  felt.metallic = 0;
+  felt.roughness = 0.95;
+  hat.material = felt;
+  hat.parent = head;
+  hat.position.copyFrom(HAT_AT);
+  hat.rotation.copyFrom(HAT_TILT);
+  hat.isPickable = false;
+  hat.receiveShadows = true; // and so it throws them, as every part of the beaver does (src/light.ts)
+  hat.onDisposeObservable.addOnce(() => felt.dispose());
+  return hat;
+}
+
 export const loadBeaver: LoadBeaver = async (scene) => {
   const [asset, print] = await Promise.all([ImportMeshAsync(beaverGlb, scene, { pluginExtension: ".glb" }), shirtTexture(scene)]);
   for (const group of asset.animationGroups) { group.stop(); group.dispose(); }
@@ -59,6 +96,7 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   const shirtMat = asset.meshes.find(m => m.name === "shirt")!.material as PBRMaterial;
   shirtMat.albedoTexture = print;
   for (const part of asset.meshes) part.receiveShadows = true;
+  const hat = makeHat(scene, nodes.get("head")!);
   const bones = BONES.map(name => {
     const node = nodes.get(name);
     if (!node) throw new Error(`Missing beaver bone: ${name}`);
@@ -92,6 +130,8 @@ export const loadBeaver: LoadBeaver = async (scene) => {
     },
     get shirt() { return shirt.isEnabled(false); },
     set shirt(on) { shirt.setEnabled(on); fur.coat.dressed = on; },
+    get hat() { return hat.isEnabled(false); },
+    set hat(on) { hat.setEnabled(on); },
     pose(pose) {
       for (const { name, node, rotation, position, scale } of bones) {
         const p = pose[name];
