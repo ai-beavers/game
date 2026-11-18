@@ -17,7 +17,7 @@ Combine them with `&`. `README.md` lists the tour ones.
 | Switch | Effect |
 | --- | --- |
 | `play` | skips the start screen |
-| `hour=13`, `clock=stop`, `speed=60` | the hour of the day, a clock that stands still, a faster day |
+| `hour=13`, `clock=stop`, `speed=60` | the hour of the day, a clock that stands still, a faster day; each keeps the page on its own day when connected to a shared world |
 | `weather=fair` | holds one kind of weather; the kinds are `KINDS` in `src/features/sky/weather.ts` |
 | `spawn=x,z` | where the beaver starts |
 | `anger=1` | a furious beaver |

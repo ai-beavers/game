@@ -11,7 +11,8 @@
 // It keeps the world's work (the build feature's changes: trees gnawed and felled, wood, the dam) in order, as long
 // as it runs (with WORLD_FILE over restarts too), checked by admit() against its own copy of the world; a joiner gets the list,
 // kept as short as the present world (compact). A player whose change it refuses gets the whole world again. While its world is still
-// empty, the first player with a saved world brings it. Type `reset` and Enter in its terminal to start the world
+// empty, the first player with a saved world brings it. It keeps the day too: 16:00 when it starts, one day every 720 s,
+// told to each player in welcome (not saved). Type `reset` and Enter in its terminal to start the world
 // afresh: every player's saved world is forgotten too.
 //
 // On the internet (all optional; without them it behaves as on a LAN):
@@ -26,7 +27,7 @@ import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } fro
 import { networkInterfaces, hostname } from "node:os";
 import index from "./index.html";
 import {
-  admit, bucket, clientAddress, compact, HELLO_TIME, hostOf, INFO_PATH, MAX_MESSAGE, MAX_PLAYERS, newEpoch, parseClient, PATH,
+  admit, bucket, clientAddress, compact, HELLO_TIME, hostOf, hourAt, START, INFO_PATH, MAX_MESSAGE, MAX_PLAYERS, newEpoch, parseClient, PATH,
   PER_ADDRESS, PROXY_HEADERS, restore, sameOrigin, uniqueName, type PlayerInfo, type ServerMessage, type Work,
 } from "./src/features/net/protocol.ts";
 import { newState, type BuildChange } from "./src/features/build/rules.ts";
@@ -38,6 +39,7 @@ const RESEND_RATE = 0.5, RESEND_BURST = 3; // whole worlds a second to one playe
 const STRIKES = 600; // messages dropped for rate before the socket is closed
 const MAX_SOCKETS = 2 * MAX_PLAYERS; // players, and room for those still saying hello or being told it is full
 const VERSION = process.env.GIT_SHA ?? "", WORLD_FILE = process.env.WORLD_FILE || undefined, SAVE_AFTER = 2000; // ms
+const DAY_FROM = performance.now(); // ms: START o'clock of the shared day
 const TRUST = process.env.TRUST_PROXY || undefined, PROXY_HEADER = TRUST && PROXY_HEADERS[TRUST];
 if (TRUST && !PROXY_HEADER) throw new Error(`TRUST_PROXY must be one of ${Object.keys(PROXY_HEADERS).join(", ")}, not ${TRUST}`);
 
@@ -187,7 +189,7 @@ function receive(ws: Socket, text: string) {
     const carried = [...peers.values()].filter((p) => p.carry >= 0).map((p) => [p.id, p.carry] as [number, number]);
     elect();
     const { epoch, log } = work, from = m.epoch === epoch && m.have! <= log.length ? m.have! : 0;
-    send(ws, { t: "welcome", id: me.id, host: host ? peers.get(host)!.id : -1, players, addresses, carried, epoch, from, build: log.slice(from), version: VERSION });
+    send(ws, { t: "welcome", id: me.id, host: host ? peers.get(host)!.id : -1, players, addresses, carried, epoch, from, build: log.slice(from), version: VERSION, hour: hourAt(START, DAY_FROM, performance.now()) });
     if (name !== m.name) send(ws, { t: "name", id: me.id, name }); // the name it is known by
     others(ws, { t: "join", id: me.id, name: me.name });
     ws.subscribe("all");

@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apply, REGROW, type BuildChange } from "../build/rules.ts";
-import { HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, sameWorld, type ServerMessage } from "./protocol.ts";
+import { DAY_SECONDS, HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, sameWorld, START, type ServerMessage } from "./protocol.ts";
 
 const root = join(import.meta.dir, "../../..");
 let running: Bun.Subprocess | undefined;
@@ -72,6 +72,27 @@ describe("server.ts", () => {
     expect(await late.closed).toBe(1013);
     expect((await info(port)).players).toBe(MAX_PLAYERS);
   }, 15000);
+
+  test("gives everyone who joins the same hour of one day, which starts at 16:00 with the server", async () => {
+    const { port } = await start();
+    const hourOf = async () => {
+      const p = client(port);
+      await p.opened;
+      p.hello();
+      const welcome = await p.next("welcome") as Extract<ServerMessage, { t: "welcome" }>;
+      return { hour: welcome.hour, at: performance.now() };
+    };
+    const first = await hourOf();
+    expect(first.hour).toBeGreaterThanOrEqual(START);
+    expect(first.hour).toBeLessThan(START + 0.2); // a few seconds of starting up at most
+    await Bun.sleep(1500);
+    const second = await hourOf();
+    expect(second.hour).toBeGreaterThanOrEqual(0);
+    expect(second.hour).toBeLessThan(24);
+    const counted = first.hour + ((second.at - first.at) / 1000) * 24 / DAY_SECONDS;
+    expect(Math.abs(second.hour - counted)).toBeLessThan(0.05); // within 1.5 s of play: what the two messages took
+    expect(second.hour - first.hour).toBeGreaterThan(0.04); // the day went on between them: 1.5 s is 0.05 h
+  });
 
   test("keeps the world and its epoch over a restart; a broken file starts afresh, kept aside", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "beaver-")), "world.json"), env = { WORLD_FILE: file, GIT_SHA: "abc123" };

@@ -20,6 +20,9 @@
 // the two differ. After that, every change made here (buildChange, remote false) goes to the server, which checks it
 // and passes it on to all; those from others come back as buildChange with remote true.
 //
+// The day is the server's too: on every welcome the sky follows the hour it sends (game.sky.follow), and when the
+// connection drops it goes on alone. A page opened with ?hour, ?clock or ?speed keeps its own day, for pictures.
+//
 // The place (feet, facing, camera) is kept in sessionStorage, so a reload (the dev server's live reload, or the
 // player's) comes back where it was.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
@@ -42,6 +45,7 @@ const PLACES = 120; // things per message
 const HEAD = 0.9; // m over the feet: where a name tag is looked for behind walls
 // Where src/features/build keeps its world, and where its loose wood lay (as it names them there).
 const BUILD_KEY = new URLSearchParams(location.search).has("tour") ? "beaver.build.tour" : "beaver.build", LOOSE_KEY = `${BUILD_KEY}.loose`;
+const OWN_DAY = ["hour", "clock", "speed"].some((key) => new URLSearchParams(location.search).has(key));
 const SOLO_KEY = `${BUILD_KEY}.solo`, PLACE_KEY = "beaver.place", RESET_KEY = "beaver.reset", VERSION_KEY = "beaver.reloadedFor";
 
 const read = (store: () => Storage, key: string) => { try { return store().getItem(key); } catch { return null; } };
@@ -197,6 +201,7 @@ export const create: CreateFeature = (game) => {
         // The server was deployed again since this page loaded (its build differs): load the new page, once.
         if (shouldReload(info?.version ?? "", m.version ?? "", read(session, VERSION_KEY))) { write(session, VERSION_KEY, m.version); reload(); return; }
         me = m.id; host = m.host; connected = true; tries = 0; sendAll = true; away = false;
+        if (!OWN_DAY && Number.isFinite(m.hour)) game.sky?.follow(m.hour);
         for (const p of m.players) addRemote(p.id, p.name);
         for (const [id, stick] of m.carried) { const r = remotes.get(id); if (r) r.carry = stick; }
         address = m.addresses[0] ?? address;
@@ -257,6 +262,7 @@ export const create: CreateFeature = (game) => {
       socket = undefined;
       const was = connected;
       connected = false;
+      if (!OWN_DAY) game.sky?.alone();
       for (const id of [...remotes.keys()]) removeRemote(id);
       role();
       me = host = -1;
