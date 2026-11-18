@@ -10,8 +10,9 @@ import { create as lantern } from "./lantern/index.ts";
 import { create as life } from "./life/index.ts";
 import { create as net } from "./net/index.ts";
 import { create as post } from "./post/index.ts";
+import { create as shop } from "./shop/index.ts";
 import { create as sky } from "./sky/index.ts";
 import { create as tour } from "./tour/index.ts";
 import { create as trade } from "./trade/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, lantern, post, build, trade, fx, life, net, audio, hud, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, post, build, trade, shop, fx, life, net, audio, hud, tour];

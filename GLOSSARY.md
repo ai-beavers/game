@@ -42,6 +42,18 @@ _Avoid_: shop, store, market
 A thing the beaver gets at the trading post for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell.
 _Avoid_: item, loot, product
 
+**Shop**:
+The small disco-like hut in the clearing with the sign HOUSE OF AI in front; inside it is a café where the shopkeeper sells outfits and other creatures work at laptops.
+_Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
+
+**Shopkeeper**:
+The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.
+_Avoid_: NPC, vendor, merchant
+
+**Outfit**:
+A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.
+_Avoid_: skin, costume, clothes
+
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
 _Avoid_: base, house, storage
@@ -51,6 +63,14 @@ _Avoid_: base, house, storage
 **Player**:
 A person steering a beaver, or the beaver they steer.
 _Avoid_: user, character
+
+**Sit**:
+The beaver resting upright on its haunches on land, tail flat on the ground, for as long as the player holds it there. Moving gets it up again.
+_Avoid_: crouch, rest, kneel
+
+**Crawl**:
+The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
+_Avoid_: crouch, sneak, prone
 
 **Remote**:
 Another player's beaver as this browser draws it.
@@ -64,8 +84,12 @@ _Avoid_: NPC, AI player
 A creature of the world that no player steers: ducks, fish, deer.
 _Avoid_: NPC, mob, wildlife entity
 
+**Experience**:
+The points a player earns by building with sticks, one for each stick built in, and spends at the shop.
+_Avoid_: XP, coins, money, score
+
 **Saved game**:
-The state of the trees, the dam, the lodge and the cache, kept between visits.
+The state of the trees, the dam, the lodge and the cache, and the player's experience and outfits, kept between visits.
 _Avoid_: save file, progress
 
 ### How the game is put together
