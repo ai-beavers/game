@@ -3,9 +3,10 @@
 import { describe, expect, test } from "bun:test";
 import { POND, RIM, WATER_LEVEL, heightAt } from "../../world/terrain.ts";
 import { seeded } from "../../world/noise.ts";
+import { dayAt } from "../sky/clock.ts";
 import {
-  circling, depthAt, makeBirds, makeDucks, makeFlyers, makeFrogs, makeSchool, shoreSpots, startle, stepBirds, stepButterflies,
-  stepDragonflies, stepDucks, stepFrogs, stepSchool, type Land, type Threat,
+  circling, deerHours, depthAt, makeBirds, makeDeer, makeDucks, makeFlyers, makeFrogs, makeOwl, makeSchool, owlHours, shoreSpots, startle,
+  stepBirds, stepButterflies, stepDeer, stepDragonflies, stepDucks, stepFrogs, stepOwl, stepSchool, type Land, type Threat,
 } from "./brain.ts";
 
 const land: Land = { heightAt, water: WATER_LEVEL, rim: RIM - 2.5, pond: { x: POND.x, z: POND.z, radius: POND.radius } };
@@ -146,5 +147,110 @@ describe("a tail slap", () => {
     expect(animals.ducks.every((d) => d.flying === 0 && d.air === 0)).toBe(true); // and are back on the water
     for (let i = 0; i < 60 * 30; i++) step();
     expect(animals.frogs.every((f) => f.state === "sit")).toBe(true);
+  });
+});
+
+describe("deer and owl, by the hour", () => {
+  const dusk = { out: true, rain: false }, day = { out: false, rain: false }, nobody: Threat = { x: 200, y: 0, z: 200, speed: 0, swimming: false };
+  const herdOut = (seed: number, count = 3) => {
+    const random = seeded(seed), herd = makeDeer(land, count, random), spots = shoreSpots(land, 20, random);
+    const step = (seconds: number, t: Threat = nobody, h = dusk) => { for (let i = 0; i < seconds * 30; i++) stepDeer(herd, land, [], spots, t, h, 1 / 30, random); };
+    return { herd, step, random };
+  };
+
+  test("their hours: deer at dusk and dawn, the owl at night", () => {
+    expect(deerHours(dayAt(19.5).sunHeight) && deerHours(dayAt(5.5).sunHeight)).toBe(true);
+    expect(deerHours(dayAt(13).sunHeight) || deerHours(dayAt(0).sunHeight)).toBe(false);
+    expect(owlHours(dayAt(23).sunHeight) && owlHours(dayAt(3).sunHeight)).toBe(true);
+    expect(owlHours(dayAt(16).sunHeight) || owlHours(dayAt(19.5).sunHeight)).toBe(false);
+  });
+
+  test("stay in the forest outside their hours, come out to graze at the meadow's rim at dusk, on the ground", () => {
+    const { herd, step } = herdOut(11);
+    step(60, nobody, day);
+    expect(herd.every((d) => d.state === "away")).toBe(true);
+    let down = false;
+    for (let s = 0; s < 60; s++) {
+      step(1);
+      for (const d of herd) if (d.state !== "away") expect(d.y + d.air).toBeGreaterThanOrEqual(heightAt(d.x, d.z) - 1e-6);
+      down ||= herd.some((d) => d.head > 0.5); // heads down in the grass
+    }
+    expect(down).toBe(true);
+    expect(herd.every((d) => d.state === "graze" || d.state === "walk" || d.state === "drink")).toBe(true);
+    for (const d of herd) if (d.state === "graze") expect(Math.hypot(d.x, d.z)).toBeGreaterThan(land.rim - 5);
+  });
+
+  test("one walks down to the pond to drink", () => {
+    const { herd, step } = herdOut(12);
+    let drank = false;
+    for (let s = 0; s < 240 && !drank; s++) {
+      step(1);
+      const d = herd[0]!;
+      if (d.state !== "drink") continue;
+      drank = true;
+      expect(Math.hypot(d.x - POND.x, d.z - POND.z)).toBeLessThan(POND.radius + 2.5);
+      expect(depthAt(land, d.x, d.z)).toBeLessThan(0); // standing on land
+    }
+    expect(drank).toBe(true);
+  });
+
+  test("lift their heads at a beaver walking near, bound off from one running at them, and come back when it is calm", () => {
+    const { herd, step } = herdOut(13);
+    step(60);
+    const d = herd.find((o) => o.state === "graze")!, r = Math.hypot(d.x, d.z);
+    const at = (k: number, speed: number): Threat => ({ x: d.x - d.x / r * k, y: 0.3, z: d.z - d.z / r * k, speed, swimming: false });
+    step(1, at(8, 0.8));
+    expect(d.alert).toBeGreaterThan(0.9);
+    expect(d.head).toBeLessThan(0.2);
+    expect(d.state).not.toBe("flee");
+    const beaver = at(7, 2), before = Math.hypot(d.x - beaver.x, d.z - beaver.z);
+    step(0.2, beaver);
+    expect(d.state).toBe("flee");
+    step(0.8, beaver);
+    expect(Math.hypot(d.x - beaver.x, d.z - beaver.z)).toBeGreaterThan(before + 2);
+    step(5);
+    expect(herd.every((o) => o.state === "away" || o.state === "flee")).toBe(true); // the others went with it
+    step(60);
+    expect(herd.some((o) => o.state === "graze")).toBe(true);
+  });
+
+  test("a tail slap across the clearing sends them off", () => {
+    const { herd, step, random } = herdOut(14);
+    step(60);
+    const animals = { school: makeSchool(land, 3, random), birds: [], frogs: [], ducks: [], deer: herd };
+    const out = herd.filter((d) => d.state !== "away").length;
+    expect(out).toBeGreaterThan(0);
+    expect(startle(animals, land, [], { x: 0, z: 0 }, 4, random)).toBeGreaterThanOrEqual(out);
+    expect(herd.every((d) => d.state === "flee" || d.state === "away")).toBe(true);
+  });
+
+  test("stay under the trees in rain, and go back in when their hours end", () => {
+    const { herd, step } = herdOut(15);
+    step(60);
+    step(30, nobody, { out: true, rain: true });
+    for (const d of herd) expect(Math.hypot(d.x, d.z)).toBeGreaterThan(land.rim + 2);
+    step(60, nobody, day);
+    expect(herd.every((d) => d.state === "away")).toBe(true);
+  });
+
+  test("the owl flies in at night, sits on a branch, calls, glides low across the clearing and leaves at dawn", () => {
+    const random = seeded(16), owl = makeOwl(random), perches = [{ x: -20, y: 14, z: 3 }, { x: 18, y: 13, z: 10 }, { x: 2, y: 15, z: -21 }];
+    const step = (seconds: number, night: boolean, each = () => {}) => { for (let i = 0; i < seconds * 30; i++) { stepOwl(owl, land, perches, night, 1 / 30, random); each(); } };
+    step(10, false);
+    expect(owl.state).toBe("away");
+    step(15, true);
+    expect(owl.state).toBe("sit");
+    let lowest = Infinity;
+    const sat = new Set<number>();
+    step(300, true, () => {
+      if (owl.state === "sit") sat.add(owl.perch);
+      if (owl.state === "fly" && Math.hypot(owl.x, owl.z) < 10) lowest = Math.min(lowest, owl.y - heightAt(owl.x, owl.z));
+      expect(owl.y).toBeGreaterThan(Math.max(heightAt(owl.x, owl.z), land.water));
+    });
+    expect(owl.calls).toBeGreaterThan(5);
+    expect(sat.size).toBeGreaterThan(1);
+    expect(lowest).toBeLessThan(9);
+    step(30, false);
+    expect(owl.state).toBe("away");
   });
 });

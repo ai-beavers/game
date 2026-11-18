@@ -254,6 +254,15 @@ const RECIPES = {
     hoot(0.9, 0.12, 0.2);
     hoot(1.1, 0.7, 0.3);
   },
+  /** A roe deer's alarm as it bounds off: a hoarse, barking "böh", twice. */
+  deer(ctx, out, t) {
+    const v = rand(0.92, 1.08), bark = (at: number, peak: number) => {
+      buzz(ctx, out, t, { at, freq: 210 * v, to: 150 * v, filter: 900 * v, sweep: 600, q: 3, attack: 0.012, decay: 0.16, peak });
+      burst(ctx, out, t, { at, filter: "bandpass", freq: 1300 * v, to: 700, q: 1.2, attack: 0.01, decay: 0.14, peak: peak * 0.7 });
+    };
+    bark(0, 0.5);
+    bark(0.42, 0.35);
+  },
   /** One chirp of a cricket: three quick pulses of a high tone; amount picks its pitch. */
   cricket(ctx, out, t, amount) {
     const f = 4300 + amount * 600;

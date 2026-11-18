@@ -506,9 +506,305 @@ function fly(d: Duck, land: Land, dt: number, splashes: Splash[]) {
   splashes.push({ x: d.x, z: d.z, size: 0.6 });
 }
 
+// ---- the larger animals, by the hour -----------------------------------------------------------------------------
+
+/** When they are about, by the sun's height in degrees: deer at dusk and dawn, the owl at night. */
+export const deerHours = (sunHeight: number) => sunHeight > -10 && sunHeight < 12;
+export const owlHours = (sunHeight: number) => sunHeight < -6;
+
+/** The hours as the animals feel them: whether it is their time, and whether it rains. */
+export interface Hours { out: boolean; rain: boolean }
+
+export interface Deer {
+  x: number; y: number; z: number; heading: number; speed: number;
+  /** away: in the forest, not drawn; walk: to goal, then `then`; graze, drink, shelter (under the trees in rain): standing;
+   *  flee: bounding into the forest. */
+  state: "away" | "walk" | "graze" | "drink" | "shelter" | "flee";
+  then: "graze" | "drink" | "shelter" | "away";
+  goal: { x: number; z: number };
+  /** Where at the forest's edge it comes out and goes back in, as an angle round the clearing. */
+  home: number;
+  /** Seconds: until it comes out (away), until the head goes up or down (standing); and until it moves on. */
+  t: number; left: number;
+  /** 0 … 1: the head lifted to look at the beaver; seconds it has looked; seconds until it flees because another did. */
+  alert: number; watched: number; alarm: number;
+  /** The pose: gait phase, 0 … 1 walking, 0 … 1 bounding, metres off the ground, head 0 up … 1 down (and where it
+   *  wants it), the head turned (radians), the ears' flicks, the white tail up. */
+  phase: number; stride: number; bound: number; air: number; head: number; headWant: number; look: number;
+  ears: [number, number]; earT: number; tail: number;
+  /** Has been down to the water this time out. */
+  drank: boolean;
+}
+
+const WALK = 0.9, BOUND = 5.5; // m/s
+const DEER_ALERT = 10, DEER_NEAR = 5.5, DEER_RUN = 13; // m: heads up; too close; a beaver running at them
+const DEER_HEAR = 25; // m a tail slap carries for a deer
+/** Radii from the middle: they graze at the meadow's rim, wait under the trees in rain, vanish into the forest. */
+const graze = (land: Land) => [land.rim - 3.5, land.rim - 0.5] as const;
+const SHELTER = 4, COVER = 8; // m beyond the rim
+
+const ring = (angle: number, r: number) => ({ x: Math.cos(angle) * r, z: Math.sin(angle) * r });
+type Spot = { x: number; z: number };
+
+/** No tree trunk in the way and dry ground all along, but the last `wet` metres (to drink). */
+export function clearWay(land: Land, trunks: Spot[], a: Spot, b: Spot, wet = 0) {
+  const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.ceil(d / 0.5);
+  for (let i = 1; i <= n; i++) {
+    const x = lerp(a.x, b.x, i / n), z = lerp(a.z, b.z, i / n);
+    if (trunks.some((t) => Math.hypot(t.x - x, t.z - z) < 0.9)) return false;
+    if (d * (1 - i / n) > wet && !dry(land, x, z)) return false;
+  }
+  return true;
+}
+
+/** A place to graze at the meadow's rim near its own way out, on fair ground, reached without a trunk in the way and
+ *  well away from the beaver. */
+export function grazeSpot(land: Land, trunks: Spot[], herd: Deer[], d: Deer, threat: Threat, random: Random, near = 0): Spot {
+  const [inner, outer] = graze(land);
+  let best: Spot = ring(d.home, outer), score = -Infinity;
+  for (let i = 0; i < 16; i++) {
+    const p = near ? { x: d.x + (random() - 0.5) * near * 2, z: d.z + (random() - 0.5) * near * 2 } : ring(d.home + (random() - 0.5) * 0.7, lerp(inner, outer, random()));
+    const r = Math.hypot(p.x, p.z);
+    if (r < inner - 1 || r > outer + 0.5 || !dry(land, p.x, p.z)) continue;
+    const steep = Math.abs(land.heightAt(p.x + 0.5, p.z) - land.heightAt(p.x - 0.5, p.z)) + Math.abs(land.heightAt(p.x, p.z + 0.5) - land.heightAt(p.x, p.z - 0.5));
+    const crowded = herd.some((o) => o !== d && o.state !== "away" && Math.hypot(o.goal.x - p.x, o.goal.z - p.z) < 1.8);
+    const s = Math.min(far(threat, p.x, p.z), 14) - steep * 10 - (clearWay(land, trunks, d, p) ? 0 : 20) - (crowded ? 8 : 0);
+    if (s > score) { score = s; best = p; }
+  }
+  return best;
+}
+
+export function makeDeer(land: Land, count: number, random: Random): Deer[] {
+  const start = random() * TAU;
+  return Array.from({ length: count }, (_, i) => {
+    // A small herd: they come out near each other, one after the other.
+    const home = start + (i - (count - 1) / 2) * 0.22, at = ring(home, land.rim + COVER);
+    return {
+      ...at, y: land.heightAt(at.x, at.z), heading: home + Math.PI, speed: 0, state: "away", then: "graze", goal: at, home,
+      t: 1 + i * 2.5 + random() * 3, left: 0, alert: 0, watched: 0, alarm: Infinity, phase: random() * TAU, stride: 0, bound: 0, air: 0,
+      head: 0, headWant: 0, look: 0, ears: [0, 0], earT: random() * 3, tail: 0, drank: false,
+    };
+  });
+}
+
+const walkTo = (d: Deer, goal: Spot, then: Deer["then"]) => { d.state = "walk"; d.goal = goal; d.then = then; };
+
+/** Off into the forest, away from `from`: bounding, the white tail up. */
+export function flee(d: Deer, land: Land, from: { x: number; z: number }) {
+  const ax = d.x - from.x, az = d.z - from.z, a = Math.hypot(ax, az) || 1, r = Math.hypot(d.x, d.z) || 1;
+  const vx = ax / a + d.x / r, vz = az / a + d.z / r;
+  d.home = Math.atan2(d.z + vz * 6, d.x + vx * 6);
+  d.goal = ring(d.home, land.rim + COVER);
+  d.state = "flee";
+  d.alarm = Infinity;
+}
+
+/** The deer by the hour. Out of the forest at dusk and dawn (each in turn), to graze at the meadow's rim; one walks down
+ *  to the pond to drink. Shy: within DEER_ALERT metres of the beaver the head comes up and turns to it (and after a while
+ *  it moves off); a beaver running at them, coming too close or (startle) slapping its tail sends them bounding into
+ *  the trees, the others after it. They come back once it has been calm a while. In rain they stay under the trees;
+ *  when their hours end they walk back in. `shore`: places at the water's edge, to drink. */
+export function stepDeer(herd: Deer[], land: Land, trunks: Spot[], shore: Perch[], threat: Threat, hours: Hours, dt: number, random: Random) {
+  herd.forEach((d, i) => {
+    if (d.state === "away") {
+      d.x = Math.cos(d.home) * (land.rim + COVER); d.z = Math.sin(d.home) * (land.rim + COVER);
+      if (!hours.out) return;
+      // Not while the beaver is about where it would come out.
+      d.t = far(threat, d.x, d.z) < 14 ? Math.max(d.t, 6) : d.t - dt;
+      if (d.t > 0) return;
+      Object.assign(d, { y: land.heightAt(d.x, d.z), heading: d.home + Math.PI, alert: 0, watched: 0, tail: 0, drank: false });
+      if (hours.rain) walkTo(d, ring(d.home, land.rim + SHELTER), "shelter");
+      else walkTo(d, grazeSpot(land, trunks, herd, d, threat, random), "graze");
+    }
+    const dist = far(threat, d.x, d.z), fleeing = d.state === "flee";
+    if (!fleeing) {
+      d.alarm -= dt;
+      const scared = dist < DEER_NEAR || (threat.speed > 1.4 && dist < DEER_RUN) || d.alarm <= 0;
+      if (scared) {
+        flee(d, land, dist < DEER_RUN ? threat : { x: 0, z: 0 });
+        for (const o of herd) if (o !== d && o.state !== "away" && o.state !== "flee" && Math.hypot(o.x - d.x, o.z - d.z) < 18) o.alarm = Math.min(o.alarm, 0.2 + random() * 0.5);
+      }
+    }
+    if (d.state === "flee") {
+      d.tail = Math.min(1, d.tail + dt * 6);
+      d.alert = 1;
+      d.head = Math.max(0, d.head - dt * 4);
+      if (go(d, land, BOUND, 5, dt) < 1) { d.state = "away"; d.t = 15 + random() * 15; d.speed = 0; }
+      return d.state === "away" ? undefined : poseDeer(d, threat, dt, random);
+    }
+    d.tail = Math.max(0, d.tail - dt * 2);
+    // The beaver near: the head comes up and follows it; a while of that and it moves off.
+    const watching = dist < DEER_ALERT && d.state !== "shelter";
+    d.alert = clamp(d.alert + (watching ? dt * 4 : -dt * 0.5), 0, 1);
+    d.watched = watching ? d.watched + dt : 0;
+    if (d.watched > 6 && d.state !== "walk") walkTo(d, grazeSpot(land, trunks, herd, d, threat, random), "graze");
+    // The hours end: back into the forest; rain: under the trees; the rain over: out to graze again.
+    if (!hours.out && d.then !== "away") walkTo(d, ring(d.home, land.rim + COVER), "away");
+    else if (hours.out && hours.rain && d.then !== "shelter" && d.then !== "away") walkTo(d, ring(d.home, land.rim + SHELTER), "shelter");
+    else if (hours.out && !hours.rain && d.state === "shelter") walkTo(d, grazeSpot(land, trunks, herd, d, threat, random), "graze");
+
+    if (d.state === "walk") {
+      d.headWant = 0.15;
+      if (d.alert > 0.5 && d.watched < 6) d.speed = Math.max(0, d.speed - dt * 3); // stops to look
+      else if (go(d, land, WALK, 2, dt) < 0.3) {
+        d.state = d.then;
+        d.speed = 0;
+        if (d.state === "away") d.t = 2 + random() * 6;
+        if (d.state === "drink") { d.left = 8 + random() * 6; d.heading = headingOf(land.pond.x - d.x, land.pond.z - d.z); }
+        if (d.state === "graze") d.left = 8 + random() * 14;
+        d.t = d.state === "away" ? d.t : 0;
+      }
+    } else if (d.state !== "away") {
+      d.speed = 0;
+      d.left -= d.alert > 0.5 ? 0 : dt;
+      d.t -= dt;
+      if (d.t <= 0) { // head down a few seconds, up a moment to look round and chew
+        const down = d.headWant < 0.5;
+        d.headWant = down ? 1 : 0;
+        d.t = down ? (d.state === "drink" ? 4 : 3) + random() * 5 : 1.2 + random() * 2;
+      }
+      if (d.left <= 0 && d.state === "drink") { d.drank = true; walkTo(d, grazeSpot(land, trunks, herd, d, threat, random), "graze"); }
+      else if (d.left <= 0 && d.state === "graze") {
+        // The first deer out goes down to the water once, while the beaver is not near it; the others step on.
+        const water = i === 0 && !d.drank ? drinkSpot(land, trunks, shore, d, threat) : undefined;
+        if (water) walkTo(d, water, "drink");
+        else walkTo(d, grazeSpot(land, trunks, herd, d, threat, random, 2.5), "graze");
+        d.left = 8 + random() * 14;
+      }
+    }
+    poseDeer(d, threat, dt, random);
+  });
+}
+
+/** Where to drink: a spot at the water's edge reached on dry ground, far from the beaver; a step back on the land,
+ *  facing the pond. */
+export function drinkSpot(land: Land, trunks: Spot[], shore: Perch[], d: Deer, threat: Threat) {
+  let best: Spot | undefined, score = Infinity;
+  for (const s of shore) {
+    const back = Math.hypot(s.x - land.pond.x, s.z - land.pond.z) || 1;
+    const p = { x: s.x + (s.x - land.pond.x) / back * 0.5, z: s.z + (s.z - land.pond.z) / back * 0.5 };
+    const k = Math.hypot(p.x - d.x, p.z - d.z);
+    if (far(threat, p.x, p.z) < 10 || k > score || !clearWay(land, trunks, d, p, 0.8)) continue;
+    best = p; score = k;
+  }
+  return best;
+}
+
+/** Turns towards the goal and goes at `pace`; returns how far the goal still is. */
+function go(d: Deer, land: Land, pace: number, turnRate: number, dt: number) {
+  const dx = d.goal.x - d.x, dz = d.goal.z - d.z, dist = Math.hypot(dx, dz);
+  const turn = turnTo(d.heading, headingOf(dx, dz));
+  d.heading += clamp(turn, -turnRate * dt, turnRate * dt);
+  // Slows down to turn on the spot, and as it arrives.
+  d.speed = lerp(d.speed, pace * clamp(1.4 - Math.abs(turn), 0.15, 1) * Math.min(1, dist / 0.6 + 0.2), Math.min(1, dt * 3));
+  const step = Math.min(dist, d.speed * dt);
+  d.x += Math.sin(d.heading) * step; d.z += Math.cos(d.heading) * step;
+  d.y = land.heightAt(d.x, d.z);
+  return dist - step;
+}
+
+function poseDeer(d: Deer, threat: Threat, dt: number, random: Random) {
+  const bounding = d.state === "flee";
+  d.stride = lerp(d.stride, bounding ? 0 : clamp(d.speed / WALK, 0, 1), Math.min(1, dt * 6));
+  d.bound = lerp(d.bound, bounding ? clamp(d.speed / BOUND * 1.5, 0, 1) : 0, Math.min(1, dt * 6));
+  d.phase += dt * TAU * (bounding ? 2.2 * d.bound : d.speed / 0.85);
+  d.air = 0.45 * d.bound * Math.max(0, Math.sin(d.phase));
+  const watching = d.alert > 0.3 && !bounding;
+  d.head = lerp(d.head, watching ? 0 : d.headWant, Math.min(1, dt * (watching ? 5 : 1.5)));
+  // The head turns to the beaver, as far as a neck turns; standing, the body follows for the rest.
+  const turn = watching ? turnTo(d.heading, headingOf(threat.x - d.x, threat.z - d.z)) : 0;
+  if (Math.abs(turn) > 1.2 && d.speed < 0.1) d.heading += clamp(turn, -1, 1) * dt;
+  d.look = lerp(d.look, clamp(turn, -1.2, 1.2), Math.min(1, dt * (watching ? 6 : 2)));
+  d.earT -= dt;
+  if (d.earT <= 0) { d.ears[random() < 0.5 ? 0 : 1] = 1; d.earT = d.alert > 0.3 ? 0.4 + random() : 1.5 + random() * 4; }
+  d.ears[0] = Math.max(0, d.ears[0] - dt * 5); d.ears[1] = Math.max(0, d.ears[1] - dt * 5);
+}
+
+// ---- the owl -----------------------------------------------------------------------------------------------------
+
+export interface Owl {
+  x: number; y: number; z: number; heading: number;
+  /** away: not about; sit: on its branch; fly: on the way from `from` over `over` to `to`. */
+  state: "away" | "sit" | "fly";
+  from: Perch; over: Perch; to: Perch; perch: number;
+  /** Seconds: of the flight left and its length; until it flies on; until it calls. */
+  t: number; length: number; stay: number; call: number;
+  /** How many times it has called (the sound follows this). */
+  calls: number;
+  /** Wings: beat phase, how hard they beat, 0 folded … 1 spread; the head turned (radians); banking in a turn. */
+  phase: number; flap: number; spread: number; look: number; lookWant: number; bank: number;
+}
+
+export function makeOwl(random: Random): Owl {
+  const nowhere = { x: 0, y: 30, z: 0 };
+  return { ...nowhere, heading: 0, state: "away", from: nowhere, over: nowhere, to: nowhere, perch: 0, t: 0, length: 1, stay: 0, call: 4 + random() * 6, calls: 0,
+    phase: 0, flap: 0, spread: 0, look: 0, lookWant: 0, bank: 0 };
+}
+
+const OWL_SPEED = 7; // m/s gliding
+/** A point far out beyond a perch, high: where the owl comes from and goes to. */
+const beyond = (p: Perch): Perch => ({ x: p.x * 2.2, y: p.y + 10, z: p.z * 2.2 });
+
+/** Off its branch, low over the clearing (`low` metres over the middle), to perch `to` (or out of sight). */
+export function takeOffOwl(owl: Owl, land: Land, to: Perch, low = 4.5, perch = owl.perch) {
+  owl.from = { x: owl.x, y: owl.y, z: owl.z };
+  owl.to = to;
+  owl.perch = perch;
+  // A quadratic curve whose middle passes `low` metres over the ground halfway.
+  const mx = (owl.x + to.x) / 2, mz = (owl.z + to.z) / 2, y = Math.max(land.heightAt(mx, mz), land.water) + low;
+  owl.over = { x: mx, y: 2 * y - (owl.y + to.y) / 2, z: mz };
+  owl.state = "fly";
+  owl.length = owl.t = Math.max(2.5, Math.hypot(to.x - owl.x, to.z - owl.z) / OWL_SPEED);
+}
+
+/** The owl by night: flies in from the forest to a branch on one of the far trees, sits and turns its head, calls now
+ *  and then, and every minute or so glides low across the clearing to another; at dawn it flies off. */
+export function stepOwl(owl: Owl, land: Land, perches: Perch[], night: boolean, dt: number, random: Random) {
+  if (!perches.length) return;
+  if (owl.state === "away") {
+    if (!night) return;
+    const p = Math.floor(random() * perches.length);
+    Object.assign(owl, beyond(perches[p]!));
+    takeOffOwl(owl, land, perches[p]!, 8, p);
+  }
+  if (owl.state === "sit") {
+    owl.spread = Math.max(0, owl.spread - dt * 3);
+    owl.flap = 0;
+    owl.bank = 0;
+    if ((owl.call -= dt) <= 0) { owl.calls++; owl.call = 10 + random() * 18; }
+    // Owls turn the head, not the body: now here, now there.
+    if (random() < dt * 0.4) owl.lookWant = (random() - 0.5) * 3;
+    owl.look = lerp(owl.look, owl.lookWant, Math.min(1, dt * 4));
+    if (!night) takeOffOwl(owl, land, beyond(perches[owl.perch]!), 8);
+    else if ((owl.stay -= dt) <= 0) {
+      const next = (owl.perch + 1 + Math.floor(random() * (perches.length - 1))) % perches.length;
+      takeOffOwl(owl, land, perches[next]!, 6 + random() * 2, next);
+    }
+    return;
+  }
+  // Flying: along the curve; beats hard off the branch and to land, glides between.
+  owl.t -= dt;
+  const k = clamp(1 - owl.t / owl.length, 0, 1), a = (1 - k) * (1 - k), b = 2 * k * (1 - k), c = k * k;
+  const x = a * owl.from.x + b * owl.over.x + c * owl.to.x, z = a * owl.from.z + b * owl.over.z + c * owl.to.z;
+  const turn = turnTo(owl.heading, headingOf(x - owl.x, z - owl.z));
+  if (Math.hypot(x - owl.x, z - owl.z) > 1e-4) owl.heading += turn * Math.min(1, dt * 8);
+  owl.bank = lerp(owl.bank, clamp(-turn * 8, -0.5, 0.5), Math.min(1, dt * 3));
+  owl.x = x; owl.z = z;
+  owl.y = Math.max(a * owl.from.y + b * owl.over.y + c * owl.to.y, Math.max(land.heightAt(x, z), land.water) + 1);
+  owl.spread = Math.min(1, owl.spread + dt * 4);
+  owl.flap = k < 0.12 || k > 0.88 ? 1 : 0;
+  owl.look = lerp(owl.look, 0, Math.min(1, dt * 4));
+  owl.phase += dt * (owl.flap ? 22 : 0);
+  if (owl.t > 0) return;
+  if (night && owl.to === perches[owl.perch]) {
+    Object.assign(owl, { ...owl.to, state: "sit", stay: 40 + random() * 40, spread: 1, flap: 0 });
+    owl.heading = headingOf(-owl.x, -owl.z); // facing the clearing
+  } else owl.state = "away";
+}
+
 // ---- a tail slap: the alarm --------------------------------------------------------------------------------------
 
-export interface Animals { school: School; birds: Bird[]; frogs: Frog[]; ducks: Duck[] }
+export interface Animals { school: School; birds: Bird[]; frogs: Frog[]; ducks: Duck[]; deer?: Deer[]; owl?: Owl }
 
 /** A tail slap at `at`: everything within `reach` metres flees as from a beaver right there. Fish dart off, frogs on
  *  the shore leap in, birds on the ground fly up, ducks take off and circle the clearing. Each comes back by its own
@@ -541,5 +837,7 @@ export function startle(animals: Animals, land: Land, perches: Perch[], at: { x:
     takeOffDuck(d, best, 7 + random() * 3, splashes);
     count++;
   }
+  // Deer hear it far across the clearing.
+  for (const d of animals.deer ?? []) if (d.state !== "away" && d.state !== "flee" && far(threat, d.x, d.z) < Math.max(reach, DEER_HEAR)) { flee(d, land, at); count++; }
   return count;
 }
