@@ -27,6 +27,7 @@ import {
   PROXY_HEADERS, restore, type PlayerInfo, type ServerMessage,
 } from "./src/features/net/protocol.ts";
 import { newState, type BuildChange } from "./src/features/build/rules.ts";
+import type { Built } from "./tools/build.ts";
 
 const PORT = Number(process.env.PORT ?? 5180);
 const RATE = 60, BURST = 120, CHAT_RATE = 1, CHAT_BURST = 4; // messages a second
@@ -55,7 +56,27 @@ const addresses = process.env.PUBLIC_URL ? [process.env.PUBLIC_URL] : hosts.map(
 
 // ---- pages --------------------------------------------------------------------------------------------------------
 
-const routes: Record<string, Bun.HTMLBundle> = { "/": index };
+// Live reload: Bun bundles index.html itself. Production: our own bundle (tools/build.ts), because Bun's static routes
+// compress nothing and the game is ~12 MB of compressible code, wasm and models for viewers on phones. Files are
+// served from memory as brotli or gzip, whichever the browser takes (plain http on the LAN gets gzip: browsers
+// offer br only on https and localhost); hashed names are cached for a year, the page itself is always asked again.
+// It starts with quick brotli (quality 5) and swaps in the ~10% smaller quality 11 once that is done (~15 s).
+const routes: Record<string, Bun.HTMLBundle | ((req: Request) => Response)> = process.env.NODE_ENV === "production" ? await bundle() : { "/": index };
+
+async function bundle() {
+  const { build, brotli } = await import("./tools/build.ts");
+  const files = await build(5);
+  void Promise.all([...files.values()].map(async (file) => { if (file.br) file.br = await brotli(file.raw, 11); }));
+  const serve = (file: Built, cache: string) => (req: Request) => {
+    const accept = req.headers.get("accept-encoding") ?? "";
+    const [body, encoding] = file.br && /\bbr\b/.test(accept) ? [file.br, "br"] : file.gz && /\bgzip\b/.test(accept) ? [file.gz, "gzip"] : [file.raw, ""];
+    const headers: Record<string, string> = { "Content-Type": file.type, "Cache-Control": cache, Vary: "Accept-Encoding" };
+    if (encoding) headers["Content-Encoding"] = encoding;
+    return new Response(body, { headers });
+  };
+  return Object.fromEntries([...files].map(([path, file]) => path === "/index.html"
+    ? ["/", serve(file, "no-cache")] : [path, serve(file, "public, max-age=31536000, immutable")]));
+}
 
 // ---- the world's work ---------------------------------------------------------------------------------------------
 

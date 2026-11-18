@@ -24,7 +24,7 @@
 # The look (sleek grey-brown coat, grey-white muzzle, slate tail, grey feet, a large head that runs into the back
 # without a step) follows a beaver model the user chose as a reference: sketchfab.com/3d-models/beaver-6fd1d674…
 # by Ramhat. It is not downloadable and not licensed for reuse, so nothing of it is in here: no mesh, no texture.
-import bpy, bmesh, math, sys, tempfile
+import bpy, bmesh, math, subprocess, sys, tempfile
 import numpy as np
 from mathutils import Quaternion, Vector
 from mathutils.bvhtree import BVHTree
@@ -633,4 +633,9 @@ if argv and not argv[0].startswith("--"):
     bpy.ops.export_scene.gltf(
         filepath=argv[0], export_format="GLB", export_animation_mode="NLA_TRACKS", export_force_sampling=True,
         export_vertex_color="ACTIVE", export_active_vertex_color_when_no_material=True, export_morph=True, export_morph_normal=True,
+        # WebP instead of PNG: the three 512² maps were 1.1 MB of the download, at 90 they are a tenth and look the same.
+        export_image_format="WEBP", export_image_quality=90,
     )
+    # Normals, uvs, weights and colours as small integers (KHR_mesh_quantization, no decoder needed): 0.45 MB less to
+    # download. Positions stay floats: quantizing them rewrites the bind matrices and splits the one skin into three.
+    subprocess.run(["bunx", "@gltf-transform/cli@4.5.1", "quantize", "--pattern", "{NORMAL,TEXCOORD_*,WEIGHTS_*,COLOR_*}", argv[0], argv[0]], check=True)

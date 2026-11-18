@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun server.ts",
-    "build": "rm -rf ./dist && bun build ./index.html --outdir=dist --minify",
+    "build": "bun tools/build.ts",
     "shot": "bun tools/shot.ts",
     "tour": "bun tools/tour.ts",
     "check": "tsc --noEmit && bun test"

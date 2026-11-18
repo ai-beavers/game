@@ -12,7 +12,7 @@
 # model (bark tone, shade inside a crown, moss, fresh wood). Leaves and reeds carry their own normals (out of the
 # crown, up for reeds), so the cards shade like a volume and not like flat paper.
 # Blender is z up here; the exporter turns it into glTF's y up.
-import bpy, bmesh, math, os, shutil, sys, tempfile
+import bpy, bmesh, math, os, shutil, subprocess, sys, tempfile
 import numpy as np
 from mathutils import Vector, Matrix
 
@@ -827,7 +827,10 @@ for k, v in counts.items():
 if "--save" in argv:
     bpy.ops.wm.save_as_mainfile(filepath=argv[argv.index("--save") + 1])
 if argv and not argv[0].startswith("--"):
-    bpy.ops.export_scene.gltf(filepath=argv[0], export_format="GLB", export_image_format="JPEG", export_image_quality=88,
+    # WebP: smaller than JPEG at the same quality, and the leaves keep their alpha (as JPEG they fell back to 430 KB of PNG).
+    bpy.ops.export_scene.gltf(filepath=argv[0], export_format="GLB", export_image_format="WEBP", export_image_quality=88,
                               export_vertex_color="ACTIVE", export_yup=True)
+    # Normals, uvs and colours as small integers (KHR_mesh_quantization, as tools/blender/build.py does): 0.15 MB less.
+    subprocess.run(["bunx", "@gltf-transform/cli@4.5.1", "quantize", "--pattern", "{NORMAL,TEXCOORD_*,WEIGHTS_*,COLOR_*}", argv[0], argv[0]], check=True)
     print("exported", argv[0], os.path.getsize(argv[0]) // 1024, "KB")
 shutil.rmtree(TMP)
