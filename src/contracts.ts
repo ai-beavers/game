@@ -34,6 +34,9 @@ export interface Beaver {
   root: TransformNode;
   /** The right hand; parent a carried thing to it. */
   hand: TransformNode;
+  /** The left hand (the beaver's own left, its +x side). The lantern hangs below it; read where it is rather than
+   *  parent to it, since the hand turns and grows into a fist. */
+  leftHand: TransformNode;
   /** 0 calm … 1 furious: redder, muscular, glowing eyes. */
   anger: number;
   /** Wears its T-shirt; false: fur all over. */

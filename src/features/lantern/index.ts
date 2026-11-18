@@ -1,5 +1,8 @@
-// A lantern at the beaver's left hip (a viewer's wish): it glows warm as it gets dark and lights the ground, the
+// A lantern in the beaver's left hand, hanging by its handle (a viewer's wish): it glows warm as it gets dark and lights the ground, the
 // trees and the pond's edge around the beaver, and goes out at dawn. Nothing to press. Only the local beaver has one.
+// It is not parented to the hand bone (that turns with the wrist and grows into a fist): each picture it is put below
+// where the paw is, upright, turned the way the beaver faces, so it swings with the arm and its light sways along.
+// Cost per picture: the world matrices from the beaver's root down to the left hand (under ten nodes), recomputed once.
 //
 // One PointLight, made once and always enabled, its intensity 0 by day: the standard and PBR materials keep the same
 // lights all day, so nothing recompiles at dusk. The shaders that light themselves (grass, leaves, the larger animals)
@@ -10,12 +13,16 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { PointLight } from "@babylonjs/core/Lights/pointLight.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import type { Node } from "@babylonjs/core/node.js";
 import type { CreateFeature } from "../../game.ts";
 import { daylightOf, LANTERN_REACH } from "../../light.ts";
 import { smoothstep } from "../../world/noise.ts";
 
 const WARM = new Color3(1, 0.5, 0.17); // deeper than candlelight: the night's grade takes colour out of the midtones
-const HIP = new Vector3(0.3, 0.42, -0.06); // m from the feet: the left side (+x, the beaver faces +z), a little behind
+const HANDLE = { y: 0.075, diameter: 0.045, thickness: 0.006 }; // m: the ring on top of the glass that the paw holds
+const HANDLE_TOP = HANDLE.y + HANDLE.diameter / 2 + HANDLE.thickness / 2; // m above the glass's middle
+const HANG = 0.01 + HANDLE_TOP; // m from the hand bone (the wrist) down to the glass's middle: the handle sits in the paw
 const LIGHT = 2.4, GLOW = 1.0, SHADERS = 1.8; // at full dark: the PointLight, the glass, the self-lit shaders
 
 export const create: CreateFeature = ({ stage: { scene }, beaver, player, settings, sky }) => {
@@ -33,13 +40,23 @@ export const create: CreateFeature = ({ stage: { scene }, beaver, player, settin
   const frame = Mesh.MergeMeshes([ // one draw call
     at(MeshBuilder.CreateCylinder("cap", { height: 0.025, diameterTop: 0.025, diameterBottom: 0.08, tessellation: 8 }, scene), 0.052),
     at(MeshBuilder.CreateCylinder("base", { height: 0.014, diameter: 0.075, tessellation: 8 }, scene), -0.047),
-    at(MeshBuilder.CreateTorus("handle", { diameter: 0.045, thickness: 0.006, tessellation: 12 }, scene), 0.075, Math.PI / 2),
+    at(MeshBuilder.CreateTorus("handle", { diameter: HANDLE.diameter, thickness: HANDLE.thickness, tessellation: 12 }, scene), HANDLE.y, Math.PI / 2),
   ], true)!;
   frame.name = "lantern-frame";
   frame.material = frameMat;
   frame.parent = glass;
-  glass.parent = beaver.root;
-  glass.position.copyFrom(HIP);
+  glass.rotationQuaternion = null;
+  const paw = beaver.leftHand, chain: TransformNode[] = [];
+  for (let n: Node | null = paw; n; n = n.parent) if (n instanceof TransformNode) chain.unshift(n);
+  const ahead = new Vector3();
+  /** Below the left paw as it is in this picture (the bones were just posed), upright, facing the beaver's way. */
+  const hang = () => {
+    for (const node of chain) node.computeWorldMatrix(true);
+    glass.position.copyFrom(paw.getAbsolutePosition()).y -= HANG;
+    Vector3.TransformNormalToRef(Vector3.Forward(), beaver.root.getWorldMatrix(), ahead);
+    glass.rotation.y = Math.atan2(ahead.x, ahead.z);
+    glass.computeWorldMatrix(true);
+  };
   for (const mesh of [glass, frame]) mesh.isPickable = false;
   const light = new PointLight("lantern-light", Vector3.Zero(), scene);
   light.parent = glass;
@@ -55,6 +72,7 @@ export const create: CreateFeature = ({ stage: { scene }, beaver, player, settin
     update() {
       const on = smoothstep(0.08, 0.5, sky.dark), shown = !player.diving;
       glass.setEnabled(shown);
+      if (shown) hang();
       glassMat.emissiveColor.copyFrom(WARM).scaleInPlace(GLOW * on);
       light.intensity = shown ? LIGHT * on : 0;
       daylight.lantern.at.copyFrom(glass.getAbsolutePosition());

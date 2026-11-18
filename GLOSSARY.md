@@ -26,6 +26,10 @@ _Avoid_: construction zone, build area
 A piece of wood the beaver can carry and build with. Every tree gnawed into wood yields sticks.
 _Avoid_: log, branch, wood item
 
+**Lantern**:
+The light the beaver carries in its left hand, hanging by its handle. It glows from dusk until dawn. The right hand stays free for sticks.
+_Avoid_: lamp, torch, light
+
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
 _Avoid_: base, house, storage

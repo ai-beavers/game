@@ -1,11 +1,12 @@
 // Sky watch: a day passing, the lantern at night, deer at dusk, rain and fog.
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { deerHours, type Deer } from "../../life/brain.ts";
 import { dayAt } from "../../sky/clock.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 export const skyWatch = (kit: Kit): Station[] => {
-  const { player, world, stage, live, wait, until, walkTo, flat, expect, sky } = kit;
+  const { player, world, stage, beaver, live, wait, until, walkTo, flat, expect, sky } = kit;
   return [
     ["A day passes", async () => {
       const s = sky(), hour = s.hour, running = s.running;
@@ -14,8 +15,8 @@ export const skyWatch = (kit: Kit): Station[] => {
         for (const h of [19.3, 20.5, 23, 5.6]) { s.setHour(h); await wait(3.5); if (h === 23) expect(s.dark > 0.5, `dark ${s.dark.toFixed(2)} at 23:00`); }
       } finally { s.setHour(hour); s.running = running; }
     }, "Sky watch"],
-    // A viewer's wish: at night the beaver carries a lantern at its left hip that lights the ground around it
-    // (src/features/lantern); by day it is out. Live it plays only at night and never sets the clock.
+    // A viewer's wish: at night the beaver carries a lantern in its left hand that lights the ground around it
+    // (src/features/lantern), the right hand free for sticks; by day it is out. Live it plays only at night and never sets the clock.
     ["Lantern at night", async () => {
       const s = sky(), { scene } = stage, light = () => scene.getLightByName("lantern-light") ?? skip("no lantern");
       if (live && s.dark <= 0.5) return skip(`not dark enough for the lantern at ${s.hour.toFixed(1)} h`);
@@ -25,7 +26,16 @@ export const skyWatch = (kit: Kit): Station[] => {
         await walkTo(world.spawn.x + 2.5, world.spawn.z + 2);
         // On low quality the light is off and the glass glows alone.
         if (light().isEnabled()) await until(() => light().intensity > 0, 3, `no light from the lantern at ${s.hour.toFixed(1)} h`);
-        expect(!!scene.getMeshByName("lantern")?.isEnabled(), "the beaver carries no lantern at night");
+        const lantern = scene.getMeshByName("lantern");
+        expect(!!lantern?.isEnabled(), "the beaver carries no lantern at night");
+        // In the left paw, wherever the walk left it: near the left hand, across the beaver from the stick hand.
+        const at = lantern!.getAbsolutePosition(), off = Vector3.Distance(at, beaver.leftHand.getAbsolutePosition());
+        expect(off < 0.15, `the lantern hangs ${off.toFixed(2)} m from the beaver's left hand, not in it`);
+        const centre = beaver.root.getAbsolutePosition();
+        const side = Vector3.TransformNormal(Vector3.Right(), beaver.root.getWorldMatrix()).normalize();
+        const across = (p: Vector3) => Vector3.Dot(p.subtract(centre), side);
+        const left = across(at), right = across(beaver.hand.getAbsolutePosition());
+        expect(left * right < 0, `the lantern (${left.toFixed(2)} m sideways) is on the stick hand's side (${right.toFixed(2)} m)`);
         if (live) return;
         s.setHour(13);
         await until(() => light().intensity === 0, 3, `the lantern still shines at noon (${light().intensity.toFixed(2)})`);
