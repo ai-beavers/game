@@ -9,6 +9,8 @@
 // A tree can be handed over to another part (world.trees[i].hide() / .clear(): the build feature fells them), and
 // loose things added and taken away (world.addLoose / removeLoose).
 import { Vector3, Quaternion, Matrix } from "@babylonjs/core/Maths/math.vector.js";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
+import type { Plane } from "@babylonjs/core/Maths/math.plane.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { CreateWorld, Props, Stick, WorldTree } from "../contracts.ts";
 import { RAPIER, type Stage } from "../engine.ts";
@@ -40,12 +42,16 @@ function scatter(templates: TransformNode[], spots: Spot[], sink: number) {
   return (i: number) => roots[i]!.dispose();
 }
 
-/** Far trees, reeds and bushes never move or disappear individually. */
+/** Far trees, reeds and bushes never move or disappear individually. One batch per template part; `cull(planes)`
+ *  keeps in each batch only the instances whose bounding sphere meets that frustum, before each pass that draws them
+ *  (the camera's, the sun's shadow map): most of the ring lies behind the camera or outside the shadow map. The
+ *  matrices are uploaded again only when the set changes. A batch's own bounds stay those of all its instances. */
 function scatterBackdrop(templates: TransformNode[], spots: Spot[], sink: number) {
-  templates.forEach((template, variant) => {
-    const placements = spots.filter(spot => spot.variant % templates.length === variant).map(spot => placement(spot, sink));
-    if (!placements.length) return;
-    for (const source of meshes(template)) {
+  const groups = templates.map((template, variant) => {
+    const chosen = spots.filter(spot => spot.variant % templates.length === variant), placements = chosen.map(spot => placement(spot, sink));
+    const { center, size } = bounds(template), radius = size.length() / 2;
+    const spheres = placements.map((place, i) => ({ center: Vector3.TransformCoordinates(center, place), radius: radius * chosen[i]!.scale }));
+    const parts = placements.length ? meshes(template).map(source => {
       const batch = source.clone(source.name + " backdrop", null, true);
       batch.parent = null;
       batch.position.setAll(0);
@@ -53,13 +59,34 @@ function scatterBackdrop(templates: TransformNode[], spots: Spot[], sink: number
       batch.rotationQuaternion = Quaternion.Identity();
       batch.scaling.setAll(1);
       batch.setEnabled(true);
-      const matrices = new Float32Array(placements.length * 16);
+      const all = new Float32Array(placements.length * 16);
       const local = source.computeWorldMatrix(true);
-      placements.forEach((place, i) => local.multiply(place).copyToArray(matrices, i * 16));
-      batch.thinInstanceSetBuffer("matrix", matrices, 16, true);
+      placements.forEach((place, i) => local.multiply(place).copyToArray(all, i * 16));
+      const data = all.slice(); // the batch keeps this array and draws its first thinInstanceCount matrices
+      batch.thinInstanceSetBuffer("matrix", data, 16, false);
       batch.receiveShadows = true;
-    }
+      return { batch, all, data };
+    }) : [];
+    return { spheres, parts, shown: new Uint8Array(spheres.length).fill(1) };
   });
+  const outside = (s: { center: Vector3; radius: number }, planes: Plane[]) => planes.some(p => p.dotCoordinate(s.center) < -s.radius);
+  return function cull(planes: Plane[]) {
+    for (const { spheres, parts, shown } of groups) {
+      let changed = false;
+      spheres.forEach((s, i) => {
+        const show = outside(s, planes) ? 0 : 1;
+        if (shown[i] !== show) { shown[i] = show; changed = true; }
+      });
+      if (!changed) continue;
+      for (const { batch, all, data } of parts) {
+        let n = 0;
+        shown.forEach((show, i) => { if (show) data.set(all.subarray(i * 16, i * 16 + 16), 16 * n++); });
+        batch.thinInstanceCount = n;
+        batch.isVisible = n > 0;
+        batch.thinInstanceBufferUpdated("matrix");
+      }
+    }
+  };
 }
 
 export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
@@ -74,7 +101,7 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
 
   // Trees: drawn instanced; a trunk cylinder each, as thick as the template's trunk at knee height.
   const hideTree = scatter(props.tree, layout.tree, 0.12);
-  scatterBackdrop(props.tree, layout.farTree, 0.2);
+  const backdrop = [scatterBackdrop(props.tree, layout.farTree, 0.2)];
   const trees: WorldTree[] = layout.tree.map((s, k) => {
     const knee = vertices(pick(props.tree, s)).filter((p) => p.y > 0.6 && p.y < 1.4);
     const radius = Math.max(0.12, Math.min(0.5, ...knee.map((p) => Math.hypot(p.x, p.z)))) * s.scale; // the trunk, not low branches
@@ -94,8 +121,21 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
       if (desc) fixed(desc);
     }
   }
-  scatterBackdrop(props.reed, layout.reed, 0.05);
-  scatterBackdrop(bushes(scene), layout.bush, 0.35);
+  backdrop.push(scatterBackdrop(props.reed, layout.reed, 0.05), scatterBackdrop(bushes(scene), layout.bush, 0.35));
+  // The camera's set once it is placed for the picture; the sun's while its shadow map is drawn, then the camera's again.
+  const sunPlanes = Frustum.GetPlanes(Matrix.Identity()), viewPlanes = Frustum.GetPlanes(Matrix.Identity());
+  const cull = (planes: Plane[]) => { for (const each of backdrop) each(planes); };
+  let map: unknown = null;
+  scene.onBeforeCameraRenderObservable.add(() => {
+    const shadows = light.sun.getShadowGenerator(), next = shadows?.getShadowMap();
+    if (shadows && next && next !== map) { // a new map when its size changes
+      next.onBeforeRenderObservable.add(() => { Frustum.GetPlanesToRef(shadows.getTransformMatrix(), sunPlanes); cull(sunPlanes); });
+      next.onAfterRenderObservable.add(() => cull(viewPlanes));
+    }
+    map = next;
+    Frustum.GetPlanesToRef(scene.getTransformMatrix(), viewPlanes);
+    cull(viewPlanes);
+  });
 
   // Behind the thicket on the bank, out of sight: a ring of walls, in case something gets up the bank.
   for (let a = 0; a < Math.PI * 2; a += Math.PI / 24) {
