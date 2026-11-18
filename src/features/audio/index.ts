@@ -8,7 +8,7 @@
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
 // night. Without it the day stays the tuned afternoon.
 //
-//   createGame(canvas, [create])      starts with the first key press or click (browsers allow sound only then)
+//   createGame(canvas, [create])      starts at once where autoplay is allowed, else with the first key press or click
 //
 // Follows settings.volume / mute / music, goes quiet while stage.paused. `played` counts every sound started, by
 // name (window.audio.played in the game; tools/listen.ts renders the sounds offline). The recipes live in sounds.ts, buses and lasting sounds in mix.ts.
@@ -69,6 +69,9 @@ export const create: CreateFeature = (game) => {
   Object.assign(window, { audio: { played } }); // for tools: what has started, by name
   addEventListener("keydown", unlock);
   addEventListener("pointerdown", unlock);
+  // Where sound may start without a key press (OBS's browser source), it starts now: the live bot presses no keys.
+  // Elsewhere the context stays suspended until the first key press or click resumes it.
+  unlock();
 
   /** When each sound last started: the same sound twice within SAME seconds plays once (a world caught up after a
    *  reconnect replays every bite and stick in one frame; ten bites stacked are just louder). */
