@@ -15,7 +15,7 @@
 //   carry    the right arm holds the stick in front of the chest, over all of the above
 //   reach    the left paw over the shoulder to the backpack (motion.reachBack), over all of the above, left arm only
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
-import { WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
+import { BACKPACK, WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
 import type { SwimMotion } from "../player/state.ts";
 import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
@@ -48,8 +48,8 @@ const ARMS: Bone[] = ["upper_arm_L", "forearm_L", "hand_L", "upper_arm_R", "fore
 const RIGHT_ARM: Bone[] = ["upper_arm_R", "forearm_R", "hand_R"];
 const LEFT_ARM: Bone[] = ["upper_arm_L", "forearm_L", "hand_L"];
 /** Where the left finger tips go reaching back for the lantern: the backpack's opening, over the left shoulder, as
- *  onChest() takes it (src/features/lantern puts the backpack there). The elbow points up and out. */
-export const BACKPACK_REACH: Vec = [0.05, 0.05, -0.2];
+ *  onChest() takes it. The elbow points up and out. */
+const BACKPACK_REACH: Vec = [0.05, BACKPACK.y + BACKPACK.height * 0.4, BACKPACK.z - 0.03];
 const REACH_POLE: Vec = [0.6, 1, 0.5];
 /** A number 0 … 1 that looks random but is the same for the same n. */
 /** x, but bending smoothly into ±limit: a hard clamp turns a fast rise into a kink. */

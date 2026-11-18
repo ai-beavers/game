@@ -9,12 +9,11 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { BACKPACK } from "../../contracts.ts";
 
 // linear, as the vertex colours are taken: a muted olive canvas, dark leather, a rust bedroll
 const CANVAS = new Color3(0.13, 0.12, 0.065), LEATHER = new Color3(0.07, 0.03, 0.012), ROLL = new Color3(0.2, 0.05, 0.025);
-/** In the chest bone's space (x to the beaver's left, y up, z ahead, from the chest bone's head): on the back. */
-export const BACKPACK_AT = { y: -0.03, z: -0.17 };
-const W = 0.17, H = 0.2, D = 0.085; // m: the bag
+const W = 0.17, H = BACKPACK.height, D = 0.085; // m: the bag
 
 export function makeBackpack(scene: Scene, chest: TransformNode) {
   const tint = (mesh: Mesh, colour: Color3) => {
@@ -50,7 +49,7 @@ export function makeBackpack(scene: Scene, chest: TransformNode) {
   material.roughness = 0.9;
   pack.material = material;
   pack.parent = chest;
-  pack.position.set(0, BACKPACK_AT.y, BACKPACK_AT.z);
+  pack.position.set(0, BACKPACK.y, BACKPACK.z); // on the back
   pack.rotation.x = 0.08; // the top leaning back a little onto the shoulders
   pack.isPickable = false;
   pack.receiveShadows = true; // and so it throws them (src/light.ts)

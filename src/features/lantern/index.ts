@@ -22,7 +22,7 @@ import type { CreateFeature } from "../../game.ts";
 import { daylightOf, LANTERN_REACH } from "../../light.ts";
 import { smoothstep } from "../../world/noise.ts";
 import { makeBackpack } from "./backpack.ts";
-import { newStow, stepStow } from "./stow.ts";
+import { busy, newStow, stepStow } from "./stow.ts";
 
 const WARM = new Color3(1, 0.5, 0.17); // deeper than candlelight: the night's grade takes colour out of the midtones
 const HANDLE = { y: 0.075, diameter: 0.045, thickness: 0.006 }; // m: the ring on top of the glass that the paw holds
@@ -51,8 +51,7 @@ export const create: CreateFeature = ({ stage, beaver, player, settings, sky }) 
   frame.material = frameMat;
   frame.parent = glass;
   glass.rotationQuaternion = null;
-  const chest = beaver.root.getDescendants(false, (n) => n.name === "chest")[0] as TransformNode | undefined;
-  if (chest) makeBackpack(scene, chest);
+  makeBackpack(scene, beaver.chest);
   const stow = newStow(sky.dark), motion = player.motion;
   const paw = beaver.leftHand, chain: TransformNode[] = [];
   for (let n: Node | null = paw; n; n = n.parent) if (n instanceof TransformNode) chain.unshift(n);
@@ -78,9 +77,7 @@ export const create: CreateFeature = ({ stage, beaver, player, settings, sky }) 
   scene.onDisposeObservable.add(settings.on(({ quality }) => { lit = quality !== "low"; light.setEnabled(lit); }));
   return {
     update(dt) {
-      // busy: an action under way (the tail slap too), in the air, swimming or diving; then a switch waits
-      const busy = motion.action !== "none" || motion.actionProgress > 0 || !motion.grounded || motion.swimming > 0 || player.diving;
-      if (!stage.paused) stepStow(stow, dt, sky.dark, busy);
+      if (!stage.paused) stepStow(stow, dt, sky.dark, busy(motion, player.diving));
       motion.reachBack = stow.reach;
       const on = smoothstep(0.08, 0.5, sky.dark), shown = stow.drawn && !player.diving;
       glass.setEnabled(shown);

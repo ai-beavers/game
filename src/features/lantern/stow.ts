@@ -2,11 +2,13 @@
 // backpack and comes back down with the lantern, at dawn the same in reverse. Pure logic; the lantern feature feeds
 // it the sky's dark and whether the beaver is busy, and draws what it says.
 //
-//   const s = newStow(sky.dark);   each frame: stepStow(s, dt, sky.dark, busy);  s.drawn, s.reach (→ Motion.reachBack)
+//   const s = newStow(sky.dark);   each frame: stepStow(s, dt, sky.dark, busy(motion, diving));  s.drawn, s.reach (→ Motion.reachBack)
+import type { Motion } from "../../contracts.ts";
+import { smoothstep } from "../../world/noise.ts";
 
 /** Out above OUT, back in below IN: between the two it keeps what it did, so a slow dusk never flips it to and fro.
  *  The sky's dark follows the sun only, so rain and fog never bring the lantern out. */
-export const OUT = 0.15, IN = 0.05;
+const OUT = 0.15, IN = 0.05;
 const RISE = 0.5, HOLD = 0.1, FALL = 0.6; // s: the paw up to the backpack, there, and back down: 1.2 s in all
 
 export interface Stow {
@@ -21,7 +23,11 @@ export interface Stow {
 /** At the start of a game: out at night, in by day, no motion. */
 export const newStow = (dark: number): Stow => ({ drawn: dark > OUT, reach: 0 });
 
-const ease = (x: number) => x * x * (3 - 2 * x);
+const ease = (x: number) => smoothstep(0, 1, x);
+
+/** Busy, so a switch waits: an action under way (the tail slap too), in the air, swimming or diving. */
+export const busy = (m: Motion, diving: boolean) =>
+  m.action !== "none" || m.actionProgress > 0 || !m.grounded || m.swimming > 0 || diving;
 
 export function stepStow(s: Stow, dt: number, dark: number, busy: boolean): void {
   if (s.at === undefined) {
@@ -29,7 +35,7 @@ export function stepStow(s: Stow, dt: number, dark: number, busy: boolean): void
     if (wanted === s.drawn || busy) return;
     s.at = 0;
   } else if (busy) { // the rest of the motion would fight another one: done at once
-    s.drawn = !s.drawn;
+    if (s.at < RISE) s.drawn = !s.drawn; // past the backpack, the lantern has already changed hands
     s.at = undefined;
     s.reach = 0;
     return;

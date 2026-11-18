@@ -1,7 +1,8 @@
 // When the lantern comes out of the backpack and goes back, as a player sees it: whether it is drawn, and how far
 // the left paw has reached back (Motion.reachBack). Frames of 1/60 s.
 import { expect, test } from "bun:test";
-import { newStow, stepStow } from "./stow.ts";
+import { newMotion } from "../../player/state.ts";
+import { busy, newStow, stepStow } from "./stow.ts";
 
 const dt = 1 / 60;
 /** Runs `seconds` with the given dark and busy; returns the highest reach seen and whether it ended drawn. */
@@ -48,4 +49,21 @@ test("a busy beaver waits, and a switch it becomes busy in finishes at once", ()
   expect(s.reach).toBeGreaterThan(0);
   stepStow(s, dt, 0.5, true);
   expect([s.drawn, s.reach]).toEqual([true, 0]);
+});
+
+test("busy after the paw has been to the backpack, the switch still finishes the way it was going, once", () => {
+  const s = newStow(0);
+  play(s, 0.8, 0.5); // the lantern out, the paw on its way down
+  expect(s.drawn).toBe(true);
+  stepStow(s, dt, 0.5, true);
+  expect([s.drawn, s.reach]).toEqual([true, 0]);
+  expect(play(s, 3, 0.5)).toEqual({ most: 0, drawn: true, reach: 0 }); // not again after landing
+});
+
+test("busy: an action, the tail slap, in the air, swimming or diving; standing on the ground is not", () => {
+  const ground = { ...newMotion(), grounded: true };
+  expect(busy(ground, false)).toBe(false);
+  for (const m of [{ ...ground, action: "gnaw" as const }, { ...ground, actionProgress: 0.4 }, { ...ground, grounded: false },
+    { ...ground, swimming: 1 }]) expect(busy(m, false)).toBe(true);
+  expect(busy(ground, true)).toBe(true);
 });
