@@ -37,18 +37,13 @@ body.photo #beaver-hud { display: none; }
 #beaver-hud.touchy .pause { display: none; }
 #beaver-hud .fps { font: 12px/1 ui-monospace, Menlo, monospace; padding: 7px 9px; color: var(--dim); }
 
-/* top right: the map, and under it the sky and the goals */
+/* top right: the map, and under it the sky and the goals. The map's button only places it, takes clicks, taps and
+   focus: three.js draws the map, its rim, shadow, focus ring and N there (map-display.ts), so the button shows nothing. */
 #beaver-hud .map { position: absolute; right: var(--right); top: calc(var(--edge) + env(safe-area-inset-top)); width: var(--map); height: var(--map); padding: 0;
-  border-radius: 50%; overflow: hidden; pointer-events: auto; cursor: pointer; border: 2px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35); background: #4a5f36; z-index: 1;
+  border-radius: 50%; pointer-events: auto; cursor: pointer; border: 2px solid transparent; background: none; outline: none; z-index: 1;
   transition: width 0.25s, height 0.25s, right 0.25s, top 0.25s; }
-#beaver-hud .map canvas { width: 100%; height: 100%; display: block; }
 #beaver-hud .map.large { width: min(72vmin, 560px); height: min(72vmin, 560px);
   right: calc(50% - min(36vmin, 280px)); top: calc(50% - min(36vmin, 280px)); }
-/* north, on the large map only: a small N at the top edge */
-#beaver-hud .map-n { display: none; position: absolute; left: 50%; top: 6px; transform: translateX(-50%); font-size: 14px; font-weight: 600;
-  line-height: 1; color: var(--text); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.6); }
-#beaver-hud .map.large .map-n { display: block; }
 #beaver-hud .side { position: absolute; right: var(--right); top: calc(var(--edge) + env(safe-area-inset-top) + var(--map) + 8px);
   display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 #beaver-hud:has(.map.large) .side { opacity: 0; }
