@@ -13,6 +13,7 @@ import { BUTTON, deadZone, down, firstPad, padInput } from "./pad.ts";
 import { touchControls } from "./touch.ts";
 
 const TURN_YAW = 2.6, TURN_PITCH = 1.6; // rad/s with the right stick fully pushed
+const PIXELS = { low: 1, medium: 1.5, high: 2 }; // most canvas pixels per CSS pixel on a touch screen, per settings.quality
 
 /** The pause menu listens for Escape; Start and the pause button send it. */
 const pause = () => {
@@ -36,6 +37,9 @@ export const create: CreateFeature = (game) => {
   const touchScreen = navigator.maxTouchPoints > 0 || "ontouchstart" in window || new URLSearchParams(location.search).has("touch");
   const touch = touchScreen ? touchControls(game, pause) : undefined;
   if (touch) player.keys.add(touch);
+  // A phone screen is 3 px per CSS px; engine.ts draws at most 2 (2.25× fewer pixels than 3, hardly visible at arm's
+  // length). Lower picture quality draws fewer still: 1.5 costs 0.56× of 2, and 1 a quarter, for a softer picture.
+  if (touchScreen) settings.on(({quality}) => stage.engine.setHardwareScalingLevel(1 / Math.min(devicePixelRatio, PIXELS[quality])));
 
   // The mouse turns the camera in player/camera.ts, which does not know the settings: tell it.
   settings.on((values) => { player.camera.invertY = values.invertY; });
