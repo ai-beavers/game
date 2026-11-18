@@ -71,8 +71,9 @@ export interface PlayerControls extends Player {
   offer(): Offer | undefined;
 }
 
-/** What the context key would do: pick up, drop, gnaw (a standing tree), split (gnaw a lying tree into wood), build. */
-export interface Offer { action: "pickup" | "drop" | "gnaw" | "build" | "split"; text: string }
+/** What the context key would do: pick up, drop, gnaw (a standing tree), split (gnaw a lying tree into wood), build,
+ *  use (talk to someone: the Shopkeeper, src/features/shop). */
+export interface Offer { action: "pickup" | "drop" | "gnaw" | "build" | "split" | "use"; text: string }
 
 /** Lasting actions another part runs with the context key (src/features/build: gnaw, build). */
 export interface Actor {

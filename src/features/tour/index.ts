@@ -45,9 +45,10 @@ import { controls } from "./stations/controls.ts";
 import { firstSteps } from "./stations/first-steps.ts";
 import { hat } from "./stations/hat.ts";
 import { sitAndCrawl } from "./stations/sit-crawl.ts";
+import { shopping } from "./stations/shop.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, dam, pondPatrol, anger, hat, sitAndCrawl, skyWatch, hud, controls, firstSteps];
+const STATIONS = [movement, dam, pondPatrol, anger, hat, sitAndCrawl, shopping, skyWatch, hud, controls, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
