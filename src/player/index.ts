@@ -201,7 +201,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     before.copyFrom(feet);
     facingBefore = facing;
     keys.read(input);
-    // Under water: no tail slap (it is the alarm on the surface) and no gnawing or building; pickup and drop work.
+    // Under water: no tail slap (it is the alarm on the surface); pickup and drop work, and the actor offers only what
+    // can be done there (build/index.ts: wedging a stick into the food cache, no gnawing).
     stepSlap(slap, dt, !!input.slap && !slapHeld, (grounded || afloat) && act.action === "none" && !under);
     slapHeld = !!input.slap;
     const pressed = input.act && !actHeld && slap.progress === 0; // E waits while the tail is up
@@ -210,7 +211,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // The carry sequence.
     if (act.action === "none" && pressed && !act.carrying) target = grounded || afloat ? inReach() : undefined;
     // A lasting action of another part (gnaw, build) when there is nothing to pick up; it comes before a drop.
-    const offer = act.action === "none" && pressed && !target && (grounded || afloat) && !under ? actor?.begin(act.carrying) : undefined;
+    const offer = act.action === "none" && pressed && !target && (grounded || afloat) ? actor?.begin(act.carrying) : undefined;
     if (offer) { act.action = offer.action; act.progress = 0; aim = offer.face; }
     else if (act.action === "gnaw" || act.action === "build") {
       const progress = actor?.step(dt, input.act);
@@ -239,7 +240,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     if (!afloat && depth > FLOAT_DEPTH) afloat = true;
     else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02) afloat = false;
     if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
-    const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && act.action !== "build" && slap.progress === 0, afloat, under);
+    const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && (act.action !== "build" || under) && slap.progress === 0, afloat, under);
     if (afloat) {
       // m/s: diving, down (or up with Space) but never up out of it; else up towards floating depth, calmly from deep
       const goal = diving ? Math.min(input.jump ? DIVE_SPEED : -DIVE_SPEED, (depth - DIVE_TOP) * 4) : Math.min(RISE, (depth - HOLD_DEPTH) * 4);
@@ -308,7 +309,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     offer() {
       if (act.action !== "none" || !(grounded || afloat)) return undefined; // busy, or in the air: E does nothing
       if (!act.carrying && inReach()) return { action: "pickup", text: "Pick up stick" };
-      return (under ? undefined : actor?.offer?.(act.carrying)) ?? (act.carrying ? { action: "drop", text: "Drop" } : undefined);
+      return actor?.offer?.(act.carrying) ?? (act.carrying ? { action: "drop", text: "Drop" } : undefined);
     },
     handOver() {
       const stick = carried?.stick;

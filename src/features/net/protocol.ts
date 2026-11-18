@@ -9,7 +9,7 @@
 //
 // Every message is JSON with a type `t`. The server never takes a player id from a client: it adds the sender's own.
 import type { Action, Motion } from "../../contracts.ts";
-import { apply, BITES_TO_SPLIT, bitesToFell, live, LODGE, newState, REGROW, SLOTS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
+import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
 export const MAX_PLAYERS = 16;
@@ -131,7 +131,7 @@ const place = (v: unknown): v is Place => list(v, 8) && int(v[0], 0, MAX_THINGS 
   && v.slice(4).every((q) => num(q, -1.01, 1.01));
 
 /** Changes a message may hold: more than a whole world needs (a tree grown back and felled again about 34, the
- *  world's 13 trees about 500 with SLOTS + LODGE + 1). */
+ *  world's 13 trees about 520 with the STICKS of dam, lodge and cache and the find). */
 export const MAX_CHANGES = 600;
 const EPOCH = /^[a-z0-9]{1,16}$/;
 const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks
@@ -142,7 +142,7 @@ export function parseChange(v: unknown): BuildChange | undefined {
   if (!v || typeof v !== "object") return;
   const c = v as Record<string, unknown>, tree = c.tree;
   if (c.type === "find") return { type: "find" };
-  if (c.type === "place") return int(c.slot, 0, SLOTS + LODGE - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
+  if (c.type === "place") return int(c.slot, 0, STICKS - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
   if (!int(tree, 0, MAX_TREES - 1)) return;
   switch (c.type) {
     case "bite": case "grow": return { type: c.type, tree };

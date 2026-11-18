@@ -1,7 +1,8 @@
 // The build feature: what a beaver does. Hold E at a tree to gnaw it until it falls; hold E at the fallen tree to
 // break it into logs and sticks; carry sticks to the building site by the pond and press E there to build each into
 // the dam (30 sticks). A small goals panel leads through it; the pond rises with each stick, and at the end a lodge
-// rises out of it, and the work goes on there: swim sticks out to it until it stands tall. While a stick is in the hand,
+// rises out of it, and the work goes on there: swim sticks out to it until it stands tall. Then the food cache: dive
+// sticks down to the pile on the bed beside the lodge and press E there to wedge each in (12). While a stick is in the hand,
 // a glowing stick shows where it goes. A tree gone into wood grows back on its stump (rules.ts REGROW): a sapling
 // that grows into a tree to fell again; its wood, when split, is the same pieces as before, those not in the dam
 // gathered from wherever they lie.
@@ -13,8 +14,9 @@
 // (remote false); a change from another player comes back in the same event with remote true.
 //
 // Debug, for bun shot --eval (window.build): build.at(i) stands at tree i facing it · build.fell(i) · build.split(i)
-// · build.fill(n) puts n sticks into the dam (past 30: onto the lodge) · build.age(i, s) makes tree i's wood gone s
-// seconds longer ago (regrowth sooner) · build.toSite() stands at the dam with a stick in hand · build.reset()
+// · build.fill(n) puts n sticks into the dam (past 30: onto the lodge, past 40: into the cache) · build.age(i, s) makes
+// tree i's wood gone s seconds longer ago (regrowth sooner) · build.toSite() stands at the dam with a stick in hand ·
+// build.toCache() swims on the pond over the food cache · build.reset()
 // forgets everything and reloads · build.state · build.trees() lists them by distance · build.keepLying() keeps where
 // the loose wood lies now (it is also kept every few seconds and when the page goes).
 import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
@@ -25,7 +27,7 @@ import type { CreateFeature } from "../../game.ts";
 import type { Offer } from "../../player/index.ts";
 import { waterOf } from "../../world/water.ts";
 import {
-  apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, DAM, goals, growth, live, load, LODGE, lodgeGrow, pondLevel, pondRise, REGROW, SLOTS, woodFrom,
+  apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, DAM, goals, growth, live, load, LODGE, lodgeGrow, pondLevel, pondRise, REGROW, SLOTS, STICKS, woodFrom,
 } from "./rules.ts";
 import { fxOf } from "../fx/index.ts";
 import { createDam } from "./dam.ts";
@@ -130,8 +132,9 @@ export const create: CreateFeature = (game) => {
     }
     if (count === SLOTS + LODGE) {
       fxOf(stage.scene)?.splash(dam.lodgeAt, 2);
-      panel.praise("The lodge stands!", "A home for every beaver in the pond.", 8);
+      panel.praise("The lodge stands!", "A home for every beaver in the pond: now dive sticks down to stock the food cache beside it.", 8);
     }
+    if (count === STICKS) panel.praise("The cache is stocked!", "Food under the ice for the winter, for every beaver in the lodge.", 8);
   };
 
   const react = (c: BuildChange, handed?: TransformNode) => {
@@ -262,12 +265,17 @@ export const create: CreateFeature = (game) => {
   };
   // Swimming beside it, or standing on its foot: the lodge is 2.5 m across where it meets the water.
   const atLodge = () => Math.hypot(feet.x - dam.lodgeAt.x, feet.z - dam.lodgeAt.z) < 2;
+  // Head under water (as player/index.ts counts it): only the cache can be built there, nothing gnawed.
+  const under = () => (player.waterLevel ?? -Infinity) - feet.y > 0.5;
+  // Diving down by the pile: beside it, and within reach above the bed.
+  const atCache = () => Math.hypot(feet.x - dam.cacheAt.x, feet.z - dam.cacheAt.z) < 1.4 && feet.y < dam.cacheAt.y + 1.6;
 
-  /** What E starts here: building in the carried stick (into the dam, or onto the lodge once the dam holds), or
-   *  gnawing the nearest tree (standing, or lying: split). */
+  /** What E starts here: building in the carried stick (into the dam, onto the lodge once the dam holds, under water
+   *  into the cache once the lodge stands), or gnawing the nearest tree (standing, or lying: split). */
   const choice = (carrying: boolean) => {
-    const n = state.dam.length;
-    if (carrying) return n >= SLOTS + LODGE || flight || !(n < SLOTS ? atDam() : atLodge()) ? undefined : { kind: "build" as const, lodge: n >= SLOTS };
+    const n = state.dam.length, cache = n >= SLOTS + LODGE;
+    if (under()) return carrying && cache && n < STICKS && !flight && atCache() ? { kind: "build" as const, text: "Wedge into cache" } : undefined;
+    if (carrying) return cache || flight || !(n < SLOTS ? atDam() : atLodge()) ? undefined : { kind: "build" as const, text: n >= SLOTS ? "Build onto lodge" : "Build into dam" };
     const target = gnawTarget();
     return target && { kind: "gnaw" as const, target, lying: live(state.trees[target.tree])?.fell !== undefined };
   };
@@ -286,7 +294,7 @@ export const create: CreateFeature = (game) => {
     offer(carrying): Offer | undefined {
       const c = choice(carrying);
       if (!c) return undefined;
-      if (c.kind === "build") return { action: "build", text: c.lodge ? "Build onto lodge" : "Build into dam" };
+      if (c.kind === "build") return { action: "build", text: c.text };
       return c.lying ? { action: "split", text: "Gnaw into wood" } : { action: "gnaw", text: "Gnaw tree" };
     },
     step(dt, held) {
@@ -365,11 +373,16 @@ export const create: CreateFeature = (game) => {
         return t?.gone !== undefined && (Date.now() - t.gone) / 1000;
       },
       saplings,
-      fill(n: number) { while (state.dam.length < Math.min(SLOTS + LODGE, n)) commit({ type: "place", slot: state.dam.length, stick: `d${state.dam.length}` }); return state.dam.length; },
+      fill(n: number) { while (state.dam.length < Math.min(STICKS, n)) commit({ type: "place", slot: state.dam.length, stick: `d${state.dam.length}` }); return state.dam.length; },
       toSite() {
         const o = dam.frame.origin.add(dam.frame.across.scale(-1.25));
         player.teleport(o.x, world.heightAt(o.x, o.z), o.z, Math.atan2(dam.frame.across.x, dam.frame.across.z));
         player.camera.yaw = Math.atan2(dam.frame.across.x, dam.frame.across.z) + Math.PI + 0.7;
+      },
+      toCache() {
+        const o = dam.cacheAt, face = Math.atan2(dam.lodgeAt.x - o.x, dam.lodgeAt.z - o.z);
+        player.teleport(o.x, world.waterLevel - 0.3, o.z, face);
+        player.camera.yaw = face + Math.PI;
       },
       trees: () => world.trees!.map((t, i) => ({ i, d: +Math.hypot(t.place.x - feet.x, t.place.z - feet.z).toFixed(1), r: +measure(t).radius.toFixed(2), trunk: +measure(t).trunk.toFixed(1), ...state.trees[i] })).sort((a, b) => a.d - b.d),
       reset() { removeEventListener("pagehide", keepLying); localStorage.removeItem(KEY); localStorage.removeItem(LOOSE_KEY); state = load(null); location.reload(); },
@@ -413,7 +426,7 @@ export const create: CreateFeature = (game) => {
         const to = dam.slot(flight.slot), e = flight.t * flight.t * (3 - 2 * flight.t);
         Vector3.LerpToRef(flight.from, to.position, e, flight.mesh.position).y += Math.sin(Math.PI * flight.t) * 0.15;
         Quaternion.SlerpToRef(flight.turn, to.quaternion, e, flight.mesh.rotationQuaternion!);
-        Vector3.LerpToRef(Vector3.One(), dam.laid, e, flight.mesh.scaling);
+        Vector3.LerpToRef(Vector3.One(), to.scaling, e, flight.mesh.scaling);
         if (flight.t >= 1) { dam.fit(flight.mesh, flight.slot); dam.freeze(flight.mesh); const slot = flight.slot; flight = undefined; placed(slot); }
       }
       const grow = lodgeGrow(state.dam.length);

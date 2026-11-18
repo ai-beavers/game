@@ -2,7 +2,7 @@
 // and the smoothing between updates.
 import { describe, expect, test } from "bun:test";
 import { newMotion } from "../../player/state.ts";
-import { apply, LODGE, newState, REGROW, SLOTS, type BuildChange } from "../build/rules.ts";
+import { apply, CACHE, LODGE, newState, REGROW, SLOTS, STICKS, type BuildChange } from "../build/rules.ts";
 import {
   admit, bucket, changesOf, clean, clientAddress, compact, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, NAME_LENGTH, packMotion,
   parseChange, parseClient, replay, restore, sameOrigin, sameWorld, shouldReload, stickId, uniqueName, unpackMotion, woodId, type ServerMessage, type Work,
@@ -187,7 +187,7 @@ describe("build changes", () => {
   test("leaves out what is unknown, out of range or malformed", () => {
     for (const bad of [{ type: "admin" }, { type: "bite" }, { type: "bite", tree: -1 }, { type: "bite", tree: 999 }, { type: "bite", tree: 1.5 },
       { type: "fell", tree: 1, direction: null }, { type: "fell", tree: 1, direction: 1e6 }, { ...rest, at: [1e9, 0, 0] }, { ...rest, turn: [0, 0, 2, 0] },
-      { ...rest, turn: [0, 0, 1] }, { type: "place", slot: SLOTS + LODGE, stick: "w1" }, { type: "place", slot: 0, stick: "<b>" },
+      { ...rest, turn: [0, 0, 1] }, { type: "place", slot: STICKS, stick: "w1" }, { type: "place", slot: 0, stick: "<b>" },
       { type: "place", slot: 0, stick: "w1".repeat(20) }, { type: "place", slot: 0 }, { type: "grow" }, { type: "grow", tree: 99 }, null, 4, "find", ["bite", 1]]) {
       expect(parseChange(bad)).toBeUndefined();
     }
@@ -220,9 +220,9 @@ describe("build changes", () => {
     expect(admit(world, { type: "bite", tree: 1 })).toBe(false); // wood now
     expect(admit(world, { type: "place", slot: 0, stick: "w2" })).toBe(true);
     expect(admit(world, { type: "place", slot: 1, stick: "w2" })).toBe(false); // a stick only once
-    for (let k = 0; k < SLOTS + LODGE + 5; k++) admit(world, { type: "place", slot: 0, stick: `x${k}` });
-    expect(world.dam.length).toBe(SLOTS + LODGE); // the dam, then the lodge, then no more
-    expect(parseChange({ type: "place", slot: SLOTS + LODGE - 1, stick: "w3" })).toEqual({ type: "place", slot: SLOTS + LODGE - 1, stick: "w3" });
+    for (let k = 0; k < STICKS + 5; k++) admit(world, { type: "place", slot: 0, stick: `x${k}` });
+    expect(world.dam.length).toBe(SLOTS + LODGE + CACHE); // the dam, then the lodge, then the cache, then no more
+    expect(parseChange({ type: "place", slot: STICKS - 1, stick: "w3" })).toEqual({ type: "place", slot: STICKS - 1, stick: "w3" });
   });
 
   test("a state is the changes that make it, and back", () => {
@@ -320,14 +320,16 @@ describe("build changes", () => {
     const life = (tree: number, direction: number): BuildChange[] => [...Array(8).fill({ type: "bite", tree }), { type: "fell", tree, direction },
       { type: "rest", tree, at: [direction, 0, 1], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree }), { type: "split", tree }];
     let now = Date.now() - 12 * REGROW * 1000; // all of it in the past, as a kept file's times are
-    serve([{ type: "find" }, ...life(2, 0.5), { type: "bite", tree: 9 }], now);
+    // The dam and the lodge stand: from here the sticks go into the cache, two a cycle, until it is full.
+    serve([{ type: "find" }, ...life(2, 0.5), { type: "bite", tree: 9 }, ...Array.from({ length: SLOTS + LODGE }, (_, k): BuildChange => ({ type: "place", slot: k, stick: `d${k}` }))], now);
     for (let cycle = 1; cycle <= 10; cycle++) {
       now += REGROW * 1000;
       serve([{ type: "grow", tree: 2 }], now);
       serve(life(2, cycle).slice(0, 9), now); // felled again
       hear(); // the live one hears this much before the next part
       serve(life(2, cycle).slice(9), now); // and broken into wood: its earlier life is no longer needed
-      serve([{ type: "place", slot: 0, stick: `t2:${cycle % 8}` }], now);
+      serve([{ type: "place", slot: 0, stick: `t2:${cycle % 8}` }, { type: "place", slot: 0, stick: `x${cycle}` }], now);
+      expect(work.world.dam).toHaveLength(Math.min(STICKS, SLOTS + LODGE + 2 * cycle));
       hear();
       // A joiner now: the log holds the present world and no more; it is the world of the one who saw every change.
       expect(work.log).toHaveLength(changesOf(work.world).length);
@@ -339,8 +341,8 @@ describe("build changes", () => {
       // Kept in the file and read back: the same world, wood gone at the same time.
       expect(restore(JSON.stringify({ epoch: work.epoch, build: work.log }))!.world).toEqual(work.world);
     }
-    expect(taken).toBe(185); // without compacting, growing by 16 each time the tree comes back and breaks again
-    expect(work.log.length).toBe(1 + 15 + 1 + 8); // the find, one tree's life, a bite, the dam's sticks
+    expect(taken).toBe(177 + STICKS); // without compacting, growing by 16 each time the tree comes back and breaks again
+    expect(work.log.length).toBe(1 + 15 + 1 + STICKS); // the find, one tree's life, a bite, the sticks of dam, lodge and cache
     expect(compact(work)).toBe(false); // nothing more to shorten
   });
 });

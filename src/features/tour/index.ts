@@ -18,8 +18,8 @@
 //
 // The tour plays its own saved game (the build feature keeps it under "beaver.build.tour") and stays off the
 // network, so it never touches a game someone plays. The saved game lives on across rounds: the dam grows a few
-// sticks a visit (in fast mode half a dam a round), then the lodge; only when the lodge stands, or (not live) no wood
-// is left, it starts anew (a reload). A station whose feature is missing (a lab page without sky) is skipped.
+// sticks a visit (in fast mode half a dam a round), then the lodge, then the food cache; only when the cache is
+// stocked, or (not live) no wood is left, it starts anew (a reload). A station whose feature is missing (a lab page without sky) is skipped.
 // Stations marked stream false test the player's controls (menus, a pad): the live stream leaves them out.
 import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
@@ -34,7 +34,7 @@ import { newInput, type Input } from "../../player/input.ts";
 import { bodyPoints, direct, enter, eyeAt, framing, glide, inside, KEEP_OUT, liveDirector, newHold, shotFor, sight, type Choice, type Station, type Volume, type XYZ } from "./live.ts";
 import { fader, occluders } from "./clearview.ts";
 import { RAPIER } from "../../engine.ts";
-import { live as standing, LODGE, REGROW, SLOTS, SPROUT, type BuildState } from "../build/rules.ts";
+import { CACHE, live as standing, LODGE, REGROW, SLOTS, SPROUT, STICKS, type BuildState } from "../build/rules.ts";
 import { deerHours, type Deer } from "../life/brain.ts";
 import { dayAt } from "../sky/clock.ts";
 
@@ -54,7 +54,7 @@ const DUCKS_BACK = 120; // s after animals were startled until the ducks count a
 /** What the build feature puts on window for tools (src/features/build/index.ts); only the part the tour needs. */
 interface BuildDebug {
   state: BuildState;
-  dam: { frame: { origin: Vector3; across: Vector3 }; lodgeAt: Vector3 };
+  dam: { frame: { origin: Vector3; across: Vector3 }; lodgeAt: Vector3; cacheAt: Vector3 };
   fill(n: number): number;
   views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined }>;
   saplings: Map<number, unknown>;
@@ -349,7 +349,39 @@ export const create: CreateFeature = (game) => {
       const n = b.state.dam.length;
       if (n >= SLOTS + LODGE) return skip("the lodge is finished");
       await buildUpTo(fast ? SLOTS + LODGE : Math.min(SLOTS + LODGE, n + BATCH), true);
-      if (live && b.state.dam.length >= SLOTS + LODGE) await wait(10); // the lodge standing, before the world starts anew
+      if (live && b.state.dam.length >= SLOTS + LODGE) await wait(10); // the lodge standing, a moment to look at it
+    }, "Dam work"],
+    // Once the lodge stands: a stick swum out over the food cache, a dive down to the pile beside the lodge, E there to
+    // wedge it in; the goals count it. Run alone (station=Stock the cache) it finishes the tour's own dam and lodge
+    // first; in the whole tour it waits for the lodge.
+    ["Stock the cache", async () => {
+      const b = needBuild();
+      if (b.state.dam.length < SLOTS + LODGE) {
+        if (!requested.includes("Stock the cache")) return skip("the lodge does not stand yet");
+        b.fill(SLOTS + LODGE);
+      }
+      const n = b.state.dam.length, depth = () => (player.waterLevel ?? 0) - player.feet.y;
+      if (n >= STICKS) return skip("the cache is stocked");
+      for (const upTo = fast ? STICKS : Math.min(STICKS, n + BATCH); b.state.dam.length < upTo;) {
+        await fetchStick();
+        const at = b.dam.cacheAt;
+        await walkTo(at.x, at.z, { near: 0.5, limit: 40, hop: true });
+        expect(player.afloat && !!player.carrying, "swam out over the cache, yet not afloat with a stick");
+        const placed = after("stickPlaced"), k = b.state.dam.length + 1;
+        want.dive = true;
+        try {
+          await until(() => player.offer()?.action === "build", 8, `dived by the cache (${depth().toFixed(1)} m deep), E would ${player.offer()?.action ?? "do nothing"}`);
+          expect(player.offer()!.text === "Wedge into cache", `E offers "${player.offer()!.text}" by the cache`);
+          await tap("act");
+          await until(placed, 3, "pressed E by the cache, no stick wedged in");
+        } finally { want.dive = false; }
+        expect(b.state.dam.length === k && last.stickPlaced!.place.y < (player.waterLevel ?? 0) - 2, `the cache holds ${b.state.dam.length - SLOTS - LODGE} sticks, not ${k - SLOTS - LODGE}, or not on the bed`);
+        const line = `Stock the food cache: ${k - SLOTS - LODGE} of ${CACHE}`;
+        await until(() => hudText("goals").includes(line), 2, `the goals do not say "${line}"`);
+        if (k === STICKS) await until(() => hudText("announcement").startsWith("The cache is stocked!"), 2, "the cache's last stick went in, no \"The cache is stocked!\" on screen");
+        await until(() => !player.diving && depth() < 0.45, 6, "let go of C, it never came up");
+      }
+      if (live && b.state.dam.length >= STICKS) await wait(10); // the cache stocked, before the world starts anew
     }, "Dam work"],
     ["Swim", async () => {
       if (!pond) return skip("no pond");
@@ -659,7 +691,7 @@ export const create: CreateFeature = (game) => {
   const caption = () => {
     const a = tour.activity, name = tour.station, n = build()?.state.dam.length ?? 0, line = a === name ? name : a + " · " + name;
     if (a !== "Dam work") return line;
-    return line + (n < SLOTS ? ` · ${n} of ${SLOTS}` : ` · lodge ${n - SLOTS} of ${LODGE}`);
+    return line + (n < SLOTS ? ` · ${n} of ${SLOTS}` : n < SLOTS + LODGE ? ` · lodge ${n - SLOTS} of ${LODGE}` : ` · cache ${n - SLOTS - LODGE} of ${CACHE}`);
   };
 
   /** Not live: every station starts calm on land at the spawn, facing the pond over open grass, hands free unless it
@@ -691,9 +723,10 @@ export const create: CreateFeature = (game) => {
         if (stream === false) return false;
         if (name === "Regrow a tree") return !!regrowing();
         if (activity !== "Dam work") return true;
-        if (!b || placed >= SLOTS + LODGE) return false;
+        if (!b || placed >= STICKS) return false;
         if (name === "Build the dam") return placed < SLOTS;
-        if (name === "Build the lodge") return placed >= SLOTS;
+        if (name === "Build the lodge") return placed >= SLOTS && placed < SLOTS + LODGE;
+        if (name === "Stock the cache") return placed >= SLOTS + LODGE;
         if (player.carrying) return false;
         if (name === "Carry a stick") return loose().length > 0;
         return canFell; // fell a tree and gnaw it into wood
@@ -733,10 +766,10 @@ export const create: CreateFeature = (game) => {
         await wait(PAUSE);
       }
       console.log(`[tour] round ${tour.round}: ${ok}/${itinerary.length} ok`);
-      // Its own saved game: start it anew once the lodge stands; in a test also once no wood is left (live waits for
+      // Its own saved game: start it anew once the cache is stocked; in a test also once no wood is left (live waits for
       // the trees to grow back).
-      if (b && (b.state.dam.length >= SLOTS + LODGE || (!live && !player.carrying && (usedUp || (!loose().length && !standingTrees(b).length))))) {
-        console.log(`[tour] the saved game is ${b.state.dam.length >= SLOTS + LODGE ? "done: the lodge stands" : "used up"}: starting it anew`);
+      if (b && (b.state.dam.length >= STICKS || (!live && !player.carrying && (usedUp || (!loose().length && !standingTrees(b).length))))) {
+        console.log(`[tour] the saved game is ${b.state.dam.length >= STICKS ? "done: the cache is stocked" : "used up"}: starting it anew`);
         b.reset();
         return;
       }

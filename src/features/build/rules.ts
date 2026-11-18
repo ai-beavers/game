@@ -9,6 +9,7 @@
 //   bitesToFell(radius) · woodFrom(tree, trunk) · damPlan() · moundHeight(placed) · goals(state) · pondRise(placed)
 //   pondLevel(full, placed): where the pond's surface stands with this many sticks in the dam
 //   lodgeGrow(placed): how far the lodge stands out of the pond (after the dam's SLOTS sticks come LODGE onto it)
+//   cachePlan(): where the CACHE sticks of the food cache go, on the pond's bed at CACHE_AT (after the lodge's)
 //
 // The state is plain JSON: it is kept in localStorage and the changes can be sent to other players as they are.
 import { seeded } from "../../world/noise.ts";
@@ -18,6 +19,11 @@ export const SLOTS = 30;
 /** Sticks the beaver builds onto the lodge after the dam, swimming them out to it. They follow the dam's in
  *  BuildState.dam (slots SLOTS … SLOTS + LODGE - 1), so whatever counts the sticks gone from the world counts them too. */
 export const LODGE = 10;
+/** Sticks the beaver wedges into the food cache once the lodge stands, diving them down to the pile on the bed beside
+ *  it. They follow the lodge's in BuildState.dam (slots SLOTS + LODGE …), counted as theirs are. */
+export const CACHE = 12;
+/** Every stick the world takes: the dam, the lodge, the cache. */
+export const STICKS = SLOTS + LODGE + CACHE;
 /** Seconds of gnawing per bite. */
 export const BITE_TIME = 0.6;
 /** Bites that break a lying tree into wood. */
@@ -64,7 +70,7 @@ export interface BuildState {
   /** By index in World.trees; trees never touched are left out. */
   trees: Record<number, TreeState>;
   /** The sticks in the dam, slot by slot: their names ("w3" the world's fourth stick, "t2:1" the second stick of
-   *  tree 2's wood); after the first SLOTS, those on the lodge. */
+   *  tree 2's wood); after the first SLOTS, those on the lodge, then those in the cache. */
   dam: string[];
   /** Has picked up a stick once. */
   found: boolean;
@@ -131,7 +137,7 @@ export function apply(s: BuildState, c: BuildChange, now = Date.now()): boolean 
       return true;
     }
     case "place":
-      if (s.dam.length >= SLOTS + LODGE || s.dam.includes(c.stick)) return false;
+      if (s.dam.length >= STICKS || s.dam.includes(c.stick)) return false;
       s.dam.push(c.stick); // the next free slot, whatever slot the sender saw: two players placing at once both fit
       return true;
   }
@@ -235,16 +241,42 @@ export const pondLevel = (full: number, placed: number) => full - POND_RISE + po
  *  finished, then its roof just out of the water, and fully up with the last of the LODGE sticks on it. */
 export const lodgeGrow = (placed: number) => placed < SLOTS ? 0 : 0.4 + 0.6 * Math.min(1, (placed - SLOTS) / LODGE);
 
+// ---- the food cache ----------------------------------------------------------------------------------------------
+
+/** Where the food cache lies on the pond's bed, m: at the foot of the deep basin's north slope, about 2.7 m under the
+ *  full pond, beside the lodge and clear of its base, the basin's rocks and the sunken log (world/place.ts; the test
+ *  checks it against them). */
+export const CACHE_AT = { x: 5, z: 3.5 };
+
+/** Where each stick of the cache goes, around CACHE_AT: x, z in m from it, y its middle's height above the bed, yaw
+ *  about y (0: along +z), pitch its end tilted up. A low ring pushed into the mud, then crossing layers above it, so it
+ *  reads as a heap of branches. The same every time. */
+export function cachePlan(): Slot[] {
+  const random = seeded(31), out: Slot[] = [];
+  [5, 4, 3].forEach((count, layer) => {
+    for (let k = 0; k < count; k++) {
+      const a = (k / count) * Math.PI * 2 + layer * 0.7 + (random() - 0.5) * 0.4, r = [0.22, 0.12, 0.04][layer]! + random() * 0.04;
+      out.push({
+        x: Math.cos(a) * r, z: Math.sin(a) * r, y: 0.06 + layer * 0.12,
+        yaw: Math.PI / 2 - a + (layer % 2 ? 1.2 : 0.35) + (random() - 0.5) * 0.5, pitch: 0.12 + random() * 0.3,
+      });
+    }
+  });
+  return out;
+}
+
 // ---- goals -------------------------------------------------------------------------------------------------------
 
-export interface Goal { id: "stick" | "fell" | "wood" | "dam" | "lodge"; text: string; done: boolean }
+export interface Goal { id: "stick" | "fell" | "wood" | "dam" | "lodge" | "cache"; text: string; done: boolean }
 
 /** The goals in the order they lead through the game, with what is done. Once the dam holds, the first steps are
- *  behind the player: the list is the dam and the lodge that follows it. */
+ *  behind the player: the list is the dam and the lodge that follows it, and once the lodge stands, the cache. */
 export function goals(s: BuildState): Goal[] {
   const trees = Object.values(s.trees);
   const dam: Goal = { id: "dam", text: `Build the dam: ${Math.min(SLOTS, s.dam.length)} of ${SLOTS}`, done: s.dam.length >= SLOTS };
-  if (dam.done) return [dam, { id: "lodge", text: `Build up the lodge: ${s.dam.length - SLOTS} of ${LODGE}`, done: s.dam.length >= SLOTS + LODGE }];
+  const lodge: Goal = { id: "lodge", text: `Build up the lodge: ${Math.min(LODGE, s.dam.length - SLOTS)} of ${LODGE}`, done: s.dam.length >= SLOTS + LODGE };
+  if (lodge.done) return [dam, lodge, { id: "cache", text: `Stock the food cache: ${s.dam.length - SLOTS - LODGE} of ${CACHE}`, done: s.dam.length >= STICKS }];
+  if (dam.done) return [dam, lodge];
   return [
     { id: "stick", text: "Find a stick and pick it up", done: s.found },
     { id: "fell", text: "Gnaw down a tree", done: trees.some((t) => t.fell !== undefined) },

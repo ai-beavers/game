@@ -1,9 +1,11 @@
 // Tests for the build feature's rules: state changes, trees, wood, the dam plan, goals. Run: bun test src/features/build
 import { describe, expect, test } from "bun:test";
 import {
-  apply, BITES_TO_SPLIT, bitesToFell, crestHeight, DAM, damPlan, goals, growth, live, load, LODGE, lodgeGrow, moundHeight, newState, POND_RISE, pondLevel, pondRise,
-  profile, REGROW, SLOTS, SPROUT, woodFrom,
+  apply, BITES_TO_SPLIT, bitesToFell, CACHE, CACHE_AT, cachePlan, crestHeight, DAM, damPlan, goals, growth, live, load, LODGE, lodgeGrow, moundHeight, newState,
+  POND_RISE, pondLevel, pondRise, profile, REGROW, SLOTS, SPROUT, STICKS, woodFrom,
 } from "./rules.ts";
+import { heightAt, POND, WATER_LEVEL } from "../../world/terrain.ts";
+import { placeAll } from "../../world/place.ts";
 
 describe("changes", () => {
   test("a tree goes bitten, felled, resting, split, in that order only", () => {
@@ -53,14 +55,14 @@ describe("changes", () => {
     expect(growth(REGROW)).toBe(1);
     expect(growth(REGROW * 9)).toBe(1);
   });
-  test("each stick goes into the dam once, into the next slot, up to SLOTS, then LODGE onto the lodge", () => {
+  test("each stick goes into the dam once, into the next slot, up to SLOTS, then LODGE onto the lodge, then CACHE into the cache", () => {
     const s = newState();
     expect(apply(s, { type: "place", slot: 0, stick: "w1" })).toBe(true);
     expect(apply(s, { type: "place", slot: 1, stick: "w1" })).toBe(false);
     expect(apply(s, { type: "place", slot: 0, stick: "w2" })).toBe(true); // stale slot from another player: next free
     expect(s.dam).toEqual(["w1", "w2"]);
-    for (let k = 0; k < 50; k++) apply(s, { type: "place", slot: k, stick: `d${k}` });
-    expect(s.dam).toHaveLength(SLOTS + LODGE);
+    for (let k = 0; k < 70; k++) apply(s, { type: "place", slot: k, stick: `d${k}` });
+    expect(s.dam).toHaveLength(SLOTS + LODGE + CACHE);
   });
   test("a saved state comes back; a broken one gives a fresh state", () => {
     const s = newState();
@@ -161,8 +163,34 @@ test("goals tick off with the state", () => {
   expect(goals(s).map((g) => [g.id, g.done])).toEqual([["dam", true], ["lodge", false]]);
   expect(goals(s)[0]!.text).toBe("Build the dam: 30 of 30");
   expect(goals(s)[1]!.text).toBe(`Build up the lodge: 2 of ${LODGE}`);
-  for (let k = 0; k < LODGE; k++) apply(s, { type: "place", slot: 0, stick: `x${k}` });
-  expect(goals(s)[1]!.done).toBe(true);
+  // A world saved with the lodge standing (before there was a cache) loads into the cache's goal, at none of CACHE.
+  for (let k = 0; k < LODGE - 2; k++) apply(s, { type: "place", slot: 0, stick: `x${k}` });
+  expect(goals(load(JSON.stringify(s))).map((g) => [g.id, g.done])).toEqual([["dam", true], ["lodge", true], ["cache", false]]);
+  expect(goals(s)[1]!.text).toBe(`Build up the lodge: ${LODGE} of ${LODGE}`);
+  expect(goals(s)[2]!.text).toBe(`Stock the food cache: 0 of ${CACHE}`);
+  for (let k = 0; k < CACHE + 3; k++) apply(s, { type: "place", slot: 0, stick: `x${LODGE + k}` });
+  expect(goals(s).map((g) => [g.text, g.done])).toEqual([
+    ["Build the dam: 30 of 30", true], [`Build up the lodge: ${LODGE} of ${LODGE}`, true], [`Stock the food cache: ${CACHE} of ${CACHE}`, true]]);
+  expect(s.dam).toHaveLength(STICKS);
+});
+
+test("the food cache lies deep beside the lodge, clear of its base, the basin's rocks and the sunken log", () => {
+  const plan = cachePlan(), layout = placeAll(), log = layout.sunkenLog[0]!;
+  expect(plan).toHaveLength(CACHE);
+  expect(cachePlan()).toEqual(plan);
+  const bed = heightAt(CACHE_AT.x, CACHE_AT.z);
+  expect(bed).toBeLessThan(WATER_LEVEL - 2.5); // in the deep basin: only a dive gets there
+  // The lodge (build/dam.ts) stands 0.6 m east of the pond's middle, its mound 2.5 m across at its widest (up by the
+  // water; narrower down at the bed): the pile's sticks stay outside that.
+  expect(Math.hypot(CACHE_AT.x - POND.x - 0.6, CACHE_AT.z - POND.z)).toBeGreaterThan(1.25 + 0.3);
+  for (const p of plan) {
+    const x = CACHE_AT.x + p.x, z = CACHE_AT.z + p.z;
+    expect(Math.hypot(p.x, p.z)).toBeLessThan(0.3);
+    for (const r of layout.bedRock) expect(Math.hypot(x - r.x, z - r.z) - 0.5 * r.scale).toBeGreaterThan(0.25);
+    // The log, 2.2 m long, lies along its turn.
+    const ux = Math.sin(log.turn), uz = Math.cos(log.turn), t = Math.max(-1.1, Math.min(1.1, (x - log.x) * ux + (z - log.z) * uz));
+    expect(Math.hypot(x - log.x - ux * t, z - log.z - uz * t)).toBeGreaterThan(0.18 + 0.25);
+  }
 });
 
 test("the lodge rises only once the dam holds, and is fully up with its last stick", () => {
