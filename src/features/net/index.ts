@@ -349,6 +349,7 @@ export const create: CreateFeature = (game) => {
         ray.origin = eye;
         ray.dir = { x: dx / length, y: dy / length, z: dz / length };
         ui.behind(r.id, length > 0.5 && !!stage.physics.castRay(ray, length - 0.3, true, walls));
+        ui.doing(r.id, r.doing);
       }
       things.update();
       ui.update();
