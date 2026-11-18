@@ -68,10 +68,10 @@ export const create: CreateFeature = (game) => {
   const build = () => (window as { build?: BuildDebug }).build;
 
   // ---- what the tour wants, read once per physics step like any other device ----
-  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false }, aimAt = new Vector3();
+  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false, dive: false }, aimAt = new Vector3();
   player.keys.add({
     read(into: Input) {
-      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap });
+      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap, dive: want.dive });
       if (!want.to) return into;
       const d = new Vector3(want.to.x - player.feet.x, 0, want.to.z - player.feet.z);
       if (d.lengthSquared() < 1e-4) return into;
@@ -366,6 +366,25 @@ export const create: CreateFeature = (game) => {
       expect(last.startled!.count > 0, "the tail came down, no animal fled");
       await wait(4); // the ducks circle, the fish dart off: something to see
     }, "Tail slap"],
+    // Out in the middle, C held takes the beaver under: below the surface with the under-water picture (live, the
+    // stream's camera stays above and watches it go down); a swim down there, then let go and up again.
+    ["Dive", async () => {
+      if (!pond) return skip("no pond");
+      const look = () => (stage.scene.metadata.underwater as { on: boolean } | undefined)?.on, depth = () => (player.waterLevel ?? 0) - player.feet.y;
+      await walkTo(pond.x, pond.z - clear(), { near: 0.5, limit: 40 });
+      expect(player.afloat, "out in the pond, yet not afloat");
+      want.dive = true;
+      try {
+        await until(() => player.diving && depth() > 0.6, 4, `held C afloat, never went under (${depth().toFixed(2)} m deep)`);
+        if (!live && look() !== undefined) await until(() => !!look(), 3, "the beaver is under, the picture is not");
+        want.to = new Vector3(pond.x + 1.2, 0, pond.z - clear() + 0.4); // a look round down there
+        await wait(2.5);
+        want.to = undefined;
+        expect(depth() > 0.6 && player.diving, `swimming under, it came up (${depth().toFixed(2)} m deep)`);
+      } finally { want.dive = false; want.to = undefined; }
+      await until(() => !player.diving && depth() < 0.45, 4, "let go of C, it never came up");
+      if (!live && look() !== undefined) await until(() => !look(), 3, "up again, the picture stays under water");
+    }, "Pond patrol"],
     ["Animals at the pond", async () => {
       if (!pond) return skip("no pond");
       expect(stage.scene.meshes.some((o) => o.name.startsWith("life-")), "no animals in the scene");
@@ -644,7 +663,7 @@ export const create: CreateFeature = (game) => {
           result = { round: tour.round, station: name, ok: skipped ? "skipped" : false, why: (e as Error).message, seconds: 0 };
           if (!skipped) failed = true;
         }
-        want.act = want.jump = want.slap = false;
+        want.act = want.jump = want.slap = want.dive = false;
         result.seconds = +((performance.now() - t0) / 1000).toFixed(1);
         results.push(result);
         if (results.length > 500) results.shift();

@@ -2,16 +2,16 @@
 // the rig (camera.ts) turns that into where the camera stands and looks, and per frame we measure
 //   accel   the hardest the camera's position speeds up or slows down, m/s² (a jerk shows as a spike)
 //   swing   the fastest the way it looks turns, rad/s
-// for what players do: start, stop, reverse, jump, turn on the spot, swim in, start gnawing. Collisions are left out
+// for what players do: start, stop, reverse, jump, turn on the spot, swim in, dive and come up, start gnawing. Collisions are left out
 // (Rapier). `bun test src/player/camera` prints the table.
 import { describe, expect, test } from "bun:test";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { RUN_SPEED, WALK_SPEED } from "../contracts.ts";
-import { FOV, REST_DISTANCE, REST_PITCH, lens, newRig, orbit, spring, stepRig, view } from "./camera.ts";
+import { FOV, REST_DISTANCE, REST_PITCH, lens, newRig, orbit, spring, stepRig, underWater, view } from "./camera.ts";
 import { newSteering, steer } from "./state.ts";
 
 const GRAVITY = 18, JUMP_SPEED = Math.sqrt(2 * GRAVITY * 0.6) + GRAVITY / 120; // as src/player
-interface Wish { want?: number; run?: boolean; jump?: boolean; water?: boolean; busy?: boolean }
+interface Wish { want?: number; run?: boolean; jump?: boolean; water?: boolean; busy?: boolean; dive?: boolean }
 const MANOEUVRES: Record<string, { seconds: number; wish: (t: number) => Wish }> = {
   start: { seconds: 3, wish: (t) => ({ want: t > 0.5 ? 0 : undefined, run: true }) },
   stop: { seconds: 4, wish: (t) => ({ want: t < 2 ? 0 : undefined, run: true }) },
@@ -20,12 +20,14 @@ const MANOEUVRES: Record<string, { seconds: number; wish: (t: number) => Wish }>
   "turn on the spot": { seconds: 3, wish: (t) => ({ want: t > 0.5 && t < 0.8 ? Math.PI : undefined }) }, // a tap on S
   "swim in": { seconds: 5, wish: (t) => ({ want: 0, water: t > 1.5 }) },
   gnaw: { seconds: 4, wish: (t) => ({ want: t < 1 ? 0 : undefined, busy: t > 1.3 }) },
+  // afloat, under at 1 s down to 0.9 m, up again at 4 s; the water's surface at 0
+  dive: { seconds: 7, wish: (t) => ({ want: 0, water: true, dive: t > 1 && t < 4 }) },
 };
 
 /** Plays a manoeuvre with the camera behind the beaver; returns the worst accel and swing, and the last frame. */
 function play(name: string, fps = 60) {
   const { seconds, wish } = MANOEUVRES[name]!, dt = 1 / fps, rig = newRig(), s = newSteering(), feet = new Vector3();
-  let vy = 0, ground = 0, accel = 0, swing = 0, lowest = Infinity, highest = -Infinity;
+  let vy = 0, ground = 0, sink = 0, accel = 0, swing = 0, lowest = Infinity, highest = -Infinity, deepest = Infinity;
   const at: Vector3[] = [], looks: Vector3[] = [];
   let last = { position: new Vector3(), feet: new Vector3() };
   for (let t = 0; t < seconds; t += dt) {
@@ -33,19 +35,23 @@ function play(name: string, fps = 60) {
     steer(s, w.busy ? undefined : w.want, w.want === undefined || w.busy ? 0 : 1, afloat ? 0.5 : w.run ? RUN_SPEED : WALK_SPEED, 6, 9, dt);
     const velocity = { x: Math.sin(s.facing) * s.speed, z: Math.cos(s.facing) * s.speed };
     feet.x += velocity.x * dt; feet.z += velocity.z * dt;
-    if (afloat) ground += (-0.3 - ground) * Math.min(1, 5 * dt); // sinks to swimming depth
+    // sinks to swimming depth; diving, down at 0.6 m/s to 0.9 m under, up again no faster than 0.9 m/s (src/player)
+    if (afloat && w.dive === undefined) ground += (-0.3 - ground) * Math.min(1, 5 * dt);
+    else if (afloat) { sink += ((w.dive ? Math.max(-0.6, (-0.9 - ground) * 4) : Math.min(0.9, (-0.3 - ground) * 4)) - sink) * Math.min(1, 5 * dt); ground += sink * dt; }
     if (w.jump && feet.y <= ground) vy = JUMP_SPEED;
     vy -= GRAVITY * dt; feet.y = Math.max(ground, feet.y + vy * dt);
     if (feet.y <= ground) vy = 0;
-    const shot = stepRig(rig, dt, feet, { velocity, facing: s.facing, afloat, busy: !!w.busy }, Math.PI, REST_PITCH, REST_DISTANCE, 16 / 9);
+    const shot = stepRig(rig, dt, feet, { velocity, facing: s.facing, afloat, busy: !!w.busy, diving: !!w.dive }, Math.PI, REST_PITCH, REST_DISTANCE, 16 / 9);
     const position = orbit(shot.pivot, shot.yaw, shot.pitch, shot.distance);
+    if (w.dive !== undefined) position.y = underWater(position.y, 0, shot.under);
+    deepest = Math.min(deepest, position.y);
     at.push(position); looks.push(view(position, shot.pivot.add(shot.lead), shot.rise, shot.across));
     lowest = Math.min(lowest, position.y); highest = Math.max(highest, position.y);
     last = { position, feet: feet.clone() };
   }
   for (let i = 2; i < at.length; i++) accel = Math.max(accel, at[i]!.subtract(at[i - 1]!.scale(2)).add(at[i - 2]!).length() / dt ** 2);
   for (let i = 1; i < looks.length; i++) swing = Math.max(swing, Math.acos(Math.min(1, Vector3.Dot(looks[i]!, looks[i - 1]!))) / dt);
-  return { accel, swing, rise: highest - lowest, ...last };
+  return { accel, swing, rise: highest - lowest, deepest, ...last };
 }
 
 describe("feel", () => {
@@ -57,11 +63,16 @@ describe("feel", () => {
   });
   // The beaver speeds up at 6 m/s² and brakes at 9: the camera never moves harder than the beaver does, much softer
   // where the beaver itself does not jolt (into the water, down to work), and never turns the view fast.
-  const BOUNDS: Record<string, number> = { start: 4, stop: 5, reverse: 9, jump: 4, "turn on the spot": 2, "swim in": 3, gnaw: 3 };
+  const BOUNDS: Record<string, number> = { start: 4, stop: 5, reverse: 9, jump: 4, "turn on the spot": 2, "swim in": 3, gnaw: 3, dive: 6 };
   for (const m of Object.keys(MANOEUVRES)) test(`${m}: at most ${BOUNDS[m]} m/s²`, () => {
     const r = play(m);
     expect(r.accel).toBeLessThan(BOUNDS[m]!);
     expect(r.swing).toBeLessThan(0.5);
+  });
+  test("diving it goes under the surface with the beaver, and up again after", () => {
+    const r = play("dive");
+    expect(r.deepest).toBeLessThan(-0.1);
+    expect(r.position.y).toBeGreaterThan(0.29); // above the water again once it floats
   });
   test("a jump moves the camera less than half as high", () => {
     expect(play("jump").rise).toBeLessThan(0.3);
@@ -128,6 +139,18 @@ describe("framing", () => {
     expect(quarter).toBeLessThan(7);
     expect(at(3)).toBeLessThanOrEqual(8 + 1e-9);
   });
+});
+
+test("underWater: above, below, and a smooth way through the surface", () => {
+  expect(underWater(0.1, 0, 0)).toBeGreaterThanOrEqual(0.3);
+  expect(underWater(0.1, 0, 0)).toBeLessThan(0.36);
+  expect(underWater(1, 0, 0)).toBeCloseTo(1, 2);
+  expect(underWater(0.1, 0, 1)).toBeLessThanOrEqual(-0.12);
+  expect(underWater(0.1, 0, 1)).toBeGreaterThan(-0.18);
+  expect(underWater(-1, 0, 1)).toBeCloseTo(-1, 2);
+  let before = underWater(0.5, 0, 0), step = 0;
+  for (let u = 0.01; u <= 1; u += 0.01) { const y = underWater(0.5, 0, u); step = Math.max(step, Math.abs(y - before)); before = y; }
+  expect(step).toBeLessThan(0.02); // no jump anywhere on the way through
 });
 
 test("spring: exact for any step, critically damped (never past the goal)", () => {

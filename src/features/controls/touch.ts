@@ -1,5 +1,5 @@
 // Touch controls: a stick that appears under the left thumb, dragging on the right half turns the camera, two
-// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run, slap the tail) plus small pause and
+// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run, slap the tail, dive while held) plus small pause and
 // photo buttons at the top right.
 //
 //   const pad = touchControls(game, pause, photo);   builds the overlay and listens on the canvas; pause() opens the
@@ -19,8 +19,8 @@ const TURN_X = 0.006, TURN_Y = 0.005; // rad per px of drag, as the mouse
 export function touchControls(game: Game, pause: () => void, photo: () => void) {
   const canvas = game.stage.canvas, camera = game.player.camera;
   const overlay = new Overlay(game.stage,"touch-controls",false,8);
-  const held = { jump: false, act: false, slap: false }, tapped = { jump: false, act: false, slap: false };
-  const release = () => { for (const k of ["jump","act","slap"] as const) held[k] = tapped[k] = false; };
+  const held = { jump: false, act: false, slap: false, dive: false }, tapped = { jump: false, act: false, slap: false, dive: false };
+  const release = () => { for (const k of ["jump","act","slap","dive"] as const) held[k] = tapped[k] = false; };
   let stickId = -1, ox = 0, oy = 0, move = { x: 0, y: 0, run: 0 }, running = false;
   let base: ReturnType<Overlay["rect"]>, knob: typeof base, run: ReturnType<Overlay["button"]>;
   function place(x: number, y: number, kx = 0, ky = 0) {
@@ -50,7 +50,9 @@ export function touchControls(game: Game, pause: () => void, photo: () => void) 
     const act = overlay.button("use","Use",box(w-150,h-71,56,56),() => {});
     // Up and left of Jump, past Use and Run, so a thumb resting on Jump reaches it without crossing them.
     const slap = overlay.button("slap","Slap",box(w-148,h-142,50,50),() => {});
-    for (const [key,button] of [["jump",jump],["act",act],["slap",slap]] as const) {
+    // Left of Use, where the thumb rolls off it: held as long as the beaver stays under.
+    const dive = overlay.button("dive","Dive",box(w-208,h-63,50,50),() => {});
+    for (const [key,button] of [["jump",jump],["act",act],["slap",slap],["dive",dive]] as const) {
       button.panel.cornerRadius = 40;
       button.element.onpointerdown = e => {
         e.preventDefault();
@@ -129,7 +131,8 @@ export function touchControls(game: Game, pause: () => void, photo: () => void) 
       into.jump = held.jump || tapped.jump;
       into.act = held.act || tapped.act;
       into.slap = held.slap || tapped.slap;
-      tapped.jump = tapped.act = tapped.slap = false;
+      into.dive = held.dive || tapped.dive;
+      tapped.jump = tapped.act = tapped.slap = tapped.dive = false;
       return into;
     },
     show(on: boolean) {

@@ -39,10 +39,12 @@ test("stick speed: walk grows to full at WALK_PUSH, then run grows to 1, directi
   expect(stickSpeed(0, -1).run).toBeCloseTo(1);
 });
 
-test("buttons: A jumps, X or B uses, RB slaps, LB and triggers run, d-pad moves", () => {
+test("buttons: A jumps, X uses, B dives, RB slaps, LB and triggers run, d-pad moves", () => {
   expect(padInput(pad([0, 0], [BUTTON.a]), newInput()).jump).toBe(true);
   expect(padInput(pad([0, 0], [BUTTON.x]), newInput()).act).toBe(true);
-  expect(padInput(pad([0, 0], [BUTTON.b]), newInput()).act).toBe(true);
+  const dive = padInput(pad([0, 0], [BUTTON.b]), newInput());
+  expect(dive.dive).toBe(true);
+  expect(dive.act).toBe(false); // B no longer uses: it is the dive's
   expect(padInput(pad([0, 0], [BUTTON.lb]), newInput()).run).toBe(1);
   const slap = padInput(pad([0, 0], [BUTTON.rb]), newInput());
   expect(slap.slap).toBe(true);
