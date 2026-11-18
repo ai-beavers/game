@@ -2,7 +2,9 @@
 // break it into logs and sticks; carry sticks to the building site by the pond and press E there to build each into
 // the dam (30 sticks). A small goals panel leads through it; the pond rises with each stick, and at the end a lodge
 // rises out of it, and the work goes on there: swim sticks out to it until it stands tall. While a stick is in the hand,
-// a glowing stick shows where it goes.
+// a glowing stick shows where it goes. A tree gone into wood grows back on its stump (rules.ts REGROW): a sapling
+// that grows into a tree to fell again; its wood, when split, is the same pieces as before, those not in the dam
+// gathered from wherever they lie.
 //
 //   import { create as build } from "./features/build/index.ts";     createGame(canvas, [build])
 //
@@ -11,7 +13,8 @@
 // (remote false); a change from another player comes back in the same event with remote true.
 //
 // Debug, for bun shot --eval (window.build): build.at(i) stands at tree i facing it · build.fell(i) · build.split(i)
-// · build.fill(n) puts n sticks into the dam (past 30: onto the lodge) · build.toSite() stands at the dam with a stick in hand · build.reset()
+// · build.fill(n) puts n sticks into the dam (past 30: onto the lodge) · build.age(i, s) makes tree i's wood gone s
+// seconds longer ago (regrowth sooner) · build.toSite() stands at the dam with a stick in hand · build.reset()
 // forgets everything and reloads · build.state · build.trees() lists them by distance · build.keepLying() keeps where
 // the loose wood lies now (it is also kept every few seconds and when the page goes).
 import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
@@ -21,7 +24,9 @@ import type { Stick } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
 import type { Offer } from "../../player/index.ts";
 import { waterOf } from "../../world/water.ts";
-import { apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, DAM, goals, load, LODGE, lodgeGrow, pondLevel, pondRise, SLOTS, woodFrom } from "./rules.ts";
+import {
+  apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, DAM, goals, growth, live, load, LODGE, lodgeGrow, pondLevel, pondRise, REGROW, SLOTS, woodFrom,
+} from "./rules.ts";
 import { fxOf } from "../fx/index.ts";
 import { createDam } from "./dam.ts";
 import { goalsPanel } from "./panel.ts";
@@ -36,6 +41,8 @@ const KEEP_EVERY = 3; // s between keeping where the loose wood lies
 const BUILD_TIME = 1.3; // s for laying one stick; it leaves the hand half way
 const FLIGHT = 0.45; // s from the hand to its place
 const REACH = 0.6; // m from the beaver's body to the bark it can gnaw
+const GRACE = 5; // s past REGROW before this copy asks for a tree back: the server's count may have started later
+const SAPLING = 0.15; // of the full tree's size, when the sapling shows
 
 export const create: CreateFeature = (game) => {
   const { world, stage, player, events } = game;
@@ -48,6 +55,17 @@ export const create: CreateFeature = (game) => {
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* not kept, still played */ } };
   const panel = goalsPanel(), dam = createDam(stage, world), views = new Map<number, TreeView>();
   const view = (i: number) => views.get(i) ?? views.set(i, takeTree(stage, world, i)).get(i)!;
+  // Saplings on stumps, growing; once the tree is back (grow), it takes the old view's place and the stump goes.
+  const saplings = new Map<number, TreeView>();
+  const sapling = (i: number) => saplings.get(i) ?? saplings.set(i, takeTree(stage, world, i, true)).get(i)!;
+  const regrow = (i: number) => {
+    const v = sapling(i);
+    views.get(i)?.unstump();
+    saplings.delete(i);
+    views.set(i, v);
+    v.grow(1);
+    return v;
+  };
 
   // Every stick has a name, so the dam can say which ones it holds: the world's own by their order, the wood of a
   // tree by tree and number (logs too, so where they lie can be kept).
@@ -63,13 +81,20 @@ export const create: CreateFeature = (game) => {
     const m = measure(world.trees![i]!), flat = new Vector3(line.along.x, 0, line.along.z).normalize(), side = new Vector3(-flat.z, 0, flat.x);
     let logs = 0, sticks = 0;
     woodFrom(i, m.trunk, m.radius).forEach((piece, k) => {
-      const id = `t${i}:${k}`;
+      const id = `t${i}:${k}`, old = byName.get(id);
       if (piece.kind === "stick" && state.dam.includes(id)) return;
       const at = line.from.add(flat.scale(piece.along)).add(side.scale(piece.side));
       at.y = world.heightAt(at.x, at.z) + piece.thickness / 2 + 0.03;
-      const size = new Vector3(piece.thickness, piece.thickness, piece.length);
-      const thing = addLoose(piece.kind, piece.variant, size, at, pose(flat, piece.turn), piece.kind === "log" ? 25 * piece.length : 0.3);
-      name(thing, id);
+      const turn = pose(flat, piece.turn);
+      if (old) { // a tree grown back: its pieces are its first one's, one thing each everywhere (net/things.ts)
+        if (old === player.carrying || !old.body.isEnabled()) return;
+        old.body.setTranslation(at, true); old.body.setRotation(turn, true);
+        old.body.setLinvel({ x: 0, y: 0, z: 0 }, true); old.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        old.mesh.position.copyFrom(at); old.mesh.rotationQuaternion!.copyFrom(turn);
+      } else {
+        const size = new Vector3(piece.thickness, piece.thickness, piece.length);
+        name(addLoose(piece.kind, piece.variant, size, at, turn, piece.kind === "log" ? 25 * piece.length : 0.3), id);
+      }
       if (piece.kind === "stick") sticks++; else logs++;
     });
     return { logs, sticks };
@@ -111,7 +136,7 @@ export const create: CreateFeature = (game) => {
 
   const react = (c: BuildChange, handed?: TransformNode) => {
     if (c.type === "bite") {
-      const t = state.trees[c.tree]!, lying = t.rest !== undefined, m = measure(world.trees![c.tree]!);
+      const t = live(state.trees[c.tree])!, lying = t.rest !== undefined, m = measure(world.trees![c.tree]!);
       const place = lying ? view(c.tree).crown() : world.trees![c.tree]!.place.add(new Vector3(0, BITE_HEIGHT, 0));
       events.emit("gnaw", { place, tree: c.tree, progress: lying ? t.splitBites / BITES_TO_SPLIT : Math.min(1, t.bites / bitesToFell(m.radius)) });
     } else if (c.type === "fell") {
@@ -125,6 +150,8 @@ export const create: CreateFeature = (game) => {
       v.dispose();
       const { logs, sticks } = line ? spawnWood(c.tree, line) : { logs: 0, sticks: 0 };
       events.emit("treeSplits", { place, tree: c.tree, logs, sticks });
+    } else if (c.type === "grow") {
+      regrow(c.tree);
     } else if (c.type === "place") {
       const slot = state.dam.length - 1, mesh = handed ?? stickMesh(c.stick);
       if (handed) {
@@ -157,10 +184,15 @@ export const create: CreateFeature = (game) => {
     for (const [key, t] of Object.entries(state.trees)) {
       const i = +key;
       if (t.fell === undefined) continue; // bites only: drawn by update()
+      const lay = (v: TreeView, fell: number, rest: typeof t.rest) => {
+        if (rest) v.lie(new Vector3(...rest.at), new Quaternion(...rest.turn));
+        else v.fall(new Vector3(Math.sin(fell), 0, Math.cos(fell))); // saved mid-fall: it falls again
+      };
       const v = view(i);
-      if (t.rest) v.lie(new Vector3(...t.rest.at), new Quaternion(...t.rest.turn));
-      else v.fall(new Vector3(Math.sin(t.fell), 0, Math.cos(t.fell))); // saved mid-fall: it falls again
+      lay(v, t.fell, t.rest);
       if (t.split) { const line = v.trunkLine(); v.dispose(); if (line) spawnWood(i, line); }
+      const g = t.split && t.grown; // grown back: standing (bites drawn by update()), or felled again
+      if (g) { const back = regrow(i); if (g.fell !== undefined) lay(back, g.fell, g.rest); } // saplings: update()
     }
     lodgeShown = lodgeGrow(state.dam.length);
     if (lodgeShown > 0) dam.lodge(lodgeShown); // first: the sticks on it are put where it stands
@@ -207,10 +239,10 @@ export const create: CreateFeature = (game) => {
   const gnawTarget = () => {
     let best: { tree: number; face: number; gap: number } | undefined;
     world.trees!.forEach((tree, i) => {
-      const t = state.trees[i];
-      if (t?.split) return;
+      const t = live(state.trees[i]);
+      if (!t) return;
       let point: Vector3, radius: number;
-      if (t?.fell === undefined) { point = tree.place; radius = measure(tree).radius; }
+      if (t.fell === undefined) { point = tree.place; radius = measure(tree).radius; }
       else {
         const line = t.rest ? views.get(i)?.trunkLine() : undefined;
         if (!line) return; // still falling
@@ -237,7 +269,7 @@ export const create: CreateFeature = (game) => {
     const n = state.dam.length;
     if (carrying) return n >= SLOTS + LODGE || flight || !(n < SLOTS ? atDam() : atLodge()) ? undefined : { kind: "build" as const, lodge: n >= SLOTS };
     const target = gnawTarget();
-    return target && { kind: "gnaw" as const, target, lying: state.trees[target.tree]?.fell !== undefined };
+    return target && { kind: "gnaw" as const, target, lying: live(state.trees[target.tree])?.fell !== undefined };
   };
   player.actor = {
     begin(carrying) {
@@ -259,12 +291,12 @@ export const create: CreateFeature = (game) => {
     },
     step(dt, held) {
       if (job?.kind === "gnaw") {
-        const i = job.tree, before = state.trees[i];
-        if (!held || before?.split || (before?.fell !== undefined && !before.rest)) return (job = undefined);
+        const i = job.tree, before = live(state.trees[i]);
+        if (!held || !before || (before.fell !== undefined && !before.rest)) return (job = undefined);
         if ((job.timer += dt) < BITE_TIME) return progressOf(i);
         job.timer -= BITE_TIME;
         commit({ type: "bite", tree: i });
-        const t = state.trees[i]!;
+        const t = live(state.trees[i])!;
         if (t.fell === undefined && t.bites >= bitesToFell(measure(world.trees![i]!).radius)) {
           const at = world.trees![i]!.place;
           commit({ type: "fell", tree: i, direction: Math.atan2(at.x - feet.x, at.z - feet.z) });
@@ -293,7 +325,7 @@ export const create: CreateFeature = (game) => {
 
   /** How far tree i is towards falling (standing) or breaking (lying), with the bite under way. */
   const progressOf = (i: number) => {
-    const t = state.trees[i], timer = job?.kind === "gnaw" && job.tree === i ? job.timer / BITE_TIME : 0;
+    const t = live(state.trees[i]), timer = job?.kind === "gnaw" && job.tree === i ? job.timer / BITE_TIME : 0;
     if (t?.rest) return Math.min(1, (t.splitBites + timer) / BITES_TO_SPLIT);
     return Math.min(1, ((t?.bites ?? 0) + timer) / bitesToFell(measure(world.trees![i]!).radius));
   };
@@ -315,18 +347,24 @@ export const create: CreateFeature = (game) => {
       at: standAt,
       fell(i: number) {
         const at = world.trees![i]!.place, need = bitesToFell(measure(world.trees![i]!).radius);
-        while ((state.trees[i]?.bites ?? 0) < need) commit({ type: "bite", tree: i });
+        while ((live(state.trees[i])?.bites ?? need) < need) commit({ type: "bite", tree: i });
         return commit({ type: "fell", tree: i, direction: Math.atan2(at.x - feet.x, at.z - feet.z) });
       },
       /** Lays a falling tree down where it is now, and breaks it into wood. */
       split(i: number) {
         const v = views.get(i), body = v?.body;
-        if (body && !state.trees[i]?.rest) {
+        if (body && !live(state.trees[i])?.rest) {
           const p = body.translation(), q = body.rotation();
           commit({ type: "rest", tree: i, at: [p.x, p.y, p.z], turn: [q.x, q.y, q.z, q.w] });
         }
         return commit({ type: "split", tree: i });
       },
+      age(i: number, seconds: number) {
+        const t = state.trees[i];
+        if (t?.gone !== undefined) { t.gone -= seconds * 1000; save(); }
+        return t?.gone !== undefined && (Date.now() - t.gone) / 1000;
+      },
+      saplings,
       fill(n: number) { while (state.dam.length < Math.min(SLOTS + LODGE, n)) commit({ type: "place", slot: state.dam.length, stick: `d${state.dam.length}` }); return state.dam.length; },
       toSite() {
         const o = dam.frame.origin.add(dam.frame.across.scale(-1.25));
@@ -359,8 +397,15 @@ export const create: CreateFeature = (game) => {
       const moving = stage.paused ? 0 : dt;
       if ((sinceKept += moving) > KEEP_EVERY) { sinceKept = 0; keepLying(); }
       // The bite in each standing tree that has been bitten, growing smoothly while the beaver gnaws.
-      for (const [key, t] of Object.entries(state.trees)) if (t.fell === undefined && (t.bites > 0 || (job?.kind === "gnaw" && job.tree === +key)))
-        view(+key).bite(progressOf(+key));
+      for (const [key, first] of Object.entries(state.trees)) {
+        const i = +key, t = live(first);
+        if (t?.fell === undefined && t && (t.bites > 0 || (job?.kind === "gnaw" && job.tree === i))) view(i).bite(progressOf(i));
+        // A stump: the sapling on it grows, by this copy's clock; when its count is up, this copy asks for the tree.
+        if (t || first.gone === undefined) continue;
+        const age = (Date.now() - first.gone) / 1000;
+        if (age >= REGROW + GRACE) commit({ type: "grow", tree: i });
+        else if (growth(age) > 0) sapling(i).grow(SAPLING + (1 - SAPLING) * growth(age));
+      }
       if (job?.kind === "gnaw" && !views.has(job.tree) && state.trees[job.tree]?.fell === undefined) view(job.tree).bite(progressOf(job.tree));
       // The stick on its way from the hand to its place: a little arc, turning into place.
       if (flight) {
