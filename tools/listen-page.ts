@@ -44,6 +44,7 @@ export const PLAYED: Record<SoundName, { bus: Bus; at: number; amount: number; s
   fanfare: { bus: "sfx", at: 0, amount: 1, seconds: 5 },
   chime: { bus: "sfx", at: 0, amount: 1, seconds: 4 },
   owl: { bus: "ambience", at: 18, amount: 1, seconds: 4 },
+  deer: { bus: "ambience", at: 14, amount: 1, seconds: 2.5 },
   cricket: { bus: "ambience", at: 0, amount: 0.5, seconds: 1 },
   frog: { bus: "ambience", at: 5, amount: 0.5, seconds: 1.2 },
   tick: { bus: "ambience", at: 0, amount: 0.5, seconds: 1 },
