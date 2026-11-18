@@ -4,11 +4,9 @@
 //   page.on("Runtime.consoleAPICalled", (params) => …);
 //   await page.send("Page.navigate", { url });   await page.evaluate("document.title");   await page.close();
 //   page.failed                                      true once a DevTools call came back with an error
-//
-//   film(frames, reel, clipPath("name"), about)      jpg frames with their times → <clip>.mp4 and <clip>.json
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -85,25 +83,4 @@ export async function openChrome(width: number, height: number): Promise<Page> {
     await close();
     throw error;
   }
-}
-
-/** recordings/<day>/<time>-<name>, for a clip and what is kept beside it. */
-export function clipPath(name: string, now = new Date()) {
-  const two = (n: number) => String(n).padStart(2, "0");
-  const day = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`, time = `${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
-  return join("recordings", day, `${time}-${name}`);
-}
-
-/** Turns jpg frames (in the folder `reel`, each with the screencast time it came at, s) into <clip>.mp4, with
- *  <clip>.json beside it holding `about`. Encoded after the calling script has ended, so it slows nothing down; the
- *  reel is removed when it is done. */
-export async function film(frames: { file: string; at: number }[], reel: string, clip: string, about: object) {
-  if (frames.length < 2) { rmSync(reel, { recursive: true, force: true }); return; }
-  // Each frame is shown until the next one came; ffmpeg turns that into an even 30 pictures a second.
-  const list = frames.map((frame, i) => `file '${frame.file}'\nduration ${Math.max(0.001, (frames[i + 1]?.at ?? frame.at + 0.033) - frame.at).toFixed(4)}`);
-  await Bun.write(join(reel, "list.txt"), `${list.join("\n")}\nfile '${frames.at(-1)!.file}'\n`);
-  mkdirSync(dirname(clip), { recursive: true });
-  await Bun.write(`${clip}.json`, JSON.stringify({ at: new Date().toISOString(), ...about, seconds: +(frames.at(-1)!.at - frames[0]!.at).toFixed(2) }, null, 2));
-  Bun.spawn(["sh", "-c", 'ffmpeg -y -loglevel error -f concat -safe 0 -i "$1/list.txt" -vf "fps=30,format=yuv420p" -c:v libx264 -crf 20 -movflags +faststart "$2.mp4"; rm -rf "$1"', "sh", reel, clip],
-    { stdio: ["ignore", "ignore", "ignore"] }).unref();
 }

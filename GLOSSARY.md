@@ -1,0 +1,123 @@
+# Beaver
+
+A browser game in which a player steers a beaver through a small world and builds a dam. Agents build it from viewers' wishes while a live stream shows the game playing itself.
+
+## Language
+
+### The world
+
+**Clearing**:
+The round meadow the whole game takes place in, closed by a bank that rises into thicket.
+_Avoid_: map, level, arena
+
+**Pond**:
+The water in the clearing. Its level rises with the dam.
+_Avoid_: lake, river
+
+**Basin**:
+The deep part of the pond, where the beaver can dive.
+_Avoid_: deep end, pit
+
+**Building site**:
+The flat ground at the pond where the dam is built.
+_Avoid_: construction zone, build area
+
+**Stick**:
+A piece of wood the beaver can carry and build with. Every tree gnawed into wood yields sticks.
+_Avoid_: log, branch, wood item
+
+**Dam**, **Lodge**, **Food cache**:
+The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
+_Avoid_: base, house, storage
+
+### Playing
+
+**Player**:
+A person steering a beaver, or the beaver they steer.
+_Avoid_: user, character
+
+**Remote**:
+Another player's beaver as this browser draws it.
+_Avoid_: peer, other client
+
+**Bot**:
+A player without a browser that joins over the network and does beaver work under the same rules as a person.
+_Avoid_: NPC, AI player
+
+**Animal**:
+A creature of the world that no player steers: ducks, fish, deer.
+_Avoid_: NPC, mob, wildlife entity
+
+**Saved game**:
+The state of the trees, the dam, the lodge and the cache, kept between visits.
+_Avoid_: save file, progress
+
+### How the game is put together
+
+**Part**:
+One of the folders the game cannot run without (`beaver`, `anim`, `player`, `world`, `props`). Parts know each other only through `src/contracts.ts`.
+_Avoid_: module, package, layer
+
+**Feature**:
+A folder in `src/features` that adds to the game through `create(game)` and is listed in `FEATURES`. The game runs without any one of them.
+_Avoid_: plugin, system, component
+
+**Stage**:
+The engine, scene, camera, HUD texture and physics world every part and feature draws on and steps in.
+_Avoid_: context, app, renderer
+
+**HUD**:
+Everything drawn over the world for the player: goals, map, hints, menus, touch controls.
+_Avoid_: UI, GUI, interface
+
+**Overlay**:
+The helper that draws a group of HUD elements and gives each interactive one a transparent native counterpart.
+_Avoid_: layer, widget, DOM UI
+
+### The tour
+
+**Tour**:
+The game playing itself: the beaver goes through the stations round after round and checks each. It is the test every change must pass and the picture the stream shows.
+_Avoid_: end-to-end test, demo, playthrough
+
+**Station**:
+One player-facing behavior played and checked by the tour, with a name a viewer can read ("Fell a tree").
+_Avoid_: test case, scenario, step
+
+**Activity**:
+A named group of stations that are played in order and shown as one thing on the stream ("Dam work").
+_Avoid_: suite, chapter, sequence
+
+**Round**:
+One pass of the tour through its stations.
+_Avoid_: run, iteration, cycle
+
+**Fast tour**:
+The tour as a test: the world runs four times faster and long ways are skipped.
+_Avoid_: test mode, speedrun
+
+**Live tour**:
+The tour for the stream: real time, a director that picks the next activity, a camera that keeps the beaver in view.
+_Avoid_: stream mode, spectator mode, demo mode
+
+**Soak**:
+Many whole tours in a row to find stations that fail only sometimes.
+_Avoid_: stress test, burn-in
+
+**Flake**:
+A station that fails without a change that broke it.
+_Avoid_: intermittent failure, random failure
+
+### Where changes come from
+
+**Wish**:
+What a viewer asks for in the stream's chat, in their own words.
+_Avoid_: request, suggestion, idea
+
+**Spec**:
+A wish worked out into an issue an agent can build in one session, with a station as its acceptance check.
+_Avoid_: ticket, PRD, task
+
+**Builder**:
+An agent that builds one spec on its own branch.
+_Avoid_: worker, coder, dev agent

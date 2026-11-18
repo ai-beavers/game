@@ -17,18 +17,17 @@
 //                                running on port + 1 meanwhile, as load.
 //
 // Prints one line per station and round, nothing else. Each station's result goes as a line of JSON into
-// recordings/tour.jsonl (with the commit). A station that fails leaves recordings/<day>/<time>-tour-<station>.mp4
-// (the last CLIP seconds before it, small; the screencast may lag a little) and a .jpg of the moment. A page that says nothing for QUIET seconds while its game clock stands still, or
+// recordings/tour.jsonl (with the commit). A station that fails leaves recordings/tour-<station>.jpg, a picture of
+// the moment; nothing is filmed. A page that says nothing for QUIET seconds while its game clock stands still, or
 // crashes, is opened anew. Ctrl-C stops Chrome and the server and removes the checkout.
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Subprocess } from "bun";
-import { clipPath, film, openChrome, type Page } from "./chrome.ts";
+import { openChrome, type Page } from "./chrome.ts";
 
-const CLIP = 15; // s of picture kept before a failure
 const QUIET = 90; // s without a word from the tour and without its game clock moving: it hangs
-const WIDTH = 640, HEIGHT = 360; // small: the picture is only looked at when something failed
+const WIDTH = 640, HEIGHT = 360; // small: a picture is only kept when something failed
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => { const at = args.indexOf(`--${name}`); return at < 0 ? fallback : args[at + 1]!; };
@@ -99,12 +98,11 @@ async function serve() {
   throw new Error(`the server on port ${port} did not start`);
 }
 
-// ---- the page: tour lines out, the last CLIP seconds of picture kept in memory ----
-let page: Page | undefined, heard = Date.now(), ring: { data: string; at: number }[] = [], failures = 0;
+// ---- the page: tour lines out ----
+let page: Page | undefined, heard = Date.now(), failures = 0;
 const kept: Promise<void>[] = [];
 async function open() {
   await page?.close();
-  ring = [];
   const p = page = await openChrome(WIDTH, HEIGHT);
   p.on("Runtime.consoleAPICalled", (e) => {
     const text = e.args.map((a: any) => a.value ?? a.description ?? a.type).join(" ");
@@ -117,11 +115,6 @@ async function open() {
   });
   p.on("Runtime.exceptionThrown", (e) => console.log("[exception]", e.exceptionDetails.exception?.description ?? e.exceptionDetails.text));
   p.on("Inspector.targetCrashed", () => { console.log("[runner] the page crashed"); heard = 0; });
-  p.on("Page.screencastFrame", (f) => {
-    ring.push({ data: f.data, at: f.metadata.timestamp });
-    while (ring[0]!.at < f.metadata.timestamp - CLIP) ring.shift();
-    void p.send("Page.screencastFrameAck", { sessionId: f.sessionId });
-  });
   await p.send("Inspector.enable");
   // --once: the saved game of the last run, put back before the game reads it (once a tab: not after the tour's reset).
   if (once) {
@@ -138,29 +131,20 @@ async function open() {
   }
   // The checks do not need a fine picture; the profile is thrown away with Chrome, so this stays here.
   await p.evaluate(`window.game?.settings.set({ quality: "low", effects: false })`);
-  await p.send("Page.startScreencast", { format: "jpeg", quality: 60, maxWidth: WIDTH, maxHeight: HEIGHT, everyNthFrame: 2 });
   heard = Date.now();
 }
 
-/** A station's result into recordings/tour.jsonl; a failure also as a clip and a picture of the moment. */
+/** A station's result into recordings/tour.jsonl; a failure also as a picture of the moment. */
 async function keep(p: Page, failed: boolean) {
   const result = await p.evaluate("window.tour?.results.at(-1)");
   if (!result) return;
   mkdirSync("recordings", { recursive: true });
   appendFileSync("recordings/tour.jsonl", `${JSON.stringify({ at: new Date().toISOString(), sha, speed, ...result })}\n`);
   if (!failed) return;
-  const clip = clipPath(`tour-${String(result.station).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
-  const frames = ring.slice(), reel = mkdtempSync(join(tmpdir(), "beaver-reel-"));
-  mkdirSync(dirname(clip), { recursive: true });
+  const picture = `recordings/tour-${String(result.station).toLowerCase().replace(/[^a-z0-9]+/g, "-")}.jpg`; // the last failure of this station
   const { data } = await p.send("Page.captureScreenshot", { format: "jpeg", quality: 80 }); // the tour holds still a second for it
-  await Bun.write(`${clip}.jpg`, Buffer.from(data, "base64"));
-  const files = await Promise.all(frames.map(async (f, i) => {
-    const file = join(reel, `${String(i).padStart(6, "0")}.jpg`);
-    await Bun.write(file, Buffer.from(f.data, "base64"));
-    return { file, at: f.at };
-  }));
-  await film(files, reel, clip, { url, sha, ...result });
-  console.log(`[runner] ${clip}.mp4`);
+  await Bun.write(picture, Buffer.from(data, "base64"));
+  console.log(`[runner] ${picture}`);
 }
 
 /** Which game is played: the commit, and with --here a hash of the changes on top of it. A saved game is only
