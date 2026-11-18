@@ -1,8 +1,8 @@
 // The mixing desk and the lasting sounds: buses with their levels, a small reverb, a limiter, the wind in the
-// leaves, water lapping, and the music. Works on any BaseAudioContext, so lab/audio.ts renders the full mix offline.
+// leaves, water lapping, and the music. Works on any BaseAudioContext, so tools/listen.ts renders the full mix offline.
 //
 //   const mix = createMix(ctx);              mix.steps / sfx / ambience / music: connect sounds here
-//   mix.master.gain.value = 0.7;             volume; nothing after the limiter can clip at ≤ 1
+//   mix.master.gain.value = 0.7;             volume, before the limiter: at any volume the peaks stay under -1 dBFS
 //   const wind = createWind(ctx, mix.ambience);   wind.update(ctx.currentTime, strength) every frame or so
 //   rain.update(now, rain, nearWater) · night.update(now, crickets, frogs) · music.night(dark, now)
 //
@@ -10,22 +10,38 @@
 import { composer, pitch } from "./music.ts";
 import { noise, rand, SOUNDS } from "./sounds.ts";
 
-/** Bus levels and reverb sends: footsteps sit under the ambience, events read clearly, music stays soft. */
+/** Bus levels and reverb sends: footsteps sit under the ambience, events read clearly, music stays soft. `drive`
+ *  brings the sum to the loudness plan: about -16 LUFS for a scene at the default volume 0.7, a milestone or the
+ *  tail slap the loudest, peaks under -1 dBFS (bun tools/listen.ts measures it; audio.test.ts holds the bands). */
 export const LEVELS = {
-  steps: { gain: 0.25, reverb: 0.08 },
+  steps: { gain: 0.45, reverb: 0.08 },
   sfx: { gain: 0.7, reverb: 0.15 },
   ambience: { gain: 0.6, reverb: 0.05 },
-  music: { gain: 0.22, reverb: 0.6 },
+  music: { gain: 0.16, reverb: 0.6 },
+  drive: 7,
 };
 
 export function createMix(ctx: BaseAudioContext) {
   const master = ctx.createGain(), limiter = ctx.createDynamicsCompressor(), reverb = ctx.createConvolver(), wet = ctx.createGain();
-  limiter.threshold.value = -8;
-  limiter.knee.value = 4;
+  const drive = ctx.createGain(), rumble = ctx.createBiquadFilter(), air = ctx.createBiquadFilter();
+  drive.gain.value = LEVELS.drive;
+  // Below 40 Hz phones and laptops play nothing and the stream's encoder wastes bits; above 9 kHz the noise layers hiss.
+  rumble.type = "highpass"; rumble.frequency.value = 40; rumble.Q.value = 0.7;
+  air.type = "highshelf"; air.frequency.value = 9000; air.gain.value = -4;
+  limiter.threshold.value = -4;
+  limiter.knee.value = 0;
   limiter.ratio.value = 20;
-  limiter.attack.value = 0.002;
-  limiter.release.value = 0.2;
-  limiter.connect(master).connect(ctx.destination);
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.15;
+  // The limiter lets a sharp crack overshoot by a dB or so: a soft clip rounds what is above -3 dBFS off below -1 dBFS.
+  const ceiling = ctx.createWaveShaper(), curve = new Float32Array(1025);
+  for (let i = 0; i < curve.length; i++) {
+    const x = (i / 512 - 1), a = Math.abs(x);
+    curve[i] = a <= 0.68 ? x : Math.sign(x) * (0.68 + 0.18 * Math.tanh((a - 0.68) / 0.18));
+  }
+  ceiling.curve = curve;
+  ceiling.oversample = "4x";
+  drive.connect(rumble).connect(air).connect(master).connect(limiter).connect(ceiling).connect(ctx.destination);
   // A small glade: 1.4 s of decaying stereo noise, darker towards its end.
   const length = Math.floor(ctx.sampleRate * 1.4), impulse = ctx.createBuffer(2, length, ctx.sampleRate);
   for (let c = 0; c < 2; c++) {
@@ -39,12 +55,12 @@ export function createMix(ctx: BaseAudioContext) {
   }
   reverb.buffer = impulse;
   wet.gain.value = 0.5;
-  reverb.connect(wet).connect(limiter);
+  reverb.connect(wet).connect(drive);
   const bus = (level: { gain: number; reverb: number }) => {
     const gain = ctx.createGain(), send = ctx.createGain();
     gain.gain.value = level.gain;
     send.gain.value = level.reverb;
-    gain.connect(limiter);
+    gain.connect(drive);
     gain.connect(send).connect(reverb);
     return gain;
   };
@@ -60,7 +76,7 @@ export function createMix(ctx: BaseAudioContext) {
 export type Mix = ReturnType<typeof createMix>;
 
 /** How strong the wind sounds for the sky's wind (0 … 1): 1 at a light breeze (0.25), as before the sky. */
-export const windLoudness = (wind: number) => 0.7 + 1.2 * wind;
+export const windLoudness = (wind: number) => 0.95 + 0.2 * wind;
 
 /** Wind in the leaves: a low stereo rush and a high rustle that swell and fade by themselves, louder and brighter
  *  with `strength` (the sky's wind; 0.25 a light breeze). */
@@ -87,7 +103,7 @@ export function createWind(ctx: BaseAudioContext, out: AudioNode) {
       const loud = windLoudness(strength), bright = Math.max(0, strength - 0.25);
       for (const r of rush) {
         r.gain.gain.setTargetAtTime(0.16 * loud * swell * rand(0.85, 1.15), now, 1.2);
-        r.f.frequency.setTargetAtTime(250 + 350 * swell + 500 * bright, now, 1.2);
+        r.f.frequency.setTargetAtTime(250 + 350 * swell + 300 * bright, now, 1.2);
       }
       for (const l of leaves) l.gain.gain.setTargetAtTime(0.13 * loud * swell * swell * rand(0.4, 1.3), now, 0.15);
     },
@@ -128,9 +144,9 @@ export function createRain(ctx: BaseAudioContext, out: AudioNode, water: AudioNo
   return {
     update(now: number, rain: number, nearWater: number) {
       level = rain; near = nearWater;
-      // Soft enough that a bite or a knock still stands over it (lab/audio.ts: mix("rain")).
-      for (const h of hiss) h.gain.setTargetAtTime(0.045 * rain, now, 1.5);
-      body.gain.setTargetAtTime(0.035 * rain, now, 1.5);
+      // Soft enough that a bite or a knock still stands over it (bun tools/listen.ts --only rain).
+      for (const h of hiss) h.gain.setTargetAtTime(0.02 * rain, now, 1.5);
+      body.gain.setTargetAtTime(0.025 * rain, now, 1.5);
       pond.gain.setTargetAtTime(0.06 * rain * near, now, 1.5);
       if (next < now) next = now + 0.05;
       // Single drops close by, more the harder it rains; none are made while it is dry.
@@ -144,7 +160,7 @@ export function createRain(ctx: BaseAudioContext, out: AudioNode, water: AudioNo
         }
         next += rand(0.03, 0.09) / Math.max(0.1, level);
       }
-      ticks.gain.setTargetAtTime(0.6 * Math.sqrt(level), now, 1);
+      ticks.gain.setTargetAtTime(0.35 * Math.sqrt(level), now, 1);
       plips.gain.setTargetAtTime(0.7 * Math.sqrt(level) * near, now, 1);
     },
   };
@@ -196,7 +212,8 @@ export function createMusic(ctx: BaseAudioContext, out: AudioNode) {
   tone.connect(level).connect(hush).connect(out);
   let at = 0, count = 0, on = false, dark = 0, octave = 1;
   const voice = (freq: number, t: number, length: number, peak: number) => {
-    const gain = ctx.createGain(), end = t + length + 3;
+    // Stops once 60 dB down: at t + length + 3 a long note was still 20 dB down and stopped with a click.
+    const gain = ctx.createGain(), end = t + 0.3 + length * 0.6 * 7;
     gain.gain.setValueAtTime(0, t);
     gain.gain.linearRampToValueAtTime(peak, t + 0.25);
     gain.gain.setTargetAtTime(0, t + 0.3, length * 0.6);

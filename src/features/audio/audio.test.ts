@@ -1,7 +1,10 @@
-// Tests for the pure parts of the audio feature: the composer, the ground lookup, and that every recipe runs.
+// Tests for the pure parts of the audio feature: the composer, the ground lookup, and that every recipe runs; with
+// Chrome at hand, the loudness plan too (each sound rendered offline and measured, as tools/listen.ts does).
 //
 //   bun test src/features/audio
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { measure, render } from "../../../tools/listen.ts";
 import { heightAt, POND, WATER_LEVEL } from "../../world/terrain.ts";
 import { findWater, groundAt } from "./ground.ts";
 import { composer, HIGHEST, LOWEST, pitch } from "./music.ts";
@@ -70,4 +73,54 @@ test("every sound, the tail slap's crack and thump among them, makes sources tha
       expect(s.stop!, name).toBeLessThan(6);
     }
   }
+});
+
+// ---- the loudness plan, measured: the game's own sound rendered offline in headless Chrome (bun tools/listen.ts) ----
+
+/** How loud each one-shot may be at the camera, at the default volume: LUFS of its loudest 400 ms (M max). */
+const BANDS: [low: number, high: number, names: string[]][] = [
+  [-16, -9, ["fanfare", "chime"]], // milestones: the loudest, a few LU over the scene
+  [-20, -11, ["slap", "splash", "crash", "crack", "creak"]], // the alarm and the big moments
+  [-27, -17, ["land", "thump", "shake", "bite", "place", "drop", "pickup", "jump"]], // the beaver at work
+  [-30, -22, ["stepGrass", "stepShore", "stepWater", "paddle"]], // under the ambience
+  [-41, -22, ["owl", "cricket", "frog", "tick", "plip", "bird", "lap"]], // the world around, far off or many
+];
+const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap"];
+const chrome = existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+
+test.skipIf(!chrome)("every one-shot sits in its loudness band, ends in time, has no DC and never clips", async () => {
+  const names = BANDS.flatMap(([, , n]) => n);
+  const { out, names: all } = await render(names.map((name) => ({ kind: "recipe", name })));
+  expect(names.toSorted()).toEqual(all.recipes.toSorted()); // a new recipe needs a band
+  for (const [low, high, list] of BANDS) for (const name of list) {
+    const m = measure(out.get(`recipe:${name}`)!);
+    expect(m.max, name).toBeGreaterThan(low);
+    expect(m.max, name).toBeLessThan(high);
+    expect(m.peak, name).toBeLessThan(-1);
+    expect(Math.abs(m.dc), name).toBeLessThan(1e-3);
+    expect(m.end, name).toBeGreaterThan(0.1); // silent before its window ends, reverb and all
+  }
+}, 60_000);
+
+test.skipIf(!chrome)("the full mix: about -16 LUFS at the default volume, peaks under -1 dBFS at full volume, no loop heard", async () => {
+  const jobs = SCENES.map((name) => ({ kind: "scene" as const, name }));
+  const [usual, full] = [await render(jobs), await render(jobs, { volume: 1 })];
+  for (const name of SCENES) {
+    const m = measure(usual.out.get(`scene:${name}`)!), loud = measure(full.out.get(`scene:${name}`)!);
+    expect(m.integrated, name).toBeGreaterThan(-19);
+    expect(m.integrated, name).toBeLessThan(-13);
+    expect(loud.peak, name).toBeLessThan(-1);
+    expect(loud.clipped, name).toBe(0);
+    expect(Math.abs(m.dc), name).toBeLessThan(1e-3);
+    expect(Math.abs(m.repeat), name).toBeLessThan(0.5); // the noise beds do not repeat every 2 s
+  }
+}, 60_000);
+
+test("the meters: a full-scale 1 kHz sine at 48 kHz reads -3 LUFS and 0 dBFS", () => {
+  const rate = 48000, left = new Float32Array(rate * 2).map((_, i) => Math.sin((2 * Math.PI * 1000 * i) / rate));
+  const m = measure({ rate, left, right: new Float32Array(left.length) });
+  expect(m.integrated).toBeCloseTo(-3.0, 0);
+  expect(m.peak).toBeCloseTo(0, 1);
+  expect(m.centroid).toBeGreaterThan(950);
+  expect(m.centroid).toBeLessThan(1050);
 });
