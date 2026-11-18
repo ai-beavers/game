@@ -9,7 +9,8 @@
 // (name.ts) does. Then it connects to /net and, about 20 times a second, sends where the beaver is, which way it faces
 // and its Motion; the others rebuild it from that (remote.ts), as a solid beaver. The loose things are simulated by
 // one player, the host (the one in longest), and followed by the rest (things.ts). When the connection drops it says
-// so quietly, plays on alone, and tries again.
+// so quietly, plays on alone, and tries again; a full server says so and is tried only every 30 s. When the server
+// runs another build than the one that served this page (deployed since), the page reloads once on reconnecting.
 //
 // The world's work (src/features/build) is a list of changes the server keeps in order. Saved against shared: the
 // server's world counts. Before any feature is made, this module asks the server for its world; when the server has
@@ -28,20 +29,20 @@ import { HEIGHT, RADIUS } from "../../player/index.ts";
 import { load, type BuildChange } from "../build/rules.ts";
 import { askName } from "./name.ts";
 import {
-  changesOf, INFO_PATH, packMotion, PATH, replay, sameWorld, SEND_RATE, stickId, type ClientMessage, type Place, type ServerMessage,
+  changesOf, INFO_PATH, packMotion, PATH, replay, sameWorld, SEND_RATE, shouldReload, stickId, type ClientMessage, type Place, type ServerMessage,
 } from "./protocol.ts";
 import { createRemote, type Remote } from "./remote.ts";
 import { createThings } from "./things.ts";
 import { createUi } from "./ui.ts";
 
-const RETRY = [1000, 2000, 4000, 8000]; // ms between tries to connect again
+const RETRY = [1000, 2000, 4000, 8000], FULL_RETRY = 30_000; // ms between tries to connect again
 const FULL_EVERY = 2; // s: the host sends every thing this often, moving or not
 const PUSH_FOR = 0.2; // s a guest's push counts after its last state
 const PLACES = 120; // things per message
 const HEAD = 0.9; // m over the feet: where a name tag is looked for behind walls
 // Where src/features/build keeps its world, and where its loose wood lay (as it names them there).
 const BUILD_KEY = new URLSearchParams(location.search).has("tour") ? "beaver.build.tour" : "beaver.build", LOOSE_KEY = `${BUILD_KEY}.loose`;
-const SOLO_KEY = `${BUILD_KEY}.solo`, PLACE_KEY = "beaver.place", RESET_KEY = "beaver.reset";
+const SOLO_KEY = `${BUILD_KEY}.solo`, PLACE_KEY = "beaver.place", RESET_KEY = "beaver.reset", VERSION_KEY = "beaver.reloadedFor";
 
 const read = (store: () => Storage, key: string) => { try { return store().getItem(key); } catch { return null; } };
 const write = (store: () => Storage, key: string, value: string | null) => {
@@ -49,9 +50,9 @@ const write = (store: () => Storage, key: string, value: string | null) => {
 };
 const local = () => localStorage, session = () => sessionStorage;
 
-async function serverInfo(): Promise<{ addresses: string[]; epoch: string; build: BuildChange[] } | undefined> {
+async function serverInfo(): Promise<{ addresses: string[]; epoch: string; build: BuildChange[]; version?: string } | undefined> {
   try {
-    const response = await fetch(INFO_PATH, { signal: AbortSignal.timeout(2000) });
+    const response = await fetch(INFO_PATH, { signal: AbortSignal.timeout(2000), cache: "no-store" });
     if (!response.ok || !response.headers.get("content-type")?.includes("json")) return;
     const info = await response.json();
     return Array.isArray(info?.addresses) && Array.isArray(info.build) && typeof info.epoch === "string" ? info : undefined;
@@ -100,7 +101,7 @@ export const create: CreateFeature = (game) => {
   const remotes = new Map<number, Remote & { holding: number; push?: { u: [number, number, number, number]; at: number } }>();
   let socket: WebSocket | undefined, me = -1, host = -1, tries = 0, connected = false, askingName = false, named = "";
   let carried = -1, pushing: [number, number, number, number] | undefined, sendAll = true, sinceFull = 0, time = 0;
-  let address = info.addresses[0] ?? location.href;
+  let address = info.addresses[0] ?? location.href, full = ""; // full: what the server said when it had no room
   const pending: BuildChange[] = []; // made here while not connected: sent on the next welcome
 
   const send = (m: ClientMessage) => { if (connected && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(m)); };
@@ -193,6 +194,8 @@ export const create: CreateFeature = (game) => {
     if (m.t === "welcome" || m.t === "join" || m.t === "leave" || m.t === "host") history.push(`${Math.round(performance.now())} ${m.t} ${m.id}${m.t === "welcome" ? ` host ${m.host}` : ""}`);
     switch (m.t) {
       case "welcome":
+        // The server was deployed again since this page loaded (its build differs): load the new page, once.
+        if (shouldReload(info?.version ?? "", m.version ?? "", read(session, VERSION_KEY))) { write(session, VERSION_KEY, m.version); reload(); return; }
         me = m.id; host = m.host; connected = true; tries = 0; sendAll = true; away = false;
         for (const p of m.players) addRemote(p.id, p.name);
         for (const [id, stick] of m.carried) { const r = remotes.get(id); if (r) r.carry = stick; }
@@ -234,6 +237,7 @@ export const create: CreateFeature = (game) => {
         shared.have = m.n + m.c.length;
         return;
       case "world": shared.epoch = m.epoch; adopt(m.build); return;
+      case "full": full = `Server full (${m.players}/${m.max}), playing alone`; return;
       case "reset": if (!building) return; write(local, BUILD_KEY, null); write(local, LOOSE_KEY, null); write(session, RESET_KEY, "1"); reload(); return;
     }
   }
@@ -254,8 +258,9 @@ export const create: CreateFeature = (game) => {
       for (const id of [...remotes.keys()]) removeRemote(id);
       role();
       me = host = -1;
-      ui.status(was ? "Connection lost. Playing alone, trying again…" : "Can't reach the server. Trying again…");
-      setTimeout(connect, RETRY[Math.min(tries++, RETRY.length - 1)]);
+      ui.status(full || (was ? "Connection lost. Playing alone, trying again…" : "Can't reach the server. Trying again…"));
+      setTimeout(connect, full ? FULL_RETRY : RETRY[Math.min(tries++, RETRY.length - 1)]);
+      full = "";
     };
   }
 
