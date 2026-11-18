@@ -4,7 +4,7 @@
 //   layout(1440, 810, inset, { touch: false, live: true })   → { u: 24, goals: Box, caption: Box, map: Box, … }
 //
 // The screen's regions, each element with one home in one of them:
-//   top left       pause (play, desktop), goals              top centre    the tour's caption, toasts under it
+//   top left       pause (play, desktop), Experience, goals             top centre    the tour's caption, toasts under it
 //   top right      map, hour and weather, fps                bottom left   chat log, connection, chat row
 //   bottom centre  breath, hints and advice, prompt          bottom right  the thumbs' buttons (controls/touch.ts)
 // Regions never overlap: when the top centre has no room between the sides, live its caption goes above them and the
@@ -30,6 +30,8 @@ export function unit(w: number, h: number, live: boolean) {
 export interface Layout {
   u: number; small: number; gap: number; pad: number; compact: boolean;
   pause?: Box; goals: Box;
+  /** The player's Experience (src/features/shop), a short row over the goals. */
+  experience: Box;
   caption: Box; toast: Box;
   map?: Box; status: Box; fps: Box;
   chat: Box; chatRow: Box; log: Box;
@@ -62,7 +64,8 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const status = box(right - rightW, top + (mapSize ? mapSize + gap : 0), rightW, row);
   const fps = box(right - rightW, status.y + row + gap, rightW, small * 2);
   const pause = !touch && !live ? box(L, top, 68, 36) : undefined;
-  const goalsY = pause ? pause.y + pause.h + gap : top;
+  const experience = box(L, pause ? pause.y + pause.h + gap : top, Math.min(leftW, u * 10), Math.round(u * 1.5));
+  const goalsY = experience.y + experience.h + gap;
   const under = Math.max(fps.y + fps.h, goalsY + u * 6.5) + gap; // a short goals list: the goal at hand, how, one done
   const caption = box((w - centreW) / 2, stacked && !live ? under : T, centreW, row);
   const toast = box(caption.x, stacked && live ? under : caption.y + row + gap, centreW, toastH);
@@ -89,7 +92,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const log = box(L, logBottom - logH, chatW, logH);
   const chat = box(L, Math.min(log.y, chatRow.y), chatW, live ? 0 : chatBottom - Math.min(log.y, chatRow.y));
   return {
-    u, small, gap, pad, compact, pause, goals, caption, toast, map, status, fps, chat, chatRow, log, breath, hints, prompt, touch: thumbs,
+    u, small, gap, pad, compact, pause, experience, goals, caption, toast, map, status, fps, chat, chatRow, log, breath, hints, prompt, touch: thumbs,
     middle: { top: Math.max(fps.y, goalsY + u * 4, stacked ? toast.y + toast.h : 0) + gap, bottom: breath.y - gap },
   };
 }
@@ -97,7 +100,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
 /** The boxes that hold something at all times, to test that none lies on another. The goals' box is the room they may
  *  grow into, the map's and the caption's what they take. */
 export function homes(l: Layout): [string, Box][] {
-  const all: [string, Box | undefined][] = [["pause", l.pause], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * 6.5) }], ["caption", l.caption], ["toast", l.toast],
+  const all: [string, Box | undefined][] = [["pause", l.pause], ["experience", l.experience], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * 6.5) }], ["caption", l.caption], ["toast", l.toast],
     ["map", l.map], ["status", l.status], ["fps", l.fps], ["chat row", l.chatRow], ["log", l.log], ["breath", l.breath], ["hints", l.hints],
     ["prompt", l.prompt], ["touch", l.touch]];
   return all.filter((e): e is [string, Box] => !!e[1] && e[1].w > 0 && e[1].h > 0);
