@@ -1,7 +1,8 @@
 // Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
-// rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the steps and splashes of
-// other players (src/features/net); and a quiet tune that composes itself.
+// rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
+// that src/features/life shows, calling from where they are; the steps and splashes of other players
+// (src/features/net); and a quiet tune that composes itself.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
@@ -197,6 +198,9 @@ export const create: CreateFeature = (game) => {
         const angle = rand(0, Math.PI * 2), distance = rand(14, 24);
         play("owl", new Vector3(here.x + Math.cos(angle) * distance, here.y + rand(4, 8), here.z + Math.sin(angle) * distance), 1, "ambience");
       }
+      // The larger animals call from where they are (src/features/life): the owl on its branch, a deer bounding off.
+      const heard = (window as { life?: { heard?: { name: "owl" | "deer"; x: number; y: number; z: number }[] } }).life?.heard;
+      for (let call = heard?.shift(); call; call = heard!.shift()) play(call.name, new Vector3(call.x, call.y, call.z), 1, "ambience");
       listenToOthers(dt);
     },
   };
