@@ -1,4 +1,5 @@
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -18,6 +19,14 @@ export const SKY_FILL = 0.45;
 const REACH = 36, AHEAD = 7;
 const SHADOW_MAP = { low: 1024, medium: 2048, high: 2048 } as const;
 const FILTER = { low: ShadowGenerator.QUALITY_LOW, medium: ShadowGenerator.QUALITY_MEDIUM, high: ShadowGenerator.QUALITY_HIGH } as const;
+
+/** The beaver's lantern (src/features/lantern) for the shaders that light themselves (grass, leaves, the larger
+ *  animals): a PointLight does not reach them. Each adds lantern(world position) to its light, with lanternAt and
+ *  lanternGlow from daylight().lantern; the glow is black by day, so nothing changes and nothing recompiles at dusk. */
+export const LANTERN_REACH = 7; // m
+export const LANTERN_GLSL = /* glsl */`uniform vec3 lanternAt, lanternGlow;
+  vec3 lantern(vec3 p) { float f = max(0., 1. - distance(p, lanternAt) / ${LANTERN_REACH.toFixed(1)}); return lanternGlow * f * f; }`;
+export const LANTERN_UNIFORMS = ["lanternAt", "lanternGlow"];
 
 const lights = new WeakMap<Scene, ReturnType<typeof daylight>>();
 export const daylightOf = (scene: Scene) => lights.get(scene);
@@ -47,6 +56,8 @@ export function daylight({ scene, camera }: Stage) {
   const right = new Vector3(), up = new Vector3(), centre = new Vector3(), ahead = new Vector3();
   const light = {
     sky, sun, towards: sun.direction, shadows,
+    /** Where the lantern hangs and its colour times strength (see LANTERN_GLSL). */
+    lantern: { at: new Vector3(), glow: new Color3() },
     /** Keeps the shadow map over the ground in front of the player. Its middle moves in whole texels of the map,
      *  seen from the sun, so the shadows' edges stay put while the beaver and the camera move. */
     follow(focus: Vector3) {

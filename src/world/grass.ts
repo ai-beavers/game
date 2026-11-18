@@ -6,7 +6,7 @@ import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { Stage } from "../engine.ts";
-import { daylightOf } from "../light.ts";
+import { daylightOf, LANTERN_GLSL, LANTERN_UNIFORMS } from "../light.ts";
 import { seeded } from "./noise.ts";
 import { BASIN, groundColor, heightAt, RIM, SITE, pondRatio, slopeAt, WATER_LEVEL } from "./terrain.ts";
 
@@ -31,7 +31,7 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
       #include<instancesDeclaration>
       uniform mat4 viewProjection, lightMatrix; uniform highp sampler2DShadow shadowMap;
       uniform vec3 eye, sky, sun, toSun, soil, fogColor; uniform float time, wind, fogDensity, edge, gamma;
-      varying vec3 colour;
+      varying vec3 colour; ${LANTERN_GLSL}
       void main() {
         #include<instancesVertex>
         float far = length(finalWorld[3].xyz - eye), reach = mix(9., 27., ground.w); // each blade stands up to its own distance, then shrinks away
@@ -46,12 +46,12 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
         float shadow = all(greaterThanEqual(uvz, vec3(0.))) && all(lessThanEqual(uvz, vec3(1.))) ? texture(shadowMap, uvz) : 1.;
         shadow = mix(shadow, 1., smoothstep(1. - edge, 1., clamp(dot(clip.xy, clip.xy), 0., 1.)));
         float facing = max(0., toSun.y) + .3 * h * length(toSun.xz) * step(0., toSun.y); // a low sun lights the tips
-        vec3 lit = ground.rgb * soil * mix(vec3(.55,.57,.52), vec3(1.15,1.2,.95), h) * clamp(sky + sun * facing * shadow, 0., 1.);
+        vec3 lit = ground.rgb * soil * mix(vec3(.55,.57,.52), vec3(1.15,1.2,.95), h) * clamp(sky + sun * facing * shadow + lantern(p.xyz), 0., 1.);
         colour = pow(mix(fogColor, lit, clamp(exp(-pow(fogDensity * far, 2.)), 0., 1.)), vec3(gamma));
       }`,
     fragmentSource: `precision highp float; varying vec3 colour; void main(){ gl_FragColor = vec4(colour, 1.); }`,
   }, { attributes: ["position", "ground"], uniforms: ["world", "viewProjection", "lightMatrix", "eye", "time", "wind", "sky", "sun", "toSun",
-    "soil", "fogColor", "fogDensity", "edge", "gamma"], samplers: ["shadowMap"] });
+    "soil", "fogColor", "fogDensity", "edge", "gamma", ...LANTERN_UNIFORMS], samplers: ["shadowMap"] });
   mesh.material = mat;
   mat.backFaceCulling = false;
   const light = daylightOf(scene)!;
@@ -91,6 +91,7 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
     light.sun.direction.scaleToRef(-1, toSun);
     mat.setFloat("time", time).setFloat("wind", wind.value).setColor3("sky", sky).setColor3("sun", sun).setVector3("toSun", toSun)
       .setColor3("soil", soil.diffuseColor).setColor3("fogColor", scene.fogColor).setFloat("fogDensity", scene.fogMode ? scene.fogDensity : 0)
-      .setFloat("edge", light.shadows.frustumEdgeFalloff).setFloat("gamma", scene.imageProcessingConfiguration.applyByPostProcess ? 2.2 : 1).setVector3("eye", (scene.activeCamera ?? camera).globalPosition);
+      .setFloat("edge", light.shadows.frustumEdgeFalloff).setFloat("gamma", scene.imageProcessingConfiguration.applyByPostProcess ? 2.2 : 1).setVector3("eye", (scene.activeCamera ?? camera).globalPosition)
+      .setVector3("lanternAt", light.lantern.at).setColor3("lanternGlow", light.lantern.glow);
   } };
 }

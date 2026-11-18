@@ -498,6 +498,25 @@ export const create: CreateFeature = (game) => {
         for (const h of [19.3, 20.5, 23, 5.6]) { s.setHour(h); await wait(3.5); if (h === 23) expect(s.dark > 0.5, `dark ${s.dark.toFixed(2)} at 23:00`); }
       } finally { s.setHour(hour); s.running = running; }
     }, "Sky watch"],
+    // A viewer's wish: at night the beaver carries a lantern at its left hip that lights the ground around it
+    // (src/features/lantern); by day it is out. Live it plays only at night and never sets the clock.
+    ["Lantern at night", async () => {
+      const s = sky(), { scene } = stage, light = () => scene.getLightByName("lantern-light") ?? skip("no lantern");
+      if (live && s.dark <= 0.5) return skip(`not dark enough for the lantern at ${s.hour.toFixed(1)} h`);
+      const hour = s.hour, running = s.running;
+      try {
+        if (!live) { s.running = false; s.setWeather("fair"); s.setHour(23); }
+        await walkTo(world.spawn.x + 2.5, world.spawn.z + 2);
+        // On low quality the light is off and the glass glows alone.
+        if (light().isEnabled()) await until(() => light().intensity > 0, 3, `no light from the lantern at ${s.hour.toFixed(1)} h`);
+        expect(!!scene.getMeshByName("lantern")?.isEnabled(), "the beaver carries no lantern at night");
+        if (live) return;
+        s.setHour(13);
+        await until(() => light().intensity === 0, 3, `the lantern still shines at noon (${light().intensity.toFixed(2)})`);
+      } finally {
+        if (!live) { s.setHour(hour); s.running = running; s.setWeather("auto"); }
+      }
+    }, "Sky watch"],
     // Dusk: deer come out of the forest's edge to graze (src/features/life); the beaver runs at one, it bounds off into
     // the trees. Live it plays only in the deer's hours and never sets the clock (the tour has no way to keep a station
     // out of the stream by the hour, so it skips itself); otherwise it sets the hour, fair weather, and starts at spawn.

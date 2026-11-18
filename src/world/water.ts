@@ -57,9 +57,12 @@ export function buildWater({ scene, camera }: Stage) {
       }
       // One octave of ripples: noise turned by angle, k cells per metre, drifting along its own way; its slope fades
       // out once a cell gets narrower than a few pixels (fw: metres per pixel), so it never aliases into a pattern.
-      vec2 ripple(vec2 p, float angle, float k, vec2 drift, float a, float fw) {
+      // What fades is kept as slope variance (lost), for the glint to widen its lobe by instead.
+      vec2 ripple(vec2 p, float angle, float k, vec2 drift, float a, float fw, inout float lost) {
         mat2 turn = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
-        return a * (1. - smoothstep(.12, .35, k * fw)) * (noiseSlope(turn * p * k + drift * time) * turn);
+        float kept = 1. - smoothstep(.12, .35, k * fw);
+        lost += a * a * .25 * (1. - kept * kept);
+        return a * kept * (noiseSlope(turn * p * k + drift * time) * turn);
       }
       void main() {
         float far = length(eye - at), fog = clamp(exp(-pow(fogDensity * far, 2.)), 0., 1.);
@@ -71,9 +74,9 @@ export function buildWater({ scene, camera }: Stage) {
         }
         vec2 p = at.xz;
         // Ripples: four octaves of gradient noise at unrelated angles, sizes and drifts, so no period and no direction.
-        float fw = max(length(dFdx(p)), length(dFdy(p)));
-        vec2 s = ripple(p, .3, .83, vec2(.21, .13), .022, fw) + ripple(p, 2.17, 1.71, vec2(-.19, .31), .018, fw)
-          + ripple(p, 4.05, 3.37, vec2(.43, -.37), .014, fw) + ripple(p, 5.6, 6.91, vec2(-.71, -.53), .010, fw);
+        float fw = max(length(dFdx(p)), length(dFdy(p))), lost = 0.;
+        vec2 s = ripple(p, .3, .83, vec2(.21, .13), .022, fw, lost) + ripple(p, 2.17, 1.71, vec2(-.19, .31), .018, fw, lost)
+          + ripple(p, 4.05, 3.37, vec2(.43, -.37), .014, fw, lost) + ripple(p, 5.6, 6.91, vec2(-.71, -.53), .010, fw, lost);
         vec3 slope = vec3(s.x, 0., s.y);
         for (int i = 0; i < 2; i++) { // two layers of drops, each ring at its own time
           vec2 q = p * 3.5 + float(i) * vec2(.37, .61), cell = fract(q) - .5;
@@ -84,7 +87,7 @@ export function buildWater({ scene, camera }: Stage) {
         vec3 normal = normalize(vec3(-slope.x, 1., -slope.z));
         vec3 view = normalize(eye - at), mirrored = reflect(-view, normal);
         float facing = max(0., dot(view, normal));
-        float fresnel = .03 + .9 * pow(1. - facing, 4.);
+        float fresnel = .02 + .98 * pow(1. - facing, 5.); // Schlick, water
 
         // The sky the surface mirrors, as the dome draws it, then the bank and its trees low down.
         float up = max(mirrored.y, 0.);
@@ -104,19 +107,29 @@ export function buildWater({ scene, camera }: Stage) {
         shadow = mix(shadow, 1., smoothstep(1. - edge, 1., clamp(dot(clip.xy, clip.xy), 0., 1.)));
         vec3 lit = clamp(skyLight + lightColor * max(0., toLight.y) * shadow, 0., 1.);
 
-        // Into the water: the ground shows through where it is shallow, a deep green-blue where a look passes through much.
+        // Into the water: what lies under it (the bed, the cache, a log) shows by the light left after the way down to
+        // it and back up along the look; the rest is the water's own green-blue, a little deeper over the basin.
         float through = waterDepth / max(facing, .25);
-        float abyss = smoothstep(1.2, 2.7, waterDepth); // the deep basin: no bed shows through, darker and bluer
-        float murk = min(mix(.8, .94, abyss), 1. - exp(-through * 1.5));
-        vec3 deep = mix(mix(vec3(.10,.25,.22), vec3(.03,.11,.14), smoothstep(.2, 1., waterDepth)), vec3(.012,.05,.085), abyss) * lit;
+        float murk = min(.9, 1. - exp(-.2 * (waterDepth + through)));
+        vec3 deep = mix(vec3(.10,.25,.22), vec3(.07,.19,.19), smoothstep(.3, 2.5, waterDepth)) * lit;
 
-        float glint = pow(max(0., dot(mirrored, toLight)), mix(220., 45., max(rain, night))) * mix(1.6, 2.2, night); // the moon's path is wider and softer
+        // The glint: the sun (or moon) in each ripple facet, a tight lobe, so it breaks into sparkles along its path;
+        // ripples too fine for a pixel widen and dim it (same light), and the water reflects it by its Fresnel, so it
+        // is small and faint under a high sun and a long bright path under a low one. The moon's path is softer. Its
+        // facets are tilted 3x the ripples: the little capillary waves too small to draw, that make real glitter.
+        vec3 facet = reflect(-view, normalize(vec3(-3. * slope.x, 1., -3. * slope.z)));
+        float lobe = mix(5000., 2500., max(rain, night)), wide = 1. / (1. / lobe + 36. * lost);
+        float glint = exp(-wide * (1. - max(0., dot(facet, toLight)))) * wide / lobe * fresnel * mix(100., 250., night);
         vec3 shine = lightColor * glint * shadow * step(0., toLight.y);
+        float spark = min(1., max(shine.r, max(shine.g, shine.b)));
         float shore = smoothstep(.018, .0, waterDepth + .006 * sin(time * 1.4 + p.x * 9. + p.y * 7.)); // a thin light line
         float alpha = fresnel + (1. - fresnel) * murk;
-        vec3 colour = (sky * fresnel + deep * (1. - fresnel) * murk) / max(alpha, .001) + shine;
+        vec3 colour = (sky * fresnel + deep * (1. - fresnel) * murk) / max(alpha, .001);
         colour = mix(colour, lit * vec3(.8,.82,.76), shore * .5);
-        alpha = max(alpha, shore * .3) + min(1., glint) * .5;
+        alpha = max(alpha, shore * .3);
+        float covered = alpha + (1. - alpha) * spark; // a sparkle covers what lies under it
+        colour = (colour * alpha + shine) / max(covered, .001);
+        alpha = covered;
         alpha *= smoothstep(0., .015, waterDepth + .01);
         gl_FragColor = vec4(pow(mix(fogColor, colour, fog), vec3(gamma)), clamp(mix(1., alpha, fog), 0., 1.));
       }`,

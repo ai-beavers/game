@@ -6,10 +6,11 @@ import { create as build } from "./build/index.ts";
 import { create as controls } from "./controls/index.ts";
 import { create as fx } from "./fx/index.ts";
 import { create as hud } from "./hud/index.ts";
+import { create as lantern } from "./lantern/index.ts";
 import { create as life } from "./life/index.ts";
 import { create as net } from "./net/index.ts";
 import { create as post } from "./post/index.ts";
 import { create as sky } from "./sky/index.ts";
 import { create as tour } from "./tour/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, post, build, fx, life, net, audio, hud, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, post, build, fx, life, net, audio, hud, tour];

@@ -3,7 +3,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
-import { daylightOf } from "../light.ts";
+import { daylightOf, LANTERN_GLSL, LANTERN_UNIFORMS } from "../light.ts";
 import { grassOf } from "./grass.ts";
 
 // The leaves of trees, bushes and reeds (assets/props.glb, material "leaves"): soft masses with leaf cards at their
@@ -23,7 +23,7 @@ export function foliageMaterial(scene: Scene, leaves: BaseTexture) {
       #include<instancesDeclaration>
       uniform mat4 viewProjection, lightMatrix; uniform highp sampler2DShadow shadowMap;
       uniform vec3 eye, sky, sun, toSun; uniform vec2 breeze; uniform float time, wind, fogDensity, edge;
-      varying vec2 vUV; varying vec3 light; varying float clear;
+      varying vec2 vUV; varying vec3 light; varying float clear; ${LANTERN_GLSL}
       void main() {
         #include<instancesVertex>
         vec4 p = finalWorld * vec4(position, 1.);
@@ -44,6 +44,7 @@ export function foliageMaterial(scene: Scene, leaves: BaseTexture) {
         float wrap = clamp(dot(n, toSun) * .6 + .4, 0., 1.);
         // the sun through the leaves: a little of it reaches the shaded side, warm and green
         vec3 lit = min(dome + sun * day * (wrap * wrap * shadow + vec3(.16, .2, .08) * (1. - wrap)), vec3(1.15));
+        lit += lantern(p.xyz) * clamp(dot(n, normalize(lanternAt - p.xyz)) * .5 + .5, 0., 1.); // the side facing it
         float rim = pow(1. - max(0., dot(n, view)), 2.) * (.3 + 1.2 * pow(max(0., dot(-view, toSun)), 3.));
         float into = pow(max(0., dot(-view, toSun)), 4.) * day; // looking into the sun: it glows through the leaves
         light = pow(color.rgb, vec3(1. / 2.2)) * (lit + sun * (vec3(2., 1.3, .6) * rim * low + vec3(.45, .55, .15) * into * (1. - .5 * wrap)) * (.6 + .4 * shadow));
@@ -57,7 +58,7 @@ export function foliageMaterial(scene: Scene, leaves: BaseTexture) {
         gl_FragColor = vec4(pow(mix(fogColor, leaf.rgb * light, clear), vec3(gamma)), 1.);
       }`,
   }, { attributes: ["position", "normal", "uv", "color"], uniforms: ["world", "viewProjection", "lightMatrix", "eye", "time", "wind", "breeze",
-    "sky", "sun", "toSun", "fogColor", "fogDensity", "edge", "gamma"], samplers: ["shadowMap", "leaves"], needAlphaTesting: true });
+    "sky", "sun", "toSun", "fogColor", "fogDensity", "edge", "gamma", ...LANTERN_UNIFORMS], samplers: ["shadowMap", "leaves"], needAlphaTesting: true });
   mat.backFaceCulling = false;
   mat.setTexture("leaves", leaves);
   mat.getAlphaTestTexture = () => leaves; // the sun's shadow map cuts the cards' leaves out too
@@ -82,6 +83,8 @@ export function foliageMaterial(scene: Scene, leaves: BaseTexture) {
     effect.setFloat("edge", light.shadows.frustumEdgeFalloff);
     effect.setFloat("gamma", scene.imageProcessingConfiguration.applyByPostProcess ? 2.2 : 1);
     effect.setVector3("eye", scene.activeCamera!.globalPosition);
+    effect.setVector3("lanternAt", light.lantern.at);
+    effect.setColor3("lanternGlow", light.lantern.glow);
   });
   made.set(scene, mat);
   return mat;

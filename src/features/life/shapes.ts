@@ -6,6 +6,7 @@ import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { hex as C } from "../../world/color.ts";
 import { smoothstep } from "../../world/noise.ts";
+import { LANTERN_GLSL, LANTERN_UNIFORMS } from "../../light.ts";
 
 const smooth = (x: number, a: number, b: number) => smoothstep(a, b, x);
 type Paint = (p: Vector3, n: Vector3, out: Color3) => void;
@@ -94,16 +95,16 @@ export function animalMesh(scene: Scene, shape: Shape, count: number) {
       }`,
     // Lit: the sky from above and the ground's bounce from below, as a hemispheric light does, and the sun or moon.
     fragmentSource: `precision highp float; varying vec4 shade; varying float vPart,vLifeY; varying vec3 vWorld; uniform float daylight, waterLevel; uniform vec3 cameraPosition;
-      ${lit ? `varying vec3 vNormal; uniform vec3 sunDirection, sunColor, skyColor, groundColor;` : ""}
+      ${lit ? `varying vec3 vNormal; uniform vec3 sunDirection, sunColor, skyColor, groundColor; ${LANTERN_GLSL}` : ""}
       void main(){vec4 diffuseColor=shade;
         ${lit ? `vec3 n=normalize(vNormal);
-        diffuseColor.rgb*=mix(groundColor,skyColor,.5+.5*n.y)+sunColor*max(0.,dot(n,-sunDirection));` : ""}
+        diffuseColor.rgb*=mix(groundColor,skyColor,.5+.5*n.y)+sunColor*max(0.,dot(n,-sunDirection))+lantern(vWorld)*max(0.,dot(n,normalize(lanternAt-vWorld)));` : ""}
         ${shape.fragment ?? ""}
         gl_FragColor=vec4(diffuseColor.rgb${lit ? "" : "*daylight"},diffuseColor.a);
       }`,
   }, {
     attributes: ["position", "normal", "color", "part", "aAnim", "color2", lit ? "aMore" : "tint"],
-    uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition", ...lit ? ["sunDirection", "sunColor", "skyColor", "groundColor"] : []],
+    uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition", ...lit ? ["sunDirection", "sunColor", "skyColor", "groundColor", ...LANTERN_UNIFORMS] : []],
     needAlphaBlending: shape.name === "fish" || shape.name === "dragonfly" || !!shape.blend,
   });
   // For the depth map under water (src/features/post/underwater.ts: camera-space z): posed as drawn, and opaque, so a
@@ -136,8 +137,8 @@ const THROUGH_SURFACE = /* glsl */`
   float under = waterLevel - vLifeY;
   if (cameraPosition.y > waterLevel && under > 0.) {
     float facing = abs(normalize(cameraPosition - vWorld).y);
-    diffuseColor.rgb = mix(diffuseColor.rgb, skyColor * vec3(.22, .32, .27), clamp(.45 + under * .2, 0., .85));
-    diffuseColor.a = clamp(.65 - under * .13, .25, .55) * smoothstep(.06, .35, facing);
+    diffuseColor.rgb = mix(diffuseColor.rgb, skyColor * vec3(.22, .32, .27), clamp(1. - exp(-.2 * (under + under / max(facing, .25))), .35, .9)); // as src/world/water.ts
+    diffuseColor.a = .85 * smoothstep(.1, .6, facing);
   }`;
 // The light from above, as it comes down through the surface: steeper than the sun.
 const FROM_ABOVE = /* glsl */`normalize(vec3(-sunDirection.x * .4, 1., -sunDirection.z * .4))`;
