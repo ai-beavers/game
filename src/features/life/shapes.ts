@@ -11,8 +11,9 @@ const smooth = (x: number, a: number, b: number) => smoothstep(a, b, x);
 type Paint = (p: Vector3, n: Vector3, out: Color3) => void;
 interface Piece { data: VertexData; part: number[]; second: number[] }
 /** lit: lit by the scene's sun (or moon) and sky instead of the daylight number, for the larger animals that stand in
- *  the dusk and the moonlight; their pose takes a second vec4 (`more`) and their tint is not used. */
-interface Shape { name: string; geometry: Piece; pose: string; fragment?: string; variant?: boolean; lit?: boolean }
+ *  the dusk and the moonlight; their pose takes a second vec4 (`more`) and their tint is not used (variant: more.x
+ *  mixes in the second colour). blend: drawn alpha-blended after the pond's surface. */
+interface Shape { name: string; geometry: Piece; pose: string; fragment?: string; variant?: boolean; lit?: boolean; blend?: boolean }
 
 function piece(data: VertexData, joint: number, place: (p: Vector3) => void, paint: Paint, paint2 = paint): Piece {
   const positions = data.positions!, normals = data.normals!, c = new Color3(), colors = [], second = [], part = [];
@@ -86,7 +87,7 @@ export function animalMesh(scene: Scene, shape: Shape, count: number) {
         #include<instancesVertex>
         vec3 p=position,n=normal; ${lit ? "pose(part,aAnim,aMore,p,n)" : "pose(part,aAnim,p,n)"};
         vec4 at=finalWorld*vec4(p,1.); vPart=part; vWorld=at.xyz; vLifeY=at.y;
-        ${lit ? `shade=vec4(color.rgb,1.); vNormal=normalize(mat3(finalWorld)*n);` : `
+        ${lit ? `shade=vec4(${shape.variant ? "mix(color.rgb,color2,aMore.x)" : "color.rgb"},1.); vNormal=normalize(mat3(finalWorld)*n);` : `
         shade=vec4(mix(color.rgb,color2,${shape.variant ? "aAnim.w" : "0."})*tint.rgb,1.);
         shade.rgb*=.65+.35*max(0.,normalize(mat3(finalWorld)*n).y);`}
         gl_Position=viewProjection*at;
@@ -103,14 +104,43 @@ export function animalMesh(scene: Scene, shape: Shape, count: number) {
   }, {
     attributes: ["position", "normal", "color", "part", "aAnim", "color2", lit ? "aMore" : "tint"],
     uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition", ...lit ? ["sunDirection", "sunColor", "skyColor", "groundColor"] : []],
-    needAlphaBlending: shape.name === "fish" || shape.name === "dragonfly",
+    needAlphaBlending: shape.name === "fish" || shape.name === "dragonfly" || !!shape.blend,
   });
+  // For the depth map under water (src/features/post/underwater.ts: camera-space z): posed as drawn, and opaque, so a
+  // blended animal is in it too and the water's fog goes by its own distance, not by what lies behind it.
+  const extra = lit ? "aMore" : "tint", depth = new ShaderMaterial(mesh.name + " depth", scene, {
+    vertexSource: `precision highp float; attribute vec3 position, normal; attribute vec4 aAnim, ${extra}; attribute float part; varying float vDepth;
+      #include<instancesDeclaration>
+      uniform mat4 view, viewProjection;
+      ${POSE_GLSL}
+      ${shape.pose}
+      void main(){
+        #include<instancesVertex>
+        vec3 p=position,n=normal; ${lit ? "pose(part,aAnim,aMore,p,n)" : "pose(part,aAnim,p,n)"};
+        vec4 at=finalWorld*vec4(p,1.); vDepth=(view*at).z; gl_Position=viewProjection*at;
+      }`,
+    fragmentSource: `precision highp float; varying float vDepth; void main(){gl_FragColor=vec4(vDepth,0.,0.,1.);}`,
+  }, { attributes: ["position", "normal", "part", "aAnim", extra], uniforms: ["world", "view", "viewProjection"] });
+  depth.backFaceCulling = false;
   mesh.material = mat;
   mesh.alwaysSelectAsActiveMesh = true;
   mat.backFaceCulling = false;
   mesh.isPickable = false;
-  return { mesh, material: mat, anim, tint, more };
+  return { mesh, material: mat, depth, anim, tint, more };
 }
+
+// Seen from above through the surface, a deep animal is a murky shape, a little lighter than the deep water behind it,
+// the fainter the deeper it is (as the pond's water hides its bed); under water it is drawn as it is and the
+// under-water pass fogs it.
+const THROUGH_SURFACE = /* glsl */`
+  float under = waterLevel - vLifeY;
+  if (cameraPosition.y > waterLevel && under > 0.) {
+    float facing = abs(normalize(cameraPosition - vWorld).y);
+    diffuseColor.rgb = mix(diffuseColor.rgb, skyColor * vec3(.22, .32, .27), clamp(.45 + under * .2, 0., .85));
+    diffuseColor.a = clamp(.65 - under * .13, .25, .55) * smoothstep(.06, .35, facing);
+  }`;
+// The light from above, as it comes down through the surface: steeper than the sun.
+const FROM_ABOVE = /* glsl */`normalize(vec3(-sunDirection.x * .4, 1., -sunDirection.z * .4))`;
 // ---- a small songbird, 17 cm long --------------------------------------------------------------------------------
 // anim: x wingbeat phase, y how hard the wings beat, z 0 folded … 1 spread, w 1 for a bird of prey's long wings.
 // Parts: 0 body, 1 left wing, 2 right wing, 3 legs.
@@ -263,10 +293,18 @@ export function duckShape(): Shape {
       ellipsoid([0.046, 0.046, 0.066], [0, 0.21, 0.21], [14, 10], 1, drakeHead, { paint2: henHead, bend: (p) => { p.y *= 1 - Math.max(0, p.z) * 0.25; } }),
       ellipsoid([0.026, 0.009, 0.055], [0, 0.196, 0.29], [8, 5], 1, flat(yellow), { turn: [0.25, 0, 0], paint2: flat(orange) }),
       wing(1), wing(-1),
+      ...[1, -1].flatMap((side) => [ // the feet under the water, paddling: seen from below
+        rod([side * 0.04, 0, -0.03], [side * 0.05, -0.08, -0.05], 0.007, 0.005, 4, flat(orange)),
+        ellipsoid([0.024, 0.003, 0.032], [side * 0.05, -0.085, -0.075], [6, 4], 4, flat(orange), { bend: (p) => { p.x *= 0.6 + 0.4 * (1 - p.z); } }),
+      ]),
     ]),
     pose: /* glsl */`
       void pose(float part, vec4 anim, inout vec3 p, inout vec3 n) {
-        if (part > 1.5) {
+        if (part > 3.5) {
+          // In turn back and forth on the water; tucked back under the tail in flight.
+          float side = p.x > 0.0 ? 1.0 : -1.0;
+          turnAround(rotX(sin(anim.x + side * 1.57) * 0.7 * (1.0 - anim.y) - 1.4 * anim.y), vec3(side * 0.04, 0.0, -0.03), p, n);
+        } else if (part > 1.5) {
           float side = part < 2.5 ? 1.0 : -1.0, fold = 1.0 - anim.y;
           vec3 shoulder = vec3(side * 0.05, 0.1, 0.03);
           turnAround(rotZ(side * sin(anim.x * 0.8) * 0.9 * anim.y) * rotY(side * 1.5 * fold), shoulder, p, n);
@@ -517,6 +555,175 @@ export function owlShape(): Shape {
       if (vPart > 1.5 && vPart < 2.5) {
         float back = max(0.0, dot(normalize(vNormal), normalize(cameraPosition - vWorld)));
         diffuseColor.rgb = vec3(1.0, 0.8, 0.42) * (0.6 + 2.4 * back * back);
+      }`,
+  };
+}
+
+// ---- the deep basin's school: a small silvery fish, 8 cm long -----------------------------------------------------
+// anim: x swimming phase, y how far the tail swings. Its flanks catch the light from above as it rolls into a turn
+// (the roll is in its matrix).
+
+export function minnowShape(): Shape {
+  const back = C(0x26322c), side = C(0x8e9c98), belly = C(0xd8dad2), stripe = C(0x34423e), fin = C(0x7a8884);
+  const body: Paint = (p, n, out) => {
+    Color3.LerpToRef(back, side, smooth(n.y, 0.7, 0.1), out);
+    if (Math.abs(p.y - 0.002) < 0.0016 && p.z < 0.03) Color3.LerpToRef(out, stripe, 0.6, out); // the dark line along the side
+    Color3.LerpToRef(out, belly, smooth(-n.y, 0.2, 0.7), out);
+    if (Math.abs(n.x) > 0.5 && p.z > 0.03 && n.y > 0) out.copyFrom(C(0x101010)); // the eye
+  };
+  return {
+    name: "minnow",
+    lit: true,
+    blend: true,
+    geometry: merge([
+      ellipsoid([0.0075, 0.012, 0.042], [0, 0, 0], [10, 8], 0, body, { bend: (p) => { const t = p.z < 0 ? 1 + p.z * 0.7 : 1 - p.z * p.z * 0.2; p.x *= t; p.y *= t; } }),
+      ellipsoid([0.0012, 0.012, 0.01], [0, 0, -0.046], [5, 5], 0, flat(fin), { bend: (p) => { p.z += Math.abs(p.y) * 0.8 - 0.3; } }),
+      ellipsoid([0.0012, 0.006, 0.008], [0, 0.011, 0], [4, 4], 0, flat(back), { turn: [0.3, 0, 0] }),
+    ]),
+    pose: /* glsl */`
+      void pose(float part, vec4 anim, vec4 more, inout vec3 p, inout vec3 n) {
+        float back = smoothstep(0.02, -0.05, p.z), wave = anim.x - p.z * 60.0;
+        p.x += sin(wave) * anim.y * (0.25 + back * 1.6);
+        n.x -= cos(wave) * anim.y * 60.0 * back;
+        n = normalize(n);
+      }`,
+    fragment: /* glsl */`
+      vec3 above = ${FROM_ABOVE}, toEye = normalize(cameraPosition - vWorld);
+      diffuseColor.rgb += sunColor * 2.5 * (1. - abs(n.y)) * pow(max(0., dot(reflect(-above, n), toEye)), 10.);
+      ${THROUGH_SURFACE}`,
+  };
+}
+
+// ---- the larger fish: a pike (more.x 0) and a carp (more.x 1), drawn 1 m long ---------------------------------------
+// anim: x swimming phase, y how far the body swings (a wave that runs back along it), z how busy the pectoral fins are
+// (hanging still, they keep it in place). The pike: long, flat snout, olive with pale spots, its fins far back; the
+// carp: deep-bodied, bronze, a long fin along its back. Parts: 0 body, 1 tail, 2 left and 3 right pectoral fin, 4 the
+// pike's fins, 5 the carp's.
+
+export function bigFishShape(): Shape {
+  const pBack = C(0x2c3418), pSide = C(0x5c6a2a), pSpot = C(0xc8c88a), pBelly = C(0xe0dcc4), pFin = C(0x7a4a24);
+  const cBack = C(0x3e3018), cSide = C(0x9a7430), cBelly = C(0xd8c08a), cFin = C(0x5e4224), eye = C(0xc8b040);
+  const pike: Paint = (p, n, out) => {
+    Color3.LerpToRef(pBack, pSide, smooth(n.y, 0.8, 0.1), out);
+    if (Math.sin(p.z * 70 + p.y * 30) * Math.sin(p.y * 120 + p.z * 20) > 0.45 && n.y < 0.7 && n.y > -0.4) Color3.LerpToRef(out, pSpot, 0.7, out);
+    Color3.LerpToRef(out, pBelly, smooth(-n.y, 0.1, 0.6), out);
+    if (Math.abs(n.x) > 0.5 && p.z > 0.36 && p.z < 0.41 && n.y > 0.05) out.copyFrom(eye);
+  };
+  const carp: Paint = (p, n, out) => {
+    Color3.LerpToRef(cBack, cSide, smooth(n.y, 0.8, 0.1), out);
+    Color3.LerpToRef(out, cBack, 0.3 * Math.max(0, Math.sin(p.z * 160) * Math.sin(p.y * 160 + p.z * 80)), out); // the scales
+    Color3.LerpToRef(out, cBelly, smooth(-n.y, 0.1, 0.6), out);
+    if (Math.abs(n.x) > 0.5 && p.z > 0.36 && p.z < 0.41 && n.y > 0.05) out.copyFrom(eye);
+  };
+  const fins = { paint2: flat(cFin) };
+  const pectoral = (side: number) => ellipsoid([0.04, 0.004, 0.025], [side * 0.06, -0.04, 0.25], [6, 4], side > 0 ? 2 : 3, flat(pFin), { ...fins, turn: [0, side * 0.5, -side * 0.4] });
+  return {
+    name: "bigfish",
+    lit: true,
+    blend: true,
+    variant: true,
+    geometry: merge([
+      ellipsoid([0.06, 0.08, 0.5], [0, 0, 0], [20, 12], 0, pike, { paint2: carp, bend: (p) => { const t = p.z < 0 ? 1 + p.z * 0.7 : 1 - p.z * p.z * 0.25; p.x *= t; p.y *= t; } }),
+      ellipsoid([0.006, 0.09, 0.07], [0, 0, -0.56], [8, 8], 1, flat(pFin), { ...fins, bend: (p) => { p.z += Math.abs(p.y) * 0.6 - 0.2; } }),
+      pectoral(1), pectoral(-1),
+      ellipsoid([0.012, 0.004, 0.03], [0, -0.06, 0.02], [6, 4], 0, flat(pFin), fins),
+      ellipsoid([0.005, 0.05, 0.07], [0, 0.06, -0.32], [6, 6], 4, flat(pFin), { turn: [0.4, 0, 0] }),
+      ellipsoid([0.005, 0.04, 0.06], [0, -0.05, -0.32], [6, 6], 4, flat(pFin), { turn: [-0.4, 0, 0] }),
+      ellipsoid([0.005, 0.05, 0.2], [0, 0.07, -0.05], [8, 6], 5, flat(cFin)),
+    ]),
+    pose: /* glsl */`
+      void pose(float part, vec4 anim, vec4 more, inout vec3 p, inout vec3 n) {
+        float carp = more.x;
+        if (part > 4.5) p = mix(vec3(0.0, 0.05, -0.05), p, carp);
+        else if (part > 3.5) p = mix(p, vec3(0.0, 0.0, -0.32), carp);
+        // The carp deep and short, the pike long with a low flat head.
+        float head = smoothstep(0.2, 0.5, p.z), ys = mix(1.0 - 0.35 * head, 1.7 - 0.6 * head, carp), xs = mix(1.0, 1.25, carp);
+        p.y *= ys; p.x *= xs; p.z *= mix(1.0, 0.8, carp);
+        n.y /= ys; n.x /= xs;
+        if (part > 1.5 && part < 3.5) {
+          float side = part < 2.5 ? 1.0 : -1.0;
+          turnAround(rotZ(side * sin(anim.x * 2.3) * 0.5 * anim.z), vec3(side * 0.05, -0.03, 0.22), p, n);
+        }
+        float back = smoothstep(0.25, -0.6, p.z), wave = anim.x - p.z * 7.0;
+        p.x += sin(wave) * anim.y * (0.12 + back * 1.2);
+        n.x -= cos(wave) * anim.y * 7.0 * back;
+        n = normalize(n);
+      }`,
+    fragment: THROUGH_SURFACE,
+  };
+}
+
+// ---- on the bed: a crayfish (more.w 0, 12 cm), a mussel (1, 8 cm), a snail (2, 3 cm) -------------------------------
+// One batch for all three: each draws only its own parts (the others fold to a point). anim: x walking or creeping
+// phase, y the crayfish's claws raised / the mussel open / the snail drawn in (0 … 1), z the crayfish's legs walking
+// (-1 back … 1 forwards). Parts: crayfish 0 body, 1 left and 2 right claw, 3 legs, 4 feelers; mussel 5 left and 6 right
+// valve, 7 inside; snail 8 shell, 9 body.
+
+export function bedShape(): Shape {
+  const shell = C(0x4a3a22), pale = C(0x8a7050), claw = C(0x5a2a1a), valve = C(0x2a2a1a), ring = C(0x4a4428), flesh = C(0xd8b890);
+  const crayfish: Paint = (_p, n, out) => void Color3.LerpToRef(shell, pale, smooth(-n.y, 0, 0.6), out);
+  const legs = [0.02, 0.005, -0.01, -0.022].flatMap((z) => [1, -1].map((side) => rod([side * 0.012, 0.012, z], [side * 0.04, 0, z - 0.006], 0.0018, 0.0012, 3, crayfish)));
+  const arm = (side: number) => [
+    rod([side * 0.012, 0.016, 0.035], [side * 0.03, 0.018, 0.06], 0.004, 0.003, side > 0 ? 1 : 2, crayfish),
+    ellipsoid([0.008, 0.005, 0.022], [side * 0.034, 0.02, 0.08], [8, 5], side > 0 ? 1 : 2, flat(claw)),
+  ];
+  const valveOf = (side: number) => ellipsoid([0.012, 0.022, 0.042], [0, 0.022, 0], [12, 8], side > 0 ? 5 : 6,
+    (p, _n, out) => void Color3.LerpToRef(valve, ring, 0.5 + 0.5 * Math.sin(Math.hypot(p.y, p.z) * 300), out),
+    { bend: (p) => { p.x = side * Math.abs(p.x); } });
+  return {
+    name: "bed",
+    lit: true,
+    geometry: merge([
+      ellipsoid([0.018, 0.014, 0.032], [0, 0.018, 0.01], [10, 8], 0, crayfish),
+      ellipsoid([0.015, 0.009, 0.04], [0, 0.014, -0.045], [10, 6], 0, crayfish),
+      ellipsoid([0.02, 0.003, 0.012], [0, 0.01, -0.09], [6, 4], 0, crayfish),
+      ...arm(1), ...arm(-1), ...legs,
+      rod([0.006, 0.02, 0.04], [0.04, 0.03, 0.14], 0.001, 0.0006, 4, flat(claw)), rod([-0.006, 0.02, 0.04], [-0.04, 0.03, 0.14], 0.001, 0.0006, 4, flat(claw)),
+      valveOf(1), valveOf(-1),
+      ellipsoid([0.004, 0.018, 0.036], [0, 0.02, 0], [6, 6], 7, flat(flesh)),
+      ellipsoid([0.012, 0.012, 0.01], [0, 0.014, -0.004], [10, 8], 8, (p, _n, out) => void Color3.LerpToRef(C(0x5a3a1c), C(0xb8a070), 0.5 + 0.5 * Math.sin(Math.atan2(p.y - 0.014, p.x) * 3 + p.z * 200), out)),
+      ellipsoid([0.006, 0.004, 0.018], [0, 0.003, 0.004], [6, 4], 9, flat(C(0x4a4a40))),
+    ]),
+    pose: /* glsl */`
+      void pose(float part, vec4 anim, vec4 more, inout vec3 p, inout vec3 n) {
+        float kind = part < 4.5 ? 0.0 : part < 7.5 ? 1.0 : 2.0;
+        if (abs(kind - more.w) > 0.5) { p = vec3(0.0); return; }
+        if (kind < 0.5) {
+          if (part > 0.5 && part < 2.5) {
+            float side = part < 1.5 ? 1.0 : -1.0;
+            turnAround(rotY(side * 0.5 * anim.y) * rotX(-1.0 * anim.y), vec3(side * 0.012, 0.016, 0.035), p, n);
+          } else if (part > 2.5 && part < 3.5) p.z += sin(anim.x + p.z * 200.0 + (p.x > 0.0 ? 0.0 : 1.6)) * 0.004 * abs(anim.z) * smoothstep(0.015, 0.035, abs(p.x));
+          turnAround(rotX(-0.3 * anim.y), vec3(0.0, 0.0, -0.03), p, n); // the front up, claws high
+        } else if (kind < 1.5) {
+          if (part < 6.5) { float side = part < 5.5 ? 1.0 : -1.0; turnAround(rotZ(-side * 0.22 * anim.y), vec3(0.0), p, n); }
+          else p.y *= 0.4 + 0.6 * anim.y;
+        } else if (part > 8.5) {
+          p = mix(p, vec3(0.0, 0.012, -0.004), anim.y); // drawn in
+          p.z += sin(anim.x * 3.0 + p.z * 300.0) * 0.0008;
+        }
+      }`,
+  };
+}
+
+// ---- a water strider, 1.2 cm long, on the surface ----------------------------------------------------------------
+// anim: y the stroke of the long middle legs (1 just pushed … 0 gliding). Parts: 0 body and legs, 1 the middle legs.
+
+export function striderShape(): Shape {
+  const dark = flat(C(0x24201a));
+  return {
+    name: "strider",
+    lit: true,
+    geometry: merge([
+      ellipsoid([0.0025, 0.002, 0.008], [0, 0.005, 0], [6, 4], 0, dark),
+      ...[1, -1].flatMap((side) => [
+        rod([side * 0.002, 0.005, 0.006], [side * 0.008, 0, 0.014], 0.0006, 0.0005, 0, dark),
+        rod([side * 0.002, 0.005, 0], [side * 0.03, 0, 0.01], 0.0006, 0.0004, 1, dark),
+        rod([side * 0.002, 0.005, -0.004], [side * 0.028, 0, -0.03], 0.0006, 0.0004, 0, dark),
+      ]),
+    ]),
+    pose: /* glsl */`
+      void pose(float part, vec4 anim, vec4 more, inout vec3 p, inout vec3 n) {
+        if (part > 0.5) { float side = p.x > 0.0 ? 1.0 : -1.0; turnAround(rotY(side * (anim.y - 0.3) * 0.7), vec3(side * 0.002, 0.005, 0.0), p, n); }
       }`,
   };
 }

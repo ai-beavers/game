@@ -6,8 +6,11 @@
 // in camera.test.ts; the player's own look (drag, stick, finger) is 1:1 and only nudged back to rest after LEFT_ALONE s.
 // It never passes through the ground or things: a small ball is cast in Rapier from the beaver to where the camera
 // wants to be; when something comes in between the camera moves in quickly but smoothly (at once only when it would be
-// inside it), and goes out again slowly. Over the pond it stays above the water; while the beaver dives it goes under
-// with it (lower, closer, flatter) and stays under the surface, passing through it in one smooth move (underWater).
+// inside it), and goes out again slowly. Over the pond it stays above the water. While the beaver dives it goes under
+// with it where the water has room for it: level with the beaver, further back and a little to the side, the lens a
+// touch wider, so the bed below and the surface above are in the picture; the surface is then a ceiling it keeps
+// under as it keeps clear of the bed (beneath), and it passes through it in one eased move each way (underWater).
+// Where there is no room under (the shallows, the bank behind) it stays above and looks down through the surface.
 //
 //   const camera = followCamera(stage, (collider) => true /* which colliders block the view */);
 //   camera.update(dt, feet, going?)   once per frame, with the feet where the picture shows them and what the beaver
@@ -33,14 +36,14 @@ export const REST_PITCH = 0.24, REST_DISTANCE = 4.5; // rad, m: low enough for t
 const FOLLOW = 12; // 1/s, how fast the look point catches up (live view)
 const LET_OUT = 3; // 1/s, how fast the camera goes back out once the view is free
 const LET_IN = 14; // 1/s, how fast it comes in when something comes between (player)
-const CLOSE = 1.4; // m: when the view has less room than this, it tries other angles
+const CLOSE = 1.4, ROOMY = 2; // m: when the view has less room than this (above, under water), it tries other angles
 const TILT = 5; // 1/s, how fast it changes angle for that
 const BALL = 0.18; // m, radius of the cast ball: keeps the near plane out of walls
 // The player's framing.
 export const FOV = Math.PI / 4; // rad, vertical, as engine.ts sets it
 const MIN_WIDE = 0.95, MAX_FOV = 1.15; // rad: a tall phone opens the view to see this much across, but not wider than this
 const LOW = 0.27, LEFT = 0.12; // the look point this far below and left of the middle (fractions of half the screen)
-const LAG = 7, LAG_UP = 3; // 1/s: the look point follows the feet sideways and up and down (jumps barely move it)
+const LAG = 7, LAG_UP = 3, LAG_DOWN = 5; // 1/s: the look point follows the feet sideways, up and down (jumps barely move it), and so diving
 const LEAD = 0.35, LEAD_EASE = 3; // s of travel it looks ahead, and 1/s how fast that lead changes
 const RUN_WIDEN = 0.08, RUN_FOV = 0.04, MOOD = 2.5; // at a run: farther (fraction) and wider (rad); 1/s for all such moods
 const RAMP = 0.7; // 1/s: swimming and working come in no faster than this, so a sudden change never jolts the camera
@@ -48,9 +51,14 @@ const SWIM_PITCH = 0.13, SWIM_BACK = 0.08; // lower (rad) and farther (fraction)
 const WORK_CLOSE = 0.22, WORK_SIDE = 0.45; // closer (fraction) and round to the side (rad) while gnawing or building
 const ZOOM = 6; // 1/s, the eased zoom
 const LEFT_ALONE = 3, CENTRE = 0.5, AHEAD = 0.5; // s without look input, 1/s back to rest, rad within which it swings behind
-const WATER_GAP = 0.3, UNDER_GAP = 0.12; // m the camera keeps above the water, and below it while the beaver dives
-const DIVE_RAMP = 1.2; // 1/s: how fast the camera goes under and up again (under in about a second, through the surface in a third)
-const DIVE_LOOK = 0.4, DIVE_PITCH = 0.75, DIVE_CLOSE = 0.3; // diving: look point lower (m), pitch flatter (fraction), closer (fraction)
+const WATER_GAP = 0.3, UNDER_GAP = 0.25; // m the camera keeps above the water, and below it while the beaver dives
+const DIVE_RAMP = 1.0; // 1/s: how fast the camera goes under and up again (under in about a second, through the surface in a third)
+// Under water: the look point lower (m, at the diving body), the camera level with it (rad lower), a little nearer
+// (fraction), round to the side (rad), the lens a little wider (rad), the beaver in the middle of the height (fraction of LOW kept).
+const DIVE_LOOK = 0.4, DIVE_LEVEL = 0.07, DIVE_CLOSE = 0.1, DIVE_SIDE = 0.3, DIVE_FOV = 0.12, DIVE_LOW = 0.2;
+const ROOF = 2; // m: under the surface, looking down, the camera rises to it no further than this from the look point
+const PEER_PITCH = 0.35, PEER_CLOSE = 0.25; // diving with no room under: higher (rad) and nearer (fraction), to look down through the surface
+const ROOM_DEPTH = 0.35, ROOM_IN = 1.8, ROOM_OUT = 1.2; // m: it goes under where water this deep reaches this far back, up again under that
 
 /** One step of a critically damped spring, exact for any dt: x with its speed v towards goal at rate w (1/s). */
 export function spring(x: number, v: number, goal: number, w: number, dt: number): [number, number] {
@@ -75,13 +83,14 @@ export const newRig = () => ({
   started: false,
   pivot: new Vector3(), speed: new Vector3(), lead: new Vector3(), leadSpeed: new Vector3(),
   run: 0, runV: 0, swim: 0, swimV: 0, swimGoal: 0, work: 0, workV: 0, workGoal: 0, side: 1, zoom: REST_DISTANCE, zoomV: 0,
-  dive: 0, diveV: 0, diveGoal: 0,
+  dive: 0, diveV: 0, diveGoal: 0, deep: true, peer: 0, peerV: 0, peerGoal: 0,
 });
 export type Rig = ReturnType<typeof newRig>;
 
 /** What the picture should be for the beaver's feet and Going, the player's yaw, pitch and distance, the screen's
- *  aspect, dt s after the last step. Pure but for moving the rig on. */
-export function stepRig(rig: Rig, dt: number, feet: Vector3, going: Going, yaw: number, pitch: number, distance: number, aspect: number) {
+ *  aspect, dt s after the last step, and how far back from the beaver the water is deep enough for the camera (m).
+ *  Pure but for moving the rig on. */
+export function stepRig(rig: Rig, dt: number, feet: Vector3, going: Going, yaw: number, pitch: number, distance: number, aspect: number, room = Infinity) {
   const { pivot, speed, lead, leadSpeed } = rig, v = going.velocity;
   const goal = { x: feet.x, y: feet.y + LOOK_HEIGHT - DIVE_LOOK * rig.dive, z: feet.z };
   if (!rig.started || Math.hypot(goal.x - pivot.x, goal.y - pivot.y, goal.z - pivot.z) > 5) { // the start, a teleport
@@ -90,7 +99,8 @@ export function stepRig(rig: Rig, dt: number, feet: Vector3, going: Going, yaw: 
   }
   [pivot.x, speed.x] = spring(pivot.x, speed.x, goal.x, LAG, dt);
   [pivot.z, speed.z] = spring(pivot.z, speed.z, goal.z, LAG, dt);
-  [pivot.y, speed.y] = spring(pivot.y, speed.y, goal.y, LAG_UP, dt);
+  // under water the beaver goes up and down for long, not in jumps: it follows that as closely as sideways
+  [pivot.y, speed.y] = spring(pivot.y, speed.y, goal.y, LAG_UP + (LAG_DOWN - LAG_UP) * Math.max(0, Math.min(1, rig.dive)), dt);
   [lead.x, leadSpeed.x] = spring(lead.x, leadSpeed.x, v.x * LEAD, LEAD_EASE, dt);
   [lead.z, leadSpeed.z] = spring(lead.z, leadSpeed.z, v.z * LEAD, LEAD_EASE, dt);
   const running = Math.max(0, Math.min(1, (Math.hypot(v.x, v.z) - WALK_SPEED) / (RUN_SPEED - WALK_SPEED)));
@@ -102,32 +112,59 @@ export function stepRig(rig: Rig, dt: number, feet: Vector3, going: Going, yaw: 
   // To the side the camera already leans to, seen from behind the beaver; chosen once as the work starts.
   if (going.busy && rig.workGoal === 0) rig.side = Math.sin(yaw - going.facing - Math.PI) < 0 ? -1 : 1;
   [rig.work, rig.workV] = spring(rig.work, rig.workV, rig.workGoal, MOOD, dt);
-  rig.diveGoal += Math.max(-DIVE_RAMP * dt, Math.min(DIVE_RAMP * dt, +!!going.diving - rig.diveGoal));
+  // Under only where the water has room for the camera (with a margin either way, so it does not hunt at the edge);
+  // diving in the shallows it stays above and looks down through the surface.
+  rig.deep = room > (rig.deep ? ROOM_OUT : ROOM_IN);
+  const down = +(!!going.diving && rig.deep);
+  if (down && rig.diveGoal === 0) rig.side = Math.sin(yaw - going.facing - Math.PI) < 0 ? -1 : 1;
+  rig.diveGoal += Math.max(-DIVE_RAMP * dt, Math.min(DIVE_RAMP * dt, down - rig.diveGoal));
   [rig.dive, rig.diveV] = spring(rig.dive, rig.diveV, rig.diveGoal, 3 * DIVE_RAMP, dt);
+  rig.peerGoal = ramp(rig.peerGoal, +(!!going.diving && !rig.deep));
+  [rig.peer, rig.peerV] = spring(rig.peer, rig.peerV, rig.peerGoal, MOOD, dt);
   [rig.zoom, rig.zoomV] = spring(rig.zoom, rig.zoomV, distance, ZOOM, dt);
-  const { fov, near } = lens(aspect), half = Math.tan((fov + RUN_FOV * rig.run) / 2);
+  const under = Math.max(0, Math.min(1, rig.dive)), tilt = SWIM_PITCH * rig.swim + DIVE_LEVEL * rig.dive - PEER_PITCH * rig.peer;
+  const { fov, near } = lens(aspect), wide = fov + RUN_FOV * rig.run + DIVE_FOV * under, half = Math.tan(wide / 2);
   return {
     pivot, lead,
-    yaw: yaw + WORK_SIDE * rig.work * rig.side,
-    pitch: Math.max(lowest(rig), pitch - SWIM_PITCH * rig.swim) * (pitch > 0 ? 1 - DIVE_PITCH * rig.dive : 1),
-    distance: rig.zoom * near * (1 + RUN_WIDEN * rig.run + SWIM_BACK * rig.swim - WORK_CLOSE * rig.work) * (1 - DIVE_CLOSE * rig.dive),
-    /** 0 above the water … 1 under it with the diving beaver (underWater). */
-    under: Math.max(0, Math.min(1, rig.dive)),
-    fov: fov + RUN_FOV * rig.run,
+    yaw: yaw + (WORK_SIDE * rig.work + DIVE_SIDE * rig.dive) * rig.side,
+    // the player's pitch less the moods; under water the limit moves with them, so looking round stays 1:1
+    pitch: Math.max(lowest(rig) - (SWIM_PITCH * rig.swim + DIVE_LEVEL) * under, pitch - tilt),
+    distance: rig.zoom * near * (1 + RUN_WIDEN * rig.run + SWIM_BACK * rig.swim - WORK_CLOSE * rig.work) * (1 - DIVE_CLOSE * rig.dive - PEER_CLOSE * rig.peer),
+    /** 0 above the water … 1 under it with the diving beaver (beneath, underWater). */
+    under,
+    fov: wide,
     /** rad the view looks above and right of the look point, so the beaver sits low and left of the middle. */
-    rise: Math.atan(LOW * half), across: Math.atan(LEFT * half * aspect),
+    rise: Math.atan(LOW * half) * (1 - (1 - DIVE_LOW) * under), across: Math.atan(LEFT * half * aspect),
   };
 }
+
+/** Under water (under 1) the surface is a ceiling, as the ground is a floor: the camera at pitch and distance from a
+ *  look point at height y stays UNDER_GAP below the surface at `level`, along its own way (closer, never pushed
+ *  sideways into the bank), and at least ROOF from the look point (flatter, or below it, when that is near the
+ *  surface). Between 0 and 1 it eases in; so it does while the look point is less than HEAD under the surface, and
+ *  on ways flatter than STEEP, where underWater's soft bound alone keeps it under. Returns [pitch, distance]. */
+export function beneath(y: number, pitch: number, distance: number, level: number, under: number): [number, number] {
+  if (under <= 0) return [pitch, distance];
+  const head = level - UNDER_GAP - y, cap = Math.asin(Math.max(-1, Math.min(1, head / (distance + (Math.min(distance, ROOF) - distance) * ease(head / HEAD)))));
+  const p = pitch + (softMin(pitch, cap, 0.1) - pitch) * under, k = under * ease(head / HEAD) * ease(p / STEEP - 0.5);
+  if (k <= 0) return [p, distance];
+  return [p, distance + (softMin(distance, head / Math.sin(p), 0.5) - distance) * k];
+}
+const HEAD = 0.3, STEEP = 0.2;
+const ease = (x: number) => { const h = Math.max(0, Math.min(1, x)); return h * h * (3 - 2 * h); };
+/** The smaller of a and b, rounded off over about s: no kink where one starts to bind (a kink is a jolt). */
+const softMin = (a: number, b: number, s: number) => (a + b - Math.sqrt((a - b) ** 2 + s * s)) / 2;
 
 /** The camera's height y kept clear of the water's surface at `level`: WATER_GAP above it, or (under 1) UNDER_GAP
  *  below it; between the two it passes through, on a smooth curve, so crossing the surface is a move, not a cut. */
 export function underWater(y: number, level: number, under: number) {
-  // soft bounds (a hard max bends the path at the bound, a jolt): at most SOFT/2 further from the surface
-  const soft = (a: number, b: number) => (a + b + Math.sqrt((a - b) ** 2 + SOFT * SOFT)) / 2;
-  const above = soft(y, level + WATER_GAP), below = -soft(-y, -(level - UNDER_GAP)), k = under * under * (3 - 2 * under);
+  // soft bounds (a hard max bends the path at the bound, a jolt): at most SOFT/2 further from the surface; going
+  // through, the bound above is softer still, so the way down does not brake at it just before the surface
+  const above = -softMin(-y, -(level + WATER_GAP), SOFT + CROSS * under), below = softMin(y, level - UNDER_GAP, 3 * SOFT);
+  const k = under * under * (3 - 2 * under);
   return above + (below - above) * k;
 }
-const SOFT = 0.1;
+const SOFT = 0.1, CROSS = 0.6;
 
 /** The lowest pitch now: lower while diving, rising back with the rig as it comes up (no jump). */
 const lowest = (rig: Rig) => MIN_PITCH + (UNDER_PITCH - MIN_PITCH) * Math.max(0, Math.min(1, rig.dive));
@@ -143,14 +180,18 @@ export function view(from: Vector3, at: Vector3, rise: number, across: number) {
 }
 
 export function followCamera({ camera, physics, canvas, engine }: Stage, blocks: (collider: RAPIER.Collider) => boolean) {
-  const look = new Vector3(), direction = new Vector3(), ball = new RAPIER.Ball(BALL), rig = newRig();
+  const look = new Vector3(), direction = new Vector3(), probe = new Vector3(), ball = new RAPIER.Ball(BALL), rig = newRig();
   const rotation = { x: 0, y: 0, z: 0, w: 1 }, noFloor = (_x: number, _z: number) => -Infinity;
   let started = false, shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0;
   const flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
-  const freeAt = (yaw: number, pitch: number, distance: number) => {
+  // wet: a ray as well, for the ball slips through the steep heightfield walls of the basin (measured)
+  const ray = new RAPIER.Ray(look, direction);
+  const freeAt = (yaw: number, pitch: number, distance: number, wet = false) => {
     direction.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     const hit = physics.castShape(look, rotation, direction, ball, 0, distance, true, flags, undefined, undefined, undefined, blocks);
-    const free = hit ? Math.max(0.05, hit.time_of_impact - 0.02) : distance;
+    let free = hit ? Math.max(0.05, hit.time_of_impact - 0.02) : distance;
+    const wall = wet ? physics.castRay(ray, distance, true, flags, undefined, undefined, undefined, blocks) : null;
+    if (wall) free = Math.min(free, Math.max(0.05, wall.timeOfImpact - BALL));
     return state.room ? Math.min(free, state.room(look, direction, distance)) : free;
   };
   const state = {
@@ -187,9 +228,18 @@ export function followCamera({ camera, physics, canvas, engine }: Stage, blocks:
         if (Math.abs(off) < AHEAD) state.yaw += off * k;
       }
       const aspect = engine.getAspectRatio(camera) || 16 / 9;
+      // Diving: how far back from the beaver, just under the surface, the water has room for the camera (the bed and
+      // the bank are ground, with a collider).
+      let room = Infinity;
+      if (!live && going.diving && going.level !== undefined) {
+        probe.set(feet.x, going.level - ROOM_DEPTH, feet.z);
+        direction.set(Math.sin(state.yaw), 0, Math.cos(state.yaw));
+        const hit = physics.castShape(probe, rotation, direction, ball, 0, MAX_DISTANCE, true, flags, undefined, undefined, undefined, blocks);
+        room = hit ? hit.time_of_impact : MAX_DISTANCE;
+      }
       const shot = live
         ? { yaw: state.yaw, pitch: state.pitch, distance: state.distance, fov: lens(aspect).fov, rise: 0, across: 0, under: 0 }
-        : stepRig(rig, dt, feet, going, state.yaw, state.pitch, state.distance, aspect);
+        : stepRig(rig, dt, feet, going, state.yaw, state.pitch, state.distance, aspect, room);
       if (live) {
         const goal = direction.set(feet.x, feet.y + LOOK_HEIGHT, feet.z);
         if (!started) look.copyFrom(goal);
@@ -200,22 +250,21 @@ export function followCamera({ camera, physics, canvas, engine }: Stage, blocks:
       camera.fov = shot.fov;
       // Hemmed in (a wall right behind, a ramp overhead): look for a steeper or flatter angle with room, so the
       // camera does not end up inside the beaver's back.
-      let aim = shot.pitch;
-      // Diving: no steeper than keeps it under the surface, so the cast below finds the bed in the way, not the clamp.
-      if (!live && going.level !== undefined && shot.under > 0) {
-        const cap = Math.asin(Math.max(-1, Math.min(1, (going.level - UNDER_GAP - look.y) / shot.distance)));
-        aim += (Math.min(aim, cap) - aim) * shot.under;
-      }
-      const room = Math.min(shot.distance, CLOSE);
-      if (freeAt(shot.yaw, aim, shot.distance) < room) {
+      // Diving: the surface is a ceiling (beneath), so the casts below find the bed and the bank in the way, and
+      // nothing moves the camera off its way after them.
+      const under = (p: number): [number, number] => !live && going.level !== undefined ? beneath(look.y, p, shot.distance, going.level, shot.under) : [p, shot.distance];
+      let [aim] = under(shot.pitch);
+      const freeUnder = (p: number) => { const [q, d] = under(p); return freeAt(shot.yaw, q, d, shot.under > 0); };
+      const close = Math.min(shot.distance, CLOSE + (ROOMY - CLOSE) * shot.under);
+      if (freeUnder(aim) < close) {
         let best = -Infinity;
         for (let p = lowest(rig); p <= MAX_PITCH + 1e-6; p += 0.1) {
-          const score = Math.min(room, freeAt(shot.yaw, p, shot.distance)) - 0.4 * Math.abs(p - shot.pitch);
-          if (score > best) { best = score; aim = p; }
+          const score = Math.min(close, freeUnder(p)) - 0.4 * Math.abs(p - shot.pitch);
+          if (score > best) { best = score; aim = under(p)[0]; }
         }
       }
       shownPitch += (aim - shownPitch) * (1 - Math.exp(-TILT * dt));
-      const free = freeAt(shot.yaw, shownPitch, shot.distance);
+      const free = freeAt(shot.yaw, shownPitch, under(shownPitch)[1], shot.under > 0);
       if (live) shown = free < shown ? free : Math.min(free, shown + (free - shown) * (1 - Math.exp(-LET_OUT * dt)));
       else {
         [shown, shownV] = spring(shown, shownV, free, free < shown ? LET_IN : LET_OUT, dt);
