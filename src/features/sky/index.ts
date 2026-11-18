@@ -72,7 +72,7 @@ export const create: CreateFeature = game => {
     curves.shadowsDensity = 100 * day.night;
     curves.midtonesDensity = 90 * day.night;
     sky.diffuse.scaleInPlace(1 - (1 - SKY_FILL) * (1 - day.night) * (1 - clouds)); // room for the sun's shadows by day
-    if (water) water.rain.value = weather.rain;
+    if (water) Object.assign(water.sky, { rain: weather.rain, clouds, night: day.night });
     if (dry && ground instanceof StandardMaterial) {
       dry.scaleToRef(1 - wet * 0.32, ground.diffuseColor);
       ground.specularColor.setAll(0.06 + wet * 0.2);
