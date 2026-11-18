@@ -61,6 +61,7 @@ export interface DeepSchool { fish: Minnow[]; goal: Point; goalTime: number }
 const SCHOOL_DEPTH = 1.3; // the least water the school swims over
 const PART = 1.0; // m round the beaver's body the school parts
 const KEEP = 0.11; // m between two fish
+const BODY = 0.3; // m round the beaver's body no fish ever comes
 
 export function makeDeepSchool(land: Land, bed: Bed, count: number, random: Random): DeepSchool {
   const at = deepPoint(land, bed, random);
@@ -123,6 +124,7 @@ export function stepDeepSchool(school: DeepSchool, land: Land, bed: Bed, threat:
     const nx = f.x + f.vx * dt, nz = f.z + f.vz * dt;
     if (depthAt(land, nx, nz) > 0.6) { f.x = nx; f.z = nz; } else { f.vx = (bed.basin.x - f.x) * 0.3; f.vz = (bed.basin.z - f.z) * 0.3; }
     f.y = clamp(f.y + f.vy * dt, land.heightAt(f.x, f.z) + 0.1, land.water - 0.15);
+    keepOut(f, threat, body);
     const was = f.heading;
     if (Math.hypot(f.vx, f.vz) > 0.03) f.heading += turnTo(f.heading, headingOf(f.vx, f.vz)) * Math.min(1, dt * 9);
     f.turn = lerp(f.turn, turnTo(was, f.heading) / Math.max(dt, 1e-4), Math.min(1, dt * 6));
@@ -130,6 +132,20 @@ export function stepDeepSchool(school: DeepSchool, land: Land, bed: Bed, threat:
     f.fear = Math.max(0, f.fear - dt * 0.3);
     f.phase += dt * (9 + Math.hypot(f.vx, f.vz) * 45);
   }
+}
+
+/** The beaver's body is solid to them: a fish it swims into (onto the bed, against the slope, or in one long step)
+ *  ends at its edge, sideways where bed or surface are in the way, and swims on from there, not into it. */
+function keepOut(f: Minnow, threat: Threat, body: Point) {
+  const d = reachOf(threat, f);
+  if (d >= BODY) return;
+  let dx = f.x - body.x, dy = f.y - body.y, dz = f.z - body.z;
+  // Out the way it was: along the bed, or (if too close above or below for that) to the side it faces.
+  const side = Math.sqrt(BODY * BODY - Math.min(dy * dy, BODY * BODY * 0.99)), h = Math.hypot(dx, dz);
+  if (h < 1e-3) { dx = Math.sin(f.heading); dz = Math.cos(f.heading); } else { dx /= h; dz /= h; }
+  f.x = body.x + dx * side; f.z = body.z + dz * side;
+  const v = f.vx * dx + f.vz * dz;
+  if (v < 0) { f.vx -= v * dx; f.vz -= v * dz; }
 }
 
 // ---- the hunter (pike-like) --------------------------------------------------------------------------------------

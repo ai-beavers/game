@@ -20,7 +20,7 @@ import { buildGrass } from "./grass.ts";
 import { placeAll, SPAWN, type Spot } from "./place.ts";
 import { bushes, standInProps } from "./props.ts";
 import { instance, vertices, bounds, meshes } from "./models.ts";
-import { buildTerrain, heightAt, POND, RIM, SITE } from "./terrain.ts";
+import { buildTerrain, groundAt, heightAt, POND, RIM, SITE } from "./terrain.ts";
 import { buildWater } from "./water.ts";
 
 export { heightAt, standInProps };
@@ -219,7 +219,7 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
     spawn: new Vector3(SPAWN.x, heightAt(SPAWN.x, SPAWN.z), SPAWN.z),
     sticks,
     get waterLevel() { return water.level; }, // live: the pond rises as the dam grows
-    heightAt,
+    heightAt: groundAt, // the ground as drawn and collided: what stands, swims and is placed in the game meets it
     trees,
     site: { x: SITE.x, z: SITE.z, radius: SITE.radius, height: SITE.height },
     pond: { x: POND.x, z: POND.z, radius: POND.radius },

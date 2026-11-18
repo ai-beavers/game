@@ -237,7 +237,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // Up and down: jump, gravity, or floating at the surface.
     const level = waterLevel();
     const depth = level === undefined ? -Infinity : level - feet.y;
-    if (!afloat && depth > FLOAT_DEPTH) afloat = true;
+    if (!afloat && depth > FLOAT_DEPTH) { afloat = true; vy = Math.max(vy, -DIVE_SPEED); } // the water stops a fall: off the basin's drop-off it would sink a metre
     else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02) afloat = false;
     if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
     const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && (act.action !== "build" || under) && slap.progress === 0, afloat, under);
@@ -319,9 +319,18 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     },
     setAnger: (value) => { motion.anger = Math.max(0, Math.min(1, value)); },
     teleport(x, y, z, turnTo = facing) {
-      body.setTranslation({ x, y: y + HEIGHT / 2 + OFFSET, z }, true);
-      body.setNextKinematicTranslation({ x, y: y + HEIGHT / 2 + OFFSET, z });
-      feet.set(x, y, z); before.copyFrom(feet);
+      // Set down on a steep wall (the basin's), the capsule would start inside the ground beside its feet and sink
+      // through it (measured): lifted until it rests on the ground, up to a metre. Only the ground (src/world/terrain.ts:
+      // its heightfield and trimesh): from inside the lodge or a rock it swims or walks out by itself.
+      const at = { x, y: y + HEIGHT / 2 + OFFSET, z }, flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
+      const ground = (c: RAPIER.Collider) => c.shapeType() === RAPIER.ShapeType.HeightField || c.shapeType() === RAPIER.ShapeType.TriMesh;
+      if (physics.intersectionWithShape(at, still, shape, flags, undefined, collider, undefined, ground)) {
+        const hit = physics.castShape({ x, y: at.y + 1, z }, still, { x: 0, y: -1, z: 0 }, shape, 0, 1, true, flags, undefined, collider, undefined, ground);
+        at.y += 1 - (hit?.time_of_impact ?? 1);
+      }
+      body.setTranslation(at, true);
+      body.setNextKinematicTranslation(at);
+      feet.set(x, at.y - HEIGHT / 2 - OFFSET, z); before.copyFrom(feet);
       facing = facingBefore = turnTo;
       speed = vy = lift = steering.spin = 0;
     },
