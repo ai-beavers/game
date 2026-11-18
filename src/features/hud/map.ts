@@ -9,6 +9,7 @@ import { hex as colorFromHex } from "../../world/color.ts";
 //
 // North up, fixed: up on the map is +z, the way the camera looks at the start, so right is -x.
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { GOLD } from "./style.ts";
 
 /** Half the width of the mapped square around the middle of the clearing, m, and metres per pixel. */
 export const EXTENT = 22;
@@ -34,6 +35,8 @@ export interface MapView {
   /** The dam's line along the shore, and how much of it is built, 0 … 1. */
   dam?: { from: Point; to: Point; built: number };
   lodge?: Point;
+  /** The Shop (src/features/shop): a round roof with its mirror ball's sparkle. */
+  shop?: Point;
   players?: (Point & { name: string })[];
   /** The pond's surface now; the ground is painted again when it moves. */
   level?: number;
@@ -131,6 +134,16 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
         g.arc(x, y, Math.max(4.5 * unit, 0.9 * k), 0, Math.PI * 2);
         g.fillStyle = "#6b4a2e"; g.strokeStyle = "rgba(40,28,14,0.9)";
         g.fill(); g.stroke();
+      }
+      if (view.shop) {
+        const [x, y] = at(view.shop), r = Math.max(5 * unit, 2.9 * k);
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.fillStyle = "#5a2d78"; g.strokeStyle = GOLD;
+        g.fill(); g.stroke();
+        g.beginPath();
+        g.arc(x, y, Math.max(1.8 * unit, r * 0.3), 0, Math.PI * 2);
+        g.fillStyle = "#e8eef5"; g.fill();
       }
       for (const stick of view.sticks) {
         const [x, y] = at(stick);

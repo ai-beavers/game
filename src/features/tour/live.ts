@@ -17,6 +17,9 @@ const SHOTS: Record<string, Shot> = {
   "Tail slap": { ...SHOT, pitch: 0.11, side: 0.6 }, // a look from the side: the tail coming down
   "Sky watch": { ...SHOT, pitch: 0.08, lift: 0.9 }, // looking up
   "Wears a hat": { distance: 1.6, pitch: 0.3, side: 2.3, lift: 0.12 }, // turned round to the front, close: the hat on the head
+  // Higher and round to the side: the sign beside the doorway on the way in, then over the low café walls (the roof is
+  // hidden inside) the counter, the Shopkeeper and the tables.
+  "Shopping": { distance: 3.6, pitch: 0.55, side: 0.7, lift: 0.3 },
 };
 
 // ---- a clear view: the beaver must always be seen ----
@@ -161,7 +164,7 @@ export interface Moment {
 
 /** The activities the newest features added, and the day each came (UTC). A feature with an activity of its own
  *  enters it here; the beaver is curious about it for FRESH days. Drop an entry once it is older. */
-const NEW: Record<string, string> = { "Wears a hat": "2026-11-18" };
+const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", "Shopping": "2026-11-18" };
 const FRESH = 7; // days
 export const fresh = (activity: string, m: Moment) => {
   const since = m.day === undefined || !NEW[activity] ? NaN : (m.day - Date.parse(NEW[activity]!)) / 86_400_000;
@@ -200,6 +203,7 @@ export function reason(activity: string, m: Moment): string {
     case "Regrowth": return "Are my trees growing back?";
     case "Around the clearing": return "Stretching my legs.";
     case "Furious beaver": return "That makes me furious!";
+    case "Shopping": return "Saved up. Time for a new look.";
     default: return activity;
   }
 }
