@@ -4,6 +4,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
+import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 
 const layers = [0, 0.55, 0.27, 0.82, 0.4, 0.68];
 const varyings = "varying vec3 furRest, furNormal; varying vec4 coatMask; varying float shell;";
@@ -11,6 +12,8 @@ const varyings = "varying vec3 furRest, furNormal; varying vec4 coatMask; varyin
 class Coat extends MaterialPluginBase {
   dressed = true;
   anger = 0;
+  /** light.ts's "sun": the rim of light on the coat's edge is brightest with it behind the beaver. */
+  sun: DirectionalLight | null = null;
 
   constructor(material: PBRMaterial) {
     super(material, "Beaver coat", 200, {}, true, true);
@@ -20,11 +23,15 @@ class Coat extends MaterialPluginBase {
   override getAttributes(attributes: string[]) { attributes.push("furMask", "furLayer"); }
   override getUniforms() {
     return {
-      ubo: [{ name: "furState", size: 2, type: "vec2" }],
-      vertex: "uniform vec2 furState;", fragment: "uniform vec2 furState;",
+      ubo: [{ name: "furState", size: 2, type: "vec2" }, { name: "furSun", size: 3, type: "vec3" }],
+      vertex: "uniform vec2 furState; uniform vec3 furSun;", fragment: "uniform vec2 furState; uniform vec3 furSun;",
     };
   }
-  override bindForSubMesh(buffer: UniformBuffer) { buffer.updateFloat2("furState", this.anger, Number(this.dressed)); }
+  override bindForSubMesh(buffer: UniformBuffer) {
+    buffer.updateFloat2("furState", this.anger, Number(this.dressed));
+    const d = this.sun?.direction;
+    buffer.updateFloat3("furSun", d?.x ?? 0, d?.y ?? -1, d?.z ?? 0);
+  }
 
   override getCustomCode(shader: string): Record<string, string> {
     if (shader === "vertex") return {
@@ -55,12 +62,18 @@ class Coat extends MaterialPluginBase {
         float grain = furNoise(id);
         vec2 center = .5 + .36 * (vec2(grain,furNoise(id+14.7))-.5);
         if (shell > 0. && length(fract(hair)-center) > (.68-.48*shell)*(.7+.3*grain)) discard;
-        vec3 marking = vec3(.42, .29, .18);
+        vec3 marking = vec3(.62, .4, .22); // warm cream: belly, chin, muzzle
         surfaceAlbedo = mix(surfaceAlbedo, marking, coatMask.g * (1.-furState.x));
         surfaceAlbedo *= mix(.68,1.,coatMask.b) * mix(.85,1.12,shell);
         // Sub-pixel strands blend to a solid coat when another player walks away.
         float detail = 1.-smoothstep(.55,1.5,max(fwidth(hair.x), fwidth(hair.y)));
-        surfaceAlbedo *= mix(1., .73+.48*grain, detail);
+        surfaceAlbedo *= mix(1., .8+.34*grain, detail);
+      `,
+      // Soft light through the hair tips on the silhouette's edge, strongest with the sun behind the beaver.
+      CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: `
+        float rim = pow(1. - clamp(dot(normalW, viewDirectionW), 0., 1.), 3.);
+        rim *= (.3 + .7 * max(dot(furSun, viewDirectionW), 0.)) * (.35 + .65 * max(dot(normalW, -furSun), 0.)) * (.45 + .55 * shell);
+        finalEmissive += rim * vec3(.5, .33, .2) * (1. - .6 * furState.x);
       `,
     };
   }
@@ -77,6 +90,7 @@ export function createCoat(body: Mesh, material: PBRMaterial) {
   body.thinInstanceSetBuffer("matrix", matrices, 16, true);
   body.thinInstanceSetBuffer("furLayer", new Float32Array(layers), 1, true);
   const coat = new Coat(material);
+  coat.sun = body.getScene().getLightByName("sun") as DirectionalLight | null;
   return {
     coat,
     update() {

@@ -22,7 +22,7 @@ async function shirtTexture(scene: Scene) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1024;
   const paint = canvas.getContext("2d")!;
-  paint.fillStyle = "#ecece8";
+  paint.fillStyle = "#f1e8d6"; // warm cream: sits with the chestnut coat, not glaring white
   paint.fillRect(0, 0, 1024, 1024);
   paint.fillStyle = "rgba(0, 0, 0, 0.035)"; // the weave
   for (let y = 0; y < 1024; y += 4) paint.fillRect(0, y, 1024, 2);
@@ -55,7 +55,7 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   if (!(body instanceof Mesh) || !(body.material instanceof PBRMaterial)) throw new Error("Missing beaver coat mesh");
   const material = body.material;
   const fur = createCoat(body, material);
-  const calm = new Color3(0.16, 0.072, 0.035), red = new Color3(0.48, 0.035, 0.018);
+  const calm = new Color3(0.2, 0.074, 0.03), red = new Color3(0.48, 0.035, 0.018);
   const shirtMat = asset.meshes.find(m => m.name === "shirt")!.material as PBRMaterial;
   shirtMat.albedoTexture = print;
   for (const part of asset.meshes) part.receiveShadows = true;
