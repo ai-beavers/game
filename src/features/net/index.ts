@@ -52,7 +52,7 @@ const local = () => localStorage, session = () => sessionStorage;
 
 async function serverInfo(): Promise<{ addresses: string[]; epoch: string; build: BuildChange[]; version?: string } | undefined> {
   try {
-    const response = await fetch(INFO_PATH, { signal: AbortSignal.timeout(2000), cache: "no-store" });
+    const response = await fetch(`${INFO_PATH}?build`, { signal: AbortSignal.timeout(2000), cache: "no-store" });
     if (!response.ok || !response.headers.get("content-type")?.includes("json")) return;
     const info = await response.json();
     return Array.isArray(info?.addresses) && Array.isArray(info.build) && typeof info.epoch === "string" ? info : undefined;
@@ -209,6 +209,7 @@ export const create: CreateFeature = (game) => {
       case "join": addRemote(m.id, m.name); ui.line(`${m.name} joined`); return;
       case "leave": { const name = nameOf(m.id); removeRemote(m.id); ui.line(`${name} left`); return; }
       case "name": {
+        if (m.id === me) { ui.me(m.name); return; } // someone else had the name: the server added a number
         const r = remotes.get(m.id);
         if (r && r.name !== m.name) { ui.line(`${r.name} is now ${m.name}`); r.name = m.name; ui.rename(m.id, m.name); }
         return;
@@ -237,6 +238,7 @@ export const create: CreateFeature = (game) => {
         shared.have = m.n + m.c.length;
         return;
       case "world": shared.epoch = m.epoch; adopt(m.build); return;
+      case "epoch": shared.epoch = m.epoch; shared.have = m.n; return; // the same world, its changes numbered anew
       case "full": full = `Server full (${m.players}/${m.max}), playing alone`; return;
       case "reset": if (!building) return; write(local, BUILD_KEY, null); write(local, LOOSE_KEY, null); write(session, RESET_KEY, "1"); reload(); return;
     }

@@ -2,10 +2,10 @@
 // and the smoothing between updates.
 import { describe, expect, test } from "bun:test";
 import { newMotion } from "../../player/state.ts";
-import { LODGE, newState, REGROW, SLOTS, type BuildChange } from "../build/rules.ts";
+import { apply, LODGE, newState, REGROW, SLOTS, type BuildChange } from "../build/rules.ts";
 import {
-  admit, bucket, changesOf, clean, clientAddress, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, packMotion, parseChange,
-  parseClient, replay, restore, sameWorld, shouldReload, stickId, unpackMotion, woodId,
+  admit, bucket, changesOf, clean, clientAddress, compact, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, NAME_LENGTH, packMotion,
+  parseChange, parseClient, replay, restore, sameOrigin, sameWorld, shouldReload, stickId, uniqueName, unpackMotion, woodId, type ServerMessage, type Work,
 } from "./protocol.ts";
 import { Track } from "./track.ts";
 
@@ -104,6 +104,28 @@ describe("clientAddress", () => {
     expect(clientAddress(none, "::ffff:192.0.2.1")).toBe("192.0.2.1");
     for (const self of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) expect(clientAddress(none, self)).toBeUndefined();
     expect(clientAddress(new Headers({ "fly-client-ip": "127.0.0.1" }), "10.0.0.2", "fly-client-ip")).toBe("127.0.0.1"); // said by the proxy: limited
+  });
+});
+
+describe("sameOrigin and uniqueName", () => {
+  test("a socket opens only from the server's own pages, or from no browser at all", () => {
+    expect(sameOrigin(null, "localhost:5180")).toBe(true); // bots and tools send no Origin
+    expect(sameOrigin("http://localhost:5180", "localhost:5180")).toBe(true);
+    expect(sameOrigin("http://192.168.1.20:5180", "192.168.1.20:5180")).toBe(true);
+    expect(sameOrigin("https://evil.example", "localhost:5180")).toBe(false);
+    expect(sameOrigin("http://localhost:5181", "localhost:5180")).toBe(false);
+    expect(sameOrigin("null", "localhost:5180")).toBe(false);
+    // Behind a proxy that asks under its own Host: the public address counts.
+    expect(sameOrigin("https://beaver.example", "app.internal:8080", "https://beaver.example/")).toBe(true);
+    expect(sameOrigin("https://other.example", "app.internal:8080", "https://beaver.example/")).toBe(false);
+  });
+
+  test("two players never hold the same name at once", () => {
+    expect(uniqueName("Mia", ["Ben"])).toBe("Mia");
+    expect(uniqueName("Mia", ["mia", "Ben"])).toBe("Mia 2");
+    expect(uniqueName("Mia", ["Mia", "Mia 2"])).toBe("Mia 3");
+    const long = "x".repeat(NAME_LENGTH), again = uniqueName(long, [long]);
+    expect([again, again.length]).toEqual([`${"x".repeat(NAME_LENGTH - 2)} 2`, NAME_LENGTH]);
   });
 });
 
@@ -274,5 +296,51 @@ describe("build changes", () => {
     expect(stickId("t2:1")).toBe(woodId(2, 1));
     expect(stickId("t31:7")).toBeLessThan(MAX_THINGS);
     expect([stickId("d4"), stickId("x1a"), stickId("t2:9"), stickId("w999")]).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  test("the log stays as short as the present world, and a joiner after compacting gets the world of one who saw it all", () => {
+    // The server's steps (server.ts build): admit, append, tell everyone, compact; and a client counting what it has.
+    const work: Work = { epoch: "first", world: newState(), log: [] }, told: ServerMessage[] = [];
+    let taken = 0; // what the log would hold without compacting
+    const serve = (changes: BuildChange[], now: number) => {
+      const c = changes.map((x) => ({ ...x })).filter((x) => admit(work.world, x, now)), n = work.log.length;
+      if (!c.length) return;
+      taken += c.length;
+      work.log.push(...c);
+      told.push({ t: "build", id: 1, n, c });
+      if (compact(work)) told.push({ t: "epoch", epoch: work.epoch, n: work.log.length });
+    };
+    const live = { state: newState(), epoch: work.epoch, have: 0 };
+    const hear = () => {
+      for (const m of told.splice(0)) {
+        if (m.t === "build") { for (const c of m.c) apply(live.state, c); live.have = m.n + m.c.length; }
+        if (m.t === "epoch") { live.epoch = m.epoch; live.have = m.n; }
+      }
+    };
+    const life = (tree: number, direction: number): BuildChange[] => [...Array(8).fill({ type: "bite", tree }), { type: "fell", tree, direction },
+      { type: "rest", tree, at: [direction, 0, 1], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree }), { type: "split", tree }];
+    let now = Date.now() - 12 * REGROW * 1000; // all of it in the past, as a kept file's times are
+    serve([{ type: "find" }, ...life(2, 0.5), { type: "bite", tree: 9 }], now);
+    for (let cycle = 1; cycle <= 10; cycle++) {
+      now += REGROW * 1000;
+      serve([{ type: "grow", tree: 2 }], now);
+      serve(life(2, cycle).slice(0, 9), now); // felled again
+      hear(); // the live one hears this much before the next part
+      serve(life(2, cycle).slice(9), now); // and broken into wood: its earlier life is no longer needed
+      serve([{ type: "place", slot: 0, stick: `t2:${cycle % 8}` }], now);
+      hear();
+      // A joiner now: the log holds the present world and no more; it is the world of the one who saw every change.
+      expect(work.log).toHaveLength(changesOf(work.world).length);
+      const joiner = replay(work.log);
+      expect(sameWorld(joiner, live.state)).toBe(true);
+      expect(sameWorld(joiner, work.world)).toBe(true);
+      // The live one counts the changes as the server does: on reconnecting it gets nothing twice and misses nothing.
+      expect([live.epoch, live.have]).toEqual([work.epoch, work.log.length]);
+      // Kept in the file and read back: the same world, wood gone at the same time.
+      expect(restore(JSON.stringify({ epoch: work.epoch, build: work.log }))!.world).toEqual(work.world);
+    }
+    expect(taken).toBe(185); // without compacting, growing by 16 each time the tree comes back and breaks again
+    expect(work.log.length).toBe(1 + 15 + 1 + 8); // the find, one tree's life, a bite, the dam's sticks
+    expect(compact(work)).toBe(false); // nothing more to shorten
   });
 });
