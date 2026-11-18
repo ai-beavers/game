@@ -3,7 +3,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector2 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
-import { daylightOf, SUN_INTENSITY } from "../../light.ts";
+import { daylightOf, SKY_FILL, SUN_INTENSITY } from "../../light.ts";
 import { waterOf } from "../../world/water.ts";
 import { DAY_SECONDS, dayAt, START } from "./clock.ts";
 import { createDome } from "./dome.ts";
@@ -61,6 +61,7 @@ export const create: CreateFeature = game => {
     sun.intensity = day.intensity / SUN_INTENSITY * 1.6 * (1 - clouds * 0.77) * (1 - fog * 0.35);
     sky.intensity = (1.15 - day.night * 0.94) * (1 - clouds * 0.23);
     Color3.LerpToRef(WHITE, NIGHT, day.night * 0.6, sky.diffuse);
+    sky.diffuse.scaleInPlace(1 - (1 - SKY_FILL) * (1 - day.night) * (1 - clouds)); // room for the sun's shadows by day
     if (water) water.rain.value = weather.rain;
     if (dry && ground instanceof StandardMaterial) {
       dry.scaleToRef(1 - wet * 0.32, ground.diffuseColor);
