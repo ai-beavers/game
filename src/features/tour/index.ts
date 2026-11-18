@@ -36,6 +36,8 @@ import { fader, occluders } from "./clearview.ts";
 import { RAPIER } from "../../engine.ts";
 import { CACHE, live as standing, LODGE, REGROW, SLOTS, SPROUT, STICKS, type BuildState } from "../build/rules.ts";
 import { deerHours, type Deer } from "../life/brain.ts";
+import { centre, spread, type Deep } from "../life/deep.ts";
+import { BASIN } from "../../world/terrain.ts";
 import { dayAt } from "../sky/clock.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
@@ -436,6 +438,42 @@ export const create: CreateFeature = (game) => {
       } finally { want.dive = false; want.to = undefined; }
       await until(() => !player.diving && depth() < 0.45, 4, "let go of C, it never came up");
       if (!live && look() !== undefined) await until(() => !look(), 3, "up again, the picture stays under water");
+    }, "Pond patrol"],
+    // Down into the deep basin: the school is there and parts round the beaver as it swims into it (C held while above
+    // the school's depth, let go below it, so it stays level with them); up again, a tail slap scatters it.
+    ["Life in the deep", async () => {
+      if (!pond) return skip("no pond");
+      const deep = (window as { life?: { animals: { deep?: Deep } } }).life?.animals.deep ?? skip("no life in the deep");
+      const fish = () => deep.school.fish, depth = () => (player.waterLevel ?? 0) - player.feet.y;
+      const body = () => ({ x: player.feet.x, y: player.feet.y + 0.25, z: player.feet.z });
+      expect(fish().length > 0, "no school in the deep basin");
+      await walkTo(BASIN.x, BASIN.z, { near: 0.6, limit: 40, hop: true });
+      expect(player.afloat, "over the deep basin, yet not afloat");
+      let met = 0, closest = Infinity;
+      try {
+        want.dive = true;
+        await until(() => player.diving && depth() > 1, 6, `held C over the basin, never went down (${depth().toFixed(2)} m deep)`);
+        for (let t = 0; t < 12 && met < 1.5;) {
+          const c = centre(fish()), b = body();
+          want.dive = b.y > c.y - 0.1;
+          want.to = new Vector3(c.x, 0, c.z);
+          t += await frame();
+          if (Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 0.6) {
+            met += 1 / 60;
+            closest = Math.min(closest, ...fish().map((f) => Math.hypot(f.x - b.x, f.y - b.y, f.z - b.z)));
+          }
+        }
+        expect(met > 0, "swam after the school for 12 s, never got into it");
+        expect(closest > 0.25, `in the school, a fish swam ${closest.toFixed(2)} m from the beaver: it did not part`);
+      } finally { want.dive = false; want.to = undefined; }
+      await until(() => !player.diving && depth() < 0.45, 6, "let go of C, it never came up");
+      await wait(0.5);
+      const before = spread(fish()), slapped = after("tailSlap");
+      await tap("slap");
+      await until(slapped, 2, "pressed Q over the basin, the tail never came down");
+      await wait(1);
+      expect(spread(fish()) > before * 1.5, `slapped, the school stayed together (${before.toFixed(2)} → ${spread(fish()).toFixed(2)} m)`);
+      await wait(3); // it gathers again
     }, "Pond patrol"],
     ["Animals at the pond", async () => {
       if (!pond) return skip("no pond");
