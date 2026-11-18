@@ -117,7 +117,7 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   const DRY = 12; // s from dripping to dry once out of the water
   for (const morph of morphs) morph.influence = 0; // the file stores the furious body at 1: a calm beaver starts calm
   return {
-    root, hand: nodes.get("hand_R")!,
+    root, hand: nodes.get("hand_R")!, leftHand: nodes.get("hand_L")!,
     get anger() { return anger; },
     set anger(value) {
       if (anger === value) return;
