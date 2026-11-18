@@ -37,6 +37,24 @@ describe("clock", () => {
     expect(night.night).toBe(1);
     expect(night.dark).toBe(1);
   });
+  test("the moon stands high over the evening and lights the whole night from above", () => {
+    for (const h of [21, 23, 1, 3]) {
+      const night = dayAt(h);
+      expect(night.moonHeight).toBeGreaterThan(20);
+      expect(night.intensity).toBeGreaterThan(1);
+      expect(Vector3.Distance(night.light, night.moon.negate())).toBeLessThan(1e-6);
+    }
+    expect(dayAt(5.6).moonHeight).toBeGreaterThan(0); // still up when the sun takes over
+  });
+  test("the eye opens up at night: no dark gap at dusk, night not a dimmed day", () => {
+    expect(dayAt(23).exposure / dayAt(START).exposure).toBeGreaterThan(2.5);
+    // From the golden hour into the night the exposure only grows, and the moon is full once the sky is.
+    for (let m = 18 * 60; m < 22 * 60; m++) {
+      const a = dayAt(m / 60), b = dayAt((m + 1) / 60);
+      expect(b.exposure).toBeGreaterThanOrEqual(a.exposure);
+      if (a.night === 1) expect(a.intensity).toBeGreaterThan(1);
+    }
+  });
   test("no jumps from minute to minute", () => {
     for (let m = 0; m < 24 * 60; m++) {
       const a = dayAt(m / 60), b = dayAt((m + 1) / 60);

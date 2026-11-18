@@ -3,8 +3,9 @@ import { type Camera } from "@babylonjs/core/Cameras/camera.js";
 import type { Stage } from "../../engine.ts";
 import type { Settings } from "../../settings.ts";
 
-export function createChain({ scene, camera, engine }: Stage) {
+export function createChain({ scene, camera, engine, hud }: Stage) {
   const pipeline = new DefaultRenderingPipeline("picture", true, scene, [camera], false);
+  if (hud.layer) hud.layer.applyPostProcess = false; // the HUD stays as drawn: no night exposure, bloom or vignette on it
   pipeline.bloomWeight = 0.13;
   pipeline.bloomThreshold = 0.92;
   pipeline.bloomKernel = 32;
@@ -30,6 +31,10 @@ export function createChain({ scene, camera, engine }: Stage) {
       pipeline.addCamera(next);
       active = next;
       pipeline.prepare();
+    },
+    /** 0 by day … 1 at night: the moon and the fireflies glow more, the way points of light do in the dark. */
+    night(dark: number) {
+      pipeline.bloomWeight = 0.13 + 0.4 * dark;
     },
     focus(metres: number, strength: number) {
       pipeline.depthOfField.focusDistance = Math.max(0.1, metres) * 1000;

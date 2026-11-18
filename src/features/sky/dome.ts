@@ -23,14 +23,15 @@ export function createDome(scene: Scene) {
       void main() {
         vec3 d = normalize(ray);
         float h = max(d.y, 0.);
-        vec3 zenith = mix(vec3(.22,.52,.83), vec3(.012,.018,.063), night);
+        vec3 zenith = mix(vec3(.22,.52,.83), vec3(.02,.03,.085), night);
         vec3 sky = mix(horizon, zenith, smoothstep(0.,.85,h));
         float sunCos = max(0., dot(d,sun));
         sky += vec3(1.,.68,.36) * (pow(sunCos,36.)*.25 + smoothstep(.99968,.99988,sunCos)*1.6) * (1.-night);
-        float moonCos = max(0., dot(d,moon));
-        sky += vec3(.82,.88,1.) * (smoothstep(.99965,.99983,moonCos) + .12*pow(moonCos,300.)) * night;
+        float moonCos = max(0., dot(d,moon)); // a bright disc (it blooms) in a wide cool halo
+        sky += vec3(.82,.88,1.) * (smoothstep(.99955,.99975,moonCos)*2.2 + .2*pow(moonCos,300.) + .06*pow(moonCos,12.)) * night;
         vec3 cell = d * 190.; float star = hash(floor(cell.xy) + floor(cell.z)*13.);
-        sky += night * step(.986,star) * (1.-smoothstep(.1,.38,length(fract(cell)-.5))) * smoothstep(.05,.25,h);
+        float twinkle = .6 + .4 * sin(time * (1.5 + 3. * fract(star * 91.)) + star * 400.);
+        sky += night * step(.98,star) * (.4 + 1.2 * fract(star * 37.)) * twinkle * (1.-smoothstep(.1,.38,length(fract(cell)-.5))) * smoothstep(.05,.25,h) * (1.-clouds);
         vec2 p = d.xz / max(h+.04,.04)*2. + vec2(time*.008, time*.003);
         float cover = noise(p)*.62 + noise(p*2.1)*.27 + noise(p*5.3)*.11;
         float layer = smoothstep(.55-.38*clouds,.75-.26*clouds,cover)*smoothstep(.015,.13,h);
