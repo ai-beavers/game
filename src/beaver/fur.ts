@@ -12,6 +12,8 @@ const varyings = "varying vec3 furRest, furNormal; varying vec4 coatMask; varyin
 class Coat extends MaterialPluginBase {
   dressed = true;
   anger = 0;
+  /** 0 dry … 1 dripping: darker, glossier, the shells combed flat. */
+  wet = 0;
   /** light.ts's "sun": the rim of light on the coat's edge is brightest with it behind the beaver. */
   sun: DirectionalLight | null = null;
 
@@ -23,12 +25,12 @@ class Coat extends MaterialPluginBase {
   override getAttributes(attributes: string[]) { attributes.push("furMask", "furLayer"); }
   override getUniforms() {
     return {
-      ubo: [{ name: "furState", size: 2, type: "vec2" }, { name: "furSun", size: 3, type: "vec3" }],
-      vertex: "uniform vec2 furState; uniform vec3 furSun;", fragment: "uniform vec2 furState; uniform vec3 furSun;",
+      ubo: [{ name: "furState", size: 3, type: "vec3" }, { name: "furSun", size: 3, type: "vec3" }],
+      vertex: "uniform vec3 furState; uniform vec3 furSun;", fragment: "uniform vec3 furState; uniform vec3 furSun;",
     };
   }
   override bindForSubMesh(buffer: UniformBuffer) {
-    buffer.updateFloat2("furState", this.anger, Number(this.dressed));
+    buffer.updateFloat3("furState", this.anger, Number(this.dressed), this.wet);
     const d = this.sun?.direction;
     buffer.updateFloat3("furSun", d?.x ?? 0, d?.y ?? -1, d?.z ?? 0);
   }
@@ -41,8 +43,8 @@ class Coat extends MaterialPluginBase {
         furRest = position; furNormal = normal; coatMask = furMask;
         vec3 n = normalize(normalUpdated), down = vec3(0., -1., -.32);
         vec3 comb = down - n * dot(down, n);
-        float furLength = .029 * furMask.r * mix(1., smoothstep(.35, .9, furMask.a), furState.y);
-        positionUpdated += shell * furLength * (n * (1. - .38 * shell) + comb * shell);
+        float furLength = .029 * furMask.r * mix(1., smoothstep(.35, .9, furMask.a), furState.y) * (1. - .5 * furState.z);
+        positionUpdated += shell * furLength * (n * (1. - .38 * shell) + comb * shell * (1. + furState.z)); // wet: flat, combed down
       `,
     };
     return {
@@ -61,19 +63,24 @@ class Coat extends MaterialPluginBase {
         vec2 id = floor(hair);
         float grain = furNoise(id);
         vec2 center = .5 + .36 * (vec2(grain,furNoise(id+14.7))-.5);
-        if (shell > 0. && length(fract(hair)-center) > (.68-.48*shell)*(.7+.3*grain)) discard;
+        if (shell > 0. && length(fract(hair)-center) > (.68-.48*shell)*(.7+.3*grain)*(1.-.35*furState.z)) discard; // wet: thin, clumped tips
         vec3 marking = vec3(.62, .4, .22); // warm cream: belly, chin, muzzle
         surfaceAlbedo = mix(surfaceAlbedo, marking, coatMask.g * (1.-furState.x));
         surfaceAlbedo *= mix(.68,1.,coatMask.b) * mix(.85,1.12,shell);
         // Sub-pixel strands blend to a solid coat when another player walks away.
         float detail = 1.-smoothstep(.55,1.5,max(fwidth(hair.x), fwidth(hair.y)));
         surfaceAlbedo *= mix(1., .8+.34*grain, detail);
+        surfaceAlbedo *= 1. - .45 * furState.z; // wet fur is darker
+        // and glossier: the reflectivity block below reads vReflectivityColor (.g roughness); no hook sits closer to it.
+        vec4 wetReflectivity = vReflectivityColor;
+        wetReflectivity.g *= 1. - .6 * furState.z;
+        #define vReflectivityColor wetReflectivity
       `,
       // Soft light through the hair tips on the silhouette's edge, strongest with the sun behind the beaver.
       CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: `
         float rim = pow(1. - clamp(dot(normalW, viewDirectionW), 0., 1.), 3.);
         rim *= (.3 + .7 * max(dot(furSun, viewDirectionW), 0.)) * (.35 + .65 * max(dot(normalW, -furSun), 0.)) * (.45 + .55 * shell);
-        finalEmissive += rim * vec3(.5, .33, .2) * (1. - .6 * furState.x);
+        finalEmissive += rim * vec3(.5, .33, .2) * (1. - .6 * furState.x) * (1. - .5 * furState.z);
       `,
     };
   }

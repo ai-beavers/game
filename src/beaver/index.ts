@@ -76,6 +76,7 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   });
   material.albedoColor.copyFrom(calm);
   let anger = 0;
+  const DRY = 12; // s from dripping to dry once out of the water
   for (const morph of morphs) morph.influence = 0; // the file stores the furious body at 1: a calm beaver starts calm
   return {
     root, hand: nodes.get("hand_R")!,
@@ -102,6 +103,13 @@ export const loadBeaver: LoadBeaver = async (scene) => {
         else node.scaling.copyFrom(scale);
       }
     },
-    update: fur.update,
+    update(dt) {
+      fur.update();
+      // Wet as deep as the feet are in the pond (src/world/water.ts keeps its live level in scene.metadata): this
+      // beaver and every other player's alike, without being told that they swim.
+      const level = (scene.metadata?.water as { level: number } | undefined)?.level;
+      const soaked = level === undefined ? 0 : Math.min(1, Math.max(0, (level - root.getAbsolutePosition().y) / 0.25));
+      fur.coat.wet = Math.max(soaked, fur.coat.wet - dt / DRY);
+    },
   };
 };
