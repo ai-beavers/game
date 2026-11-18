@@ -48,9 +48,18 @@ export function buildWater({ scene, camera }: Stage) {
       uniform vec3 eye, horizon, toLight, lightColor, skyLight, fogColor; uniform float time, rain, night, clouds, fogDensity, gamma, edge;
       uniform mat4 lightMatrix; uniform highp sampler2DShadow shadowMap;
       varying float waterDepth; varying vec3 at;
-      vec3 wave(vec2 p, vec2 d, float k, float speed, float a) { // a sine wave's slope, along d
-        float s = cos(dot(p, d) * k + time * speed) * a * k;
-        return vec3(d.x * s, 0., d.y * s);
+      vec2 grad(vec2 i) { float h = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453) * 6.2832; return vec2(cos(h), sin(h)); }
+      vec2 noiseSlope(vec2 p) { // the gradient of 2D gradient noise (quintic), analytic
+        vec2 i = floor(p), f = fract(p), u = f * f * f * (f * (f * 6. - 15.) + 10.), du = 30. * f * f * (f * (f - 2.) + 1.);
+        vec2 ga = grad(i), gb = grad(i + vec2(1, 0)), gc = grad(i + vec2(0, 1)), gd = grad(i + 1.);
+        float va = dot(ga, f), vb = dot(gb, f - vec2(1, 0)), vc = dot(gc, f - vec2(0, 1)), vd = dot(gd, f - 1.);
+        return ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd) + du * (u.yx * (va - vb - vc + vd) + vec2(vb, vc) - va);
+      }
+      // One octave of ripples: noise turned by angle, k cells per metre, drifting along its own way; its slope fades
+      // out once a cell gets narrower than a few pixels (fw: metres per pixel), so it never aliases into a pattern.
+      vec2 ripple(vec2 p, float angle, float k, vec2 drift, float a, float fw) {
+        mat2 turn = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+        return a * (1. - smoothstep(.12, .35, k * fw)) * (noiseSlope(turn * p * k + drift * time) * turn);
       }
       void main() {
         float far = length(eye - at), fog = clamp(exp(-pow(fogDensity * far, 2.)), 0., 1.);
@@ -61,13 +70,16 @@ export function buildWater({ scene, camera }: Stage) {
           return;
         }
         vec2 p = at.xz;
-        vec3 slope = wave(p, vec2(.8,.6), 3.1, 1.3, .010) + wave(p, vec2(-.5,.87), 4.3, 1.7, .007)
-          + wave(p, vec2(.97,-.24), 7.9, 2.3, .004) + wave(p, vec2(-.2,-.98), 13., 3.1, .0018);
+        // Ripples: four octaves of gradient noise at unrelated angles, sizes and drifts, so no period and no direction.
+        float fw = max(length(dFdx(p)), length(dFdy(p)));
+        vec2 s = ripple(p, .3, .83, vec2(.21, .13), .022, fw) + ripple(p, 2.17, 1.71, vec2(-.19, .31), .018, fw)
+          + ripple(p, 4.05, 3.37, vec2(.43, -.37), .014, fw) + ripple(p, 5.6, 6.91, vec2(-.71, -.53), .010, fw);
+        vec3 slope = vec3(s.x, 0., s.y);
         for (int i = 0; i < 2; i++) { // two layers of drops, each ring at its own time
           vec2 q = p * 3.5 + float(i) * vec2(.37, .61), cell = fract(q) - .5;
           float phase = fract(sin(dot(floor(q), vec2(12.9, 78.2)) + float(i) * 7.) * 43758.5);
           float r = length(cell), t = fract(time * 1.1 + phase);
-          slope.xz += rain * cell / max(r, .01) * sin(r * 45. - t * 20.) * smoothstep(.45, 0., r) * (1. - t) * .3;
+          slope.xz += rain * (1. - smoothstep(.12, .35, 25. * fw)) * cell / max(r, .01) * sin(r * 45. - t * 20.) * smoothstep(.45, 0., r) * (1. - t) * .3;
         }
         vec3 normal = normalize(vec3(-slope.x, 1., -slope.z));
         vec3 view = normalize(eye - at), mirrored = reflect(-view, normal);
