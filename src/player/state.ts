@@ -3,6 +3,7 @@
 //
 //   const jump = newJump();      if (jumpStarts(jump, dt, grounded, input.jump, canJump)) vy = JUMP_SPEED;
 //   const act = newAction();     const event = stepAction(act, dt, actPressed, stickInReach);  // "grab" | "release"
+//   const slap = newSlap();      stepSlap(slap, dt, slapPressed, allowed);                      // the tail slap, Q
 //   trackMotion(motion, dt, facts);                                                            // fills motion in place
 import type { Action, Motion } from "../contracts.ts";
 
@@ -54,6 +55,24 @@ export function stepAction(s: ActionState, dt: number, pressed: boolean, inReach
   return event;
 }
 
+// ---- tail slap ---------------------------------------------------------------------------------------------------
+
+// The tail goes up, then strikes down at SLAP_HIT of the move; the next slap can start SLAP_COOLDOWN after this one did.
+export const SLAP_TIME = 0.9, SLAP_HIT = 0.5, SLAP_COOLDOWN = 2.5; // s, progress 0 … 1, s
+export interface Slap { progress: number; wait: number }
+export const newSlap = (): Slap => ({ progress: 0, wait: 0 });
+
+/** Once per step. pressed: the edge of the slap key; allowed: held up (ground or water) and no other action. */
+export function stepSlap(s: Slap, dt: number, pressed: boolean, allowed: boolean) {
+  s.wait = Math.max(0, s.wait - dt);
+  if (s.progress > 0) s.progress = s.progress + dt / SLAP_TIME >= 1 ? 0 : s.progress + dt / SLAP_TIME;
+  else if (pressed && allowed && s.wait === 0) { s.progress = dt / SLAP_TIME; s.wait = SLAP_COOLDOWN; }
+}
+
+/** The tail strikes between these two Motions: the slap's progress (action "none") passed SLAP_HIT. */
+export const slapHits = (before: Motion, now: Motion) =>
+  before.action === "none" && now.action === "none" && before.actionProgress < SLAP_HIT && now.actionProgress >= SLAP_HIT;
+
 // ---- motion ------------------------------------------------------------------------------------------------------
 
 export const newMotion = (): Motion => ({
@@ -69,6 +88,8 @@ export interface StepFacts {
   grounded: boolean;
   afloat: boolean;
   act: ActionState;
+  /** The tail slap's progress, 0: none (Slap.progress). */
+  slap?: number;
 }
 
 /** Fills every field of motion in place, except anger (which belongs to whoever sets it). Afloat counts as held
@@ -87,7 +108,7 @@ export function trackMotion(m: Motion, dt: number, f: StepFacts): void {
   const target = f.afloat ? 1 : 0, ease = dt / SWIM_EASE;
   m.swimming += Math.max(-ease, Math.min(ease, target - m.swimming));
   m.action = f.act.action;
-  m.actionProgress = f.act.progress;
+  m.actionProgress = f.act.action === "none" ? f.slap ?? 0 : f.act.progress;
   m.carrying = f.act.carrying;
 }
 

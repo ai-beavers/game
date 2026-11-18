@@ -1,10 +1,11 @@
-// Tests for the pure parts of the audio feature: the composer and the ground lookup.
+// Tests for the pure parts of the audio feature: the composer, the ground lookup, and that every recipe runs.
 //
 //   bun test src/features/audio
 import { expect, test } from "bun:test";
 import { heightAt, POND, WATER_LEVEL } from "../../world/terrain.ts";
 import { findWater, groundAt } from "./ground.ts";
 import { composer, HIGHEST, LOWEST, pitch } from "./music.ts";
+import { SOUNDS } from "./sounds.ts";
 
 test("the tune stays in range, moves in small steps and is slow", () => {
   const next = composer();
@@ -36,4 +37,37 @@ test("the ground under the feet: water in the pond, shore at its edge, grass in 
   expect(groundAt(heightAt, WATER_LEVEL, water, POND.x + 4.6, POND.z)).toBe("shore");
   expect(groundAt(heightAt, WATER_LEVEL, water, 0, 0)).toBe("grass");
   expect(groundAt(heightAt, WATER_LEVEL, water, POND.x + 8, POND.z)).toBe("grass");
+});
+
+/** Just enough of a BaseAudioContext to run a recipe (bun has no Web Audio): every node takes any call, and each
+ *  source remembers when it starts and stops. */
+function fakeContext() {
+  const sources: { start?: number; stop?: number }[] = [];
+  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {} });
+  const node = () => ({ connect: (to: unknown) => to, gain: param(), frequency: param(), Q: param() });
+  const source = () => {
+    const times: { start?: number; stop?: number } = {};
+    sources.push(times);
+    return { ...node(), start(at: number) { times.start = at; }, stop(at: number) { times.stop = at; } };
+  };
+  const ctx = {
+    sampleRate: 8000, currentTime: 0,
+    createBuffer: (_c: number, length: number) => ({ getChannelData: () => new Float32Array(length) }),
+    createBufferSource: source, createOscillator: source, createGain: node, createBiquadFilter: node,
+  };
+  return { ctx: ctx as unknown as BaseAudioContext, sources };
+}
+
+test("every sound, the tail slap's crack and thump among them, makes sources that start and stop in time", () => {
+  for (const name of ["slap", "thump"] as const) expect(SOUNDS[name]).toBeDefined();
+  for (const [name, recipe] of Object.entries(SOUNDS)) {
+    const { ctx, sources } = fakeContext();
+    recipe(ctx, {} as AudioNode, 1, 1);
+    expect(sources.length, name).toBeGreaterThan(0);
+    for (const s of sources) {
+      expect(s.start!, name).toBeGreaterThanOrEqual(1);
+      expect(s.stop!, name).toBeGreaterThan(s.start!);
+      expect(s.stop!, name).toBeLessThan(6);
+    }
+  }
 });

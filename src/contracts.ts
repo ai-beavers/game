@@ -71,7 +71,8 @@ export interface Motion {
   landingSpeed: number;
   /** 0 on land … 1 afloat. */
   swimming: number;
-  /** What the arms and trunk are busy with, and how far along a one-time action is, 0 … 1. */
+  /** What the arms and trunk are busy with, and how far along a one-time action is, 0 … 1. With action "none" a
+   *  progress above 0 is the tail slap's (it travels to other players in the Motion as it is: src/features/net). */
   action: Action;
   actionProgress: number;
   /** Holds something in its right hand. */

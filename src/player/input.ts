@@ -5,14 +5,15 @@
 //   keys.hold(["KeyW"]);            tests and labs: pretend these keys are held (empty array: back to real keys)
 //   keys.add(source);               another device (gamepad, touch): source.read(into) fills its own Input each step
 //
-// WASD or arrows move (x to the right, y forward, relative to the camera), Shift runs, Space jumps, E acts.
+// WASD or arrows move (x to the right, y forward, relative to the camera), Shift runs, Space jumps, E acts, Q slaps
+// the tail.
 // run is 0 … 1: walking speed at 0, running speed at 1, between them in between (a stick pushed part of the way).
 // A press shorter than a step still counts once: presses are kept until the next read.
 // With several sources the last one used steers (move); buttons of all of them count, so an idle source never
 // cancels the one in use.
 
-export interface Input { move: { x: number; y: number }; run: number; jump: boolean; act: boolean }
-export const newInput = (): Input => ({ move: { x: 0, y: 0 }, run: 0, jump: false, act: false });
+export interface Input { move: { x: number; y: number }; run: number; jump: boolean; act: boolean; slap?: boolean }
+export const newInput = (): Input => ({ move: { x: 0, y: 0 }, run: 0, jump: false, act: false, slap: false });
 /** Another device that fills an Input, once per physics step. move may be shorter than 1 (a stick half pushed). */
 export interface Source { read(into: Input): Input }
 
@@ -22,8 +23,8 @@ export const newReading = (): Reading => ({ input: newInput(), used: 0, last: ""
 
 /** Marks the reading used at `tick` when it holds something and changed since the last step. */
 export function notice(reading: Reading, tick: number) {
-  const { move, run, jump, act } = reading.input, now = `${move.x},${move.y},${run},${jump},${act}`;
-  const idle = !move.x && !move.y && !run && !jump && !act;
+  const { move, run, jump, act, slap } = reading.input, now = `${move.x},${move.y},${run},${jump},${act},${!!slap}`;
+  const idle = !move.x && !move.y && !run && !jump && !act && !slap;
   if (!idle && now !== reading.last) reading.used = tick;
   reading.last = now;
 }
@@ -37,10 +38,11 @@ export function merge(into: Input, readings: Reading[]): Input {
   into.run = Math.max(0, ...readings.map((r) => r.input.run));
   into.jump = readings.some((r) => r.input.jump);
   into.act = readings.some((r) => r.input.act);
+  into.slap = readings.some((r) => r.input.slap);
   return into;
 }
 
-const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyE", "ShiftLeft", "ShiftRight"]);
+const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyE", "KeyQ", "ShiftLeft", "ShiftRight"]);
 
 export function keyboard(target: Window = window) {
   const held = new Set<string>(), pressed = new Set<string>();
@@ -86,6 +88,7 @@ export function keyboard(target: Window = window) {
     into.run = +on("ShiftLeft", "ShiftRight");
     into.jump = on("Space");
     into.act = on("KeyE");
+    into.slap = on("KeyQ");
     pressed.clear();
     return into;
   }

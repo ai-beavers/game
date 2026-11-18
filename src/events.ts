@@ -8,6 +8,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { gait } from "./anim/index.ts";
 import type { Action, Motion } from "./contracts.ts";
 import type { BuildChange } from "./features/build/rules.ts";
+import { slapHits } from "./player/state.ts";
 
 export interface GameEvents {
   /** A foot comes down while walking or running. */
@@ -24,6 +25,11 @@ export interface GameEvents {
   drop: { place: Vector3 };
   /** A one-time or lasting action starts (never "none"). */
   action: { place: Vector3; action: Exclude<Action, "none"> };
+  /** The tail comes down: a crack on the water (water true) or a thump on land; place is at the feet. remote:
+   *  another player's (src/features/net/remote.ts). */
+  tailSlap: { place: Vector3; water: boolean; remote?: boolean };
+  /** Animals that noticed a tail slap and fled (src/features/life); count: how many. */
+  startled: { place: Vector3; count: number };
   // From the build feature (src/features/build). `tree` is the index in World.trees.
   /** One bite into a tree; progress 0 … 1 towards its fall (standing) or towards breaking it into wood (lying). */
   gnaw: { place: Vector3; tree: number; progress: number };
@@ -76,6 +82,7 @@ export function watch(motion: Motion, feet: Vector3, events: Events) {
     // A stick built into the dam leaves the hand too, but is not dropped.
     if (before.carrying && !motion.carrying && motion.action !== "build" && before.action !== "build") events.emit("drop", { place });
     if (motion.action !== before.action && motion.action !== "none") events.emit("action", { place, action: motion.action });
+    if (slapHits(before, motion)) events.emit("tailSlap", { place, water: motion.swimming >= 0.5 });
     // One footstep per half stride, counted in the stride the animator uses at this speed.
     if (motion.grounded) steps += (motion.distance - before.distance) / (gait(motion.speed, motion.anger).cycle / 2);
     if (steps >= 1) {
