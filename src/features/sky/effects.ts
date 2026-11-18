@@ -133,15 +133,16 @@ export function makeFireflies(scene: Scene) {
         vec4 eye = view * vec4(p, 1.0);
         float blink = smoothstep(0.55, 1.0, sin(time * (0.8 + seed.z) + seed.y * 40.0));
         vGlow = amount * blink;
-        gl_PointSize = vGlow > 0.0 ? scale * 0.05 / -eye.z : 0.0;
+        gl_PointSize = vGlow > 0.0 ? scale * 0.08 / -eye.z : 0.0;
         gl_Position = projection * eye;
       }`, `
       varying float vGlow;
       void main() {
         float d = length(gl_PointCoord - 0.5) * 2.0;
-        float glow = ((1.0 - smoothstep(0.0, 1.0, d)) * 0.5 + (1.0 - smoothstep(0.0, 0.3, d))) * vGlow;
-        if (glow < 0.004) discard;
-        gl_FragColor = vec4(0.85, 1.0, 0.35, glow);
+        float halo = (1.0 - smoothstep(0.0, 1.0, d)) * 0.35, core = 1.0 - smoothstep(0.0, 0.22, d);
+        if ((halo + core) * vGlow < 0.004) discard;
+        // Warm against the cool night; the core above 1 so the bloom picks it up (the picture keeps light above 1).
+        gl_FragColor = vec4(vec3(1.0, 0.72, 0.22) * (halo + core * 1.8), vGlow);
 
       }`, ["position", "seed"], ["time", "amount", "scale", "level"]);
   material.fillMode = Material.PointListDrawMode;

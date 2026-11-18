@@ -8,5 +8,6 @@ export const create: CreateFeature = game => {
   const light = daylightOf(game.stage.scene);
   const unsubscribe = game.settings.on(({quality, effects}) => { chain.configure(quality, effects); light?.quality(quality); });
   game.stage.scene.onDisposeObservable.add(unsubscribe);
-  return photoMode(game, chain);
+  const photo = photoMode(game, chain);
+  return { update(dt: number) { chain.night(game.sky?.dark ?? 0); photo.update(dt); } };
 };
