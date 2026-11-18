@@ -22,6 +22,7 @@ Combine them with `&`. `README.md` lists the tour ones.
 | `spawn=x,z` | where the beaver starts |
 | `anger=1` | a furious beaver |
 | `mute` | sound off without touching the saved settings |
+| `quality=low` | picture quality (`low`, `medium`, `high`) for this page, without touching the saved settings |
 | `touch` | touch controls on a desktop page |
 | `debug` | draws the colliders |
 | `standins` | plain shapes instead of `assets/props.glb` |

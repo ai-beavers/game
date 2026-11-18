@@ -14,6 +14,7 @@ bun run tour --once --here   the whole tour once as a check, on the files as the
 bun run tour --once --here --repeat 30 [--beside]
                              the soak: that many whole tours in a row, exit code 1 if any failed (--beside: under load)
 /?mute                       the game with its sound off, without touching the saved settings (for stream tiles)
+/?quality=low                the game at low picture quality, without touching the saved settings (for stream tiles)
 /?play&tour=live             watch the bot play in real time: it picks what the beaver wants most now, says why, and holds the camera as a player does
 /?play&tour=fast             run the full game tour at 4× speed
 /?play&tour&station=Walk     run only the named station; repeat station for its prerequisites
