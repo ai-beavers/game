@@ -72,10 +72,11 @@ export interface PlayerControls extends Player {
 }
 
 /** What the context key would do: pick up, drop, gnaw (a standing tree), split (gnaw a lying tree into wood), build,
- *  use (talk to someone: the Shopkeeper, src/features/shop). */
-export interface Offer { action: "pickup" | "drop" | "gnaw" | "build" | "split" | "use"; text: string }
+ *  trade (pay the stick at the trading post), use (talk to someone: the Shopkeeper, src/features/shop). */
+export interface Offer { action: "pickup" | "drop" | "gnaw" | "build" | "split" | "trade" | "use"; text: string }
 
-/** Lasting actions another part runs with the context key (src/features/build: gnaw, build). */
+/** Lasting actions another part runs with the context key (src/features/build: gnaw, build; src/features/trade: pay
+ *  a stick). Several parts share the key through firstOf (actors.ts). */
 export interface Actor {
   /** On a press of the context key that picks nothing up: an action to start here (instead of dropping what is
    *  carried), and which way to turn for it (radians, as facing), or undefined. */

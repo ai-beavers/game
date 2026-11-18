@@ -82,13 +82,14 @@ describe("server.ts", () => {
     await p.opened;
     p.hello();
     expect((await p.next("welcome")) as { version: string }).toMatchObject({ version: "abc123" });
-    p.ws.send(JSON.stringify({ t: "build", c: [{ type: "find" }, { type: "bite", tree: 2 }] }));
-    expect(await p.next("build")).toBeDefined();
+    const work = [{ type: "find" }, { type: "bite", tree: 2 }, { type: "trade", stick: "w4" }];
+    p.ws.send(JSON.stringify({ t: "build", c: [...work, { type: "trade", stick: "w4" }] })); // traded twice: once taken
+    expect(await p.next("build")).toMatchObject({ c: work });
     await stop(); // SIGTERM writes it at once
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ epoch: first.epoch, build: [{ type: "find" }, { type: "bite", tree: 2 }] });
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ epoch: first.epoch, build: work });
 
     ({ port } = await start(env));
-    expect(await info(port)).toMatchObject({ epoch: first.epoch, build: [{ type: "find" }, { type: "bite", tree: 2 }] });
+    expect(await info(port)).toMatchObject({ epoch: first.epoch, build: work });
     await stop();
 
     // A change rules.ts no longer takes: left out, and a new epoch so nobody keeps its copy of the old world.

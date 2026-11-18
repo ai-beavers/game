@@ -34,9 +34,17 @@ _Avoid_: lamp, torch, light
 The small pack the beaver always wears on its back. The lantern is kept in it by day; at dusk the beaver reaches over its shoulder to take the lantern out, and at dawn puts it back.
 _Avoid_: bag, rucksack, satchel
 
+**Trading post**:
+The stall in the clearing where the beaver pays sticks for goods. Each good lies on its own spot with its price in sticks.
+_Avoid_: shop, store, market
+
+**Good**:
+A thing the beaver gets at the trading post for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell.
+_Avoid_: item, loot, product
+
 **Shop**:
 The small disco-like hut in the clearing with the sign HOUSE OF AI in front; inside it is a café where the shopkeeper sells outfits and other creatures work at laptops.
-_Avoid_: store, House of AI (that is only its sign), disco
+_Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
 
 **Shopkeeper**:
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.

@@ -141,7 +141,7 @@ const place = (v: unknown): v is Place => list(v, 8) && int(v[0], 0, MAX_THINGS 
  *  world's 13 trees about 520 with the STICKS of dam, lodge and cache and the find). */
 export const MAX_CHANGES = 600;
 const EPOCH = /^[a-z0-9]{1,16}$/;
-const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks
+const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks (placed or traded)
 const turn = (v: unknown) => list(v, 4) && v.every((q) => num(q, -1.01, 1.01));
 
 /** One build change, checked and copied field by field; undefined when it is not one. */
@@ -149,6 +149,7 @@ export function parseChange(v: unknown): BuildChange | undefined {
   if (!v || typeof v !== "object") return;
   const c = v as Record<string, unknown>, tree = c.tree;
   if (c.type === "find") return { type: "find" };
+  if (c.type === "trade") return typeof c.stick === "string" && STICK.test(c.stick) ? { type: "trade", stick: c.stick } : undefined;
   if (c.type === "place") return int(c.slot, 0, STICKS - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
   if (!int(tree, 0, MAX_TREES - 1)) return;
   switch (c.type) {
@@ -224,7 +225,7 @@ export function parseClient(text: unknown): ClientMessage | undefined {
 export const MAX_BITES = bitesToFell(Infinity);
 
 /** The server's check of a change against its world: it must fit the world as it is (rules.ts apply: in order, not
- *  twice, a stick not used twice), no tree takes more bites than any tree needs, and a tree grows back only REGROW
+ *  twice, a stick not used twice: neither built in twice, traded twice, nor both), no tree takes more bites than any tree needs, and a tree grows back only REGROW
  *  s after its wood went by `now`, the server's clock (rules.ts, the rule). Applies it when it passes; a split it
  *  takes is stamped with now (change.at, whatever the sender wrote), so the log and its file keep when. The log
  *  stays bounded as trees grow back because the server compacts it. */
@@ -259,6 +260,7 @@ export function changesOf(s: BuildState): BuildChange[] {
     if (t.grown) { out.push({ type: "grow", tree: +key }); felling(+key, t.grown); }
   }
   s.dam.forEach((stick, slot) => out.push({ type: "place", slot, stick }));
+  for (const stick of s.traded) out.push({ type: "trade", stick }); // after the grows that brought the others back
   return out;
 }
 

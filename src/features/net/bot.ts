@@ -22,7 +22,7 @@
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
 import { BASIN, heightAt, POND } from "../../world/terrain.ts";
 import { BREATH, DROP_TIME, newDive, newMotion, newSlap, newSteering, PICKUP_TIME, steer, stepDive, stepSlap, trackMotion, type ActionState } from "../../player/state.ts";
-import { apply, BITE_TIME, BITES_TO_SPLIT, CACHE, live, LODGE, newState, REGROW, SLOTS, STICKS, type BuildChange } from "../build/rules.ts";
+import { apply, BITE_TIME, BITES_TO_SPLIT, CACHE, live, LODGE, newState, REGROW, SLOTS, STICKS, used, type BuildChange } from "../build/rules.ts";
 import { atPile, decide, milestone, overdue, yields, type Job, type Loose, type Other, type Seen, type Spot } from "./botmind.ts";
 import { heading, loadWorld, type BotWorld } from "./botworld.ts";
 import { ACTIONS, CRATES, packMotion, PIECES, replay, SEND_RATE, WOOD, type ClientMessage, type ServerMessage } from "./protocol.ts";
@@ -201,7 +201,7 @@ function workBot(n: number, world: BotWorld) {
   const held = () => new Set([carry, ...[...others.values()].map((o) => o.carry)]);
   const loose = (): Loose[] => {
     const hands = held(), out: Loose[] = [];
-    const add = (id: number, at: [number, number, number]) => { if (!hands.has(id) && !state.dam.includes(nameOf(id)) && !(time < (skipped.get(id) ?? 0))) { const p = lying.get(id) ?? at; out.push({ id, x: p[0], z: p[2] }); } };
+    const add = (id: number, at: [number, number, number]) => { if (!hands.has(id) && !used(state, nameOf(id)) && !(time < (skipped.get(id) ?? 0))) { const p = lying.get(id) ?? at; out.push({ id, x: p[0], z: p[2] }); } };
     world.sticks.forEach((at, id) => add(id, at));
     for (const [key, t] of Object.entries(state.trees)) if (t.split && t.rest) for (const piece of world.woodOf(+key, t.rest)) add(piece.id, piece.at);
     return out;

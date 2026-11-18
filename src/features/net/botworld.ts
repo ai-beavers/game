@@ -22,6 +22,7 @@ import { heightAt, POND, SITE, WATER_LEVEL } from "../../world/terrain.ts";
 import { BITE_HEIGHT, measure } from "../build/tree.ts";
 import { bitesToFell, CACHE_AT, crestHeight, DAM, damPlan, live, pondLevel, profile, SLOTS, woodFrom, type BuildState, type TreeState } from "../build/rules.ts";
 import { CRATES, woodId } from "./protocol.ts";
+import { footprint as tradingPost } from "../trade/place.ts";
 
 export type Rest = NonNullable<TreeState["rest"]>;
 export interface Circle { x: number; z: number; r: number }
@@ -150,6 +151,7 @@ export async function loadWorld() {
     ...layout.rock.map((s) => ({ x: s.x, z: s.z, r: 0.55 * s.scale })),
     ...layout.stump.map((s) => ({ x: s.x, z: s.z, r: 0.4 })),
     ...layout.log.flatMap((s) => [-0.8, 0, 0.8].map((d) => ({ x: s.x + Math.sin(s.turn) * d, z: s.z + Math.cos(s.turn) * d, r: 0.45 }))),
+    ...tradingPost(), // the trading post's counter (src/features/trade)
   ];
   const obstacles = (state: BuildState, crates?: Map<number, [number, number, number]>): Circle[] => {
     const out = [...fixed];
