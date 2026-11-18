@@ -117,8 +117,9 @@ export const create: CreateFeature = (game) => {
         if ((t += dt) > limit) throw new Error(`stuck at ${fmt(player.feet)} on the way to ${x.toFixed(1)}, ${z.toFixed(1)}`);
         if ((since += dt) < STUCK_TIME) continue;
         if (Vector3.Distance(player.feet, from) < STUCK_MOVE) {
-          want.side = dodges++ % 2 ? -1 : 1;
-          await wait(0.9);
+          // Right, left, right…, each step aside longer than the last, so it gets round a wide thing or out of a corner.
+          want.side = dodges % 2 ? -1 : 1;
+          await wait(0.9 * (1 + (dodges++ >> 1)));
           want.side = 0;
         }
         since = 0;
@@ -172,7 +173,9 @@ export const create: CreateFeature = (game) => {
     want.act = true;
     try { await until(falls, 15, `gnawed tree ${i} for 15 s, it still stands`); } finally { want.act = false; }
     expect(last.treeFalls!.tree === i, `tree ${last.treeFalls!.tree} fell, not ${i}`);
-    await until(lands, 8, "the tree fell but never landed");
+    // A crown caught in another tree, or a slow tall one, comes to rest without the "landed" moment; the build feature
+    // lays every falling tree to rest within 10 s (tree.ts step), so either ends the fall.
+    await until(() => lands() || !!standing(build()?.state.trees[i])?.rest, 12, "the tree fell but never landed nor came to rest");
   };
   const split = async (i: number) => {
     const b = needBuild();
@@ -188,29 +191,37 @@ export const create: CreateFeature = (game) => {
     try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }
   };
   const loose = () => world.sticks.filter((s) => s.body.isEnabled() && s !== player.carrying);
-  /** Picks up the nearest stick; one that cannot be got at (under a log) is left for the next, as a player would. */
+  /** Picks up the nearest stick; one that cannot be got at (under a log) is left for the next, as a player would, and
+   *  not tried again on this page (a saved game may hold many such). */
+  const passed = new Set<Stick>();
   const pickUp = async () => {
-    const away = (s: Stick) => flat(s.body.translation().x, s.body.translation().z), passed = new Set<Stick>();
-    for (;;) {
+    const away = (s: Stick) => flat(s.body.translation().x, s.body.translation().z);
+    for (let tries = 0; ; tries++) {
       const sticks = loose().filter((s) => !passed.has(s)).sort((a, c) => away(a) - away(c));
-      expect(sticks.length > 0, "no stick lies anywhere that can be got at");
+      if (!sticks.length) throw new Error(passed.size ? "no stick lies anywhere that can be got at" : "no stick lies about");
       try { await reach("pickup", (attempt) => sticks[Math.min(attempt, sticks.length - 1)]!.body.translation(), true); break; } catch (e) {
         sticks.slice(0, 3).forEach((s) => passed.add(s));
-        if (passed.size >= 9) throw e;
+        if (tries >= 2) throw e;
       }
     }
     const picked = after("pickup");
     await tap("act");
     await until(picked, 2, "pressed E at a stick, nothing in the hand");
   };
-  /** A stick into the hand: one lying about, or, when none is left, from a tree felled and gnawed into wood for it. */
+  // The sticks left may all lie where no beaver gets at them (under a log, in deep water): then a tree is felled for
+  // wood, and with none standing the saved game is used up, started anew after the round.
+  let usedUp = false;
+  /** A stick into the hand: one lying about, or, when none can be got at, from a tree felled and gnawed into wood. */
   const fetchStick = async () => {
     if (player.carrying) return;
-    if (!loose().length) {
-      const i = standingTrees(needBuild())[0] ?? skip("no wood left: no stick lies about, no tree stands");
-      await fell(i);
-      await split(i);
+    let why = "no stick lies about";
+    if (loose().length) {
+      try { return await pickUp(); } catch (e) { why = (e as Error).message; }
     }
+    const i = standingTrees(needBuild())[0];
+    if (i === undefined) { usedUp = true; skip(`no wood left: ${why}, no tree stands`); }
+    await fell(i);
+    await split(i);
     await pickUp();
   };
   /** Builds sticks into the dam (or onto the lodge) until it holds `upTo`, fetching each; checks every stick goes in
@@ -310,7 +321,7 @@ export const create: CreateFeature = (game) => {
       b.split(i);
       expect(splits() && last.treeSplits!.logs + last.treeSplits!.sticks > 0 && !t()?.grown, `tree ${i} grown back gave no wood`);
     }, "Regrowth"],
-    ["Carry a stick", () => player.carrying ? skip("a stick is in the hand already") : pickUp(), "Dam work"],
+    ["Carry a stick", () => player.carrying ? skip("a stick is in the hand already") : fetchStick(), "Dam work"],
     // A few sticks a visit (fast: up to half the dam, then the rest), so the dam grows across rounds; the saved game
     // lives on, so the lodge follows it.
     ["Build the dam", async () => {
@@ -377,7 +388,8 @@ export const create: CreateFeature = (game) => {
     ["Furious beaver", async () => {
       player.setAnger(1);
       try {
-        await walkTo(world.spawn.x, world.spawn.z, { run: 1, limit: 25 });
+        // Live it runs home from wherever it is; otherwise it starts at home (settle) and runs out over the grass.
+        await walkTo(world.spawn.x + (live ? 0 : 3), world.spawn.z + (live ? 0 : 3), { run: 1, limit: 25 });
         expect(beaver.anger > 0.9, `anger ${beaver.anger.toFixed(2)}, not furious`);
       } finally { player.setAnger(0); }
     }],
@@ -601,12 +613,23 @@ export const create: CreateFeature = (game) => {
     return line + (n < SLOTS ? ` · ${n} of ${SLOTS}` : ` · lodge ${n - SLOTS} of ${LODGE}`);
   };
 
+  /** Not live: every station starts calm on land at the spawn, facing the pond over open grass, hands free unless it
+   *  builds; so none depends on where the one before left the beaver (in the water, against the lodge, angry). */
+  const settle = async (name: string) => {
+    const { x, z } = world.spawn, facing = pond ? Math.atan2(pond.x - x, pond.z - z) : 0;
+    player.setAnger(0);
+    player.teleport(x, world.heightAt(x, z), z, facing);
+    player.camera.yaw = facing + Math.PI;
+    if (player.carrying && !name.startsWith("Build the")) player.drop();
+    await wait(0.3); // on its feet before the station acts
+  };
+
   // ---- the rounds ----
   const errors: string[] = [];
   window.addEventListener("error", (e) => errors.push(e.message));
   window.addEventListener("unhandledrejection", (e) => errors.push(String(e.reason)));
   const results: { round: number; station: string; ok: boolean | "skipped"; why?: string; seconds: number }[] = [];
-  const tour = { round: 0, results, station: "", activity: "" };
+  const tour = { round: 0, results, station: "", activity: "", clock: 0 }; // clock: s of game time, for tools/tour.ts
   Object.assign(window, { tour });
 
   void (async () => {
@@ -627,7 +650,6 @@ export const create: CreateFeature = (game) => {
         return canFell; // fell a tree and gnaw it into wood
       }), { now: clock, shown, previous: tour.activity, hour: game.sky?.hour, weather: game.sky?.weather, ducks: clock - startledAt > DUCKS_BACK, carrying: !!player.carrying }) : focused ?? stations;
       if (live) shown[tour.activity = itinerary[0]![2] ?? itinerary[0]![0]] = clock;
-      if (!live) player.teleport(world.spawn.x, world.heightAt(world.spawn.x, world.spawn.z), world.spawn.z);
       let ok = 0, failed = false;
       for (const [n, [name, run]] of itinerary.entries()) {
         tour.station = name;
@@ -636,6 +658,7 @@ export const create: CreateFeature = (game) => {
         errors.length = 0;
         let result: (typeof results)[number];
         try {
+          if (!live) await settle(name);
           await run();
           if (errors.length) throw new Error(`the page threw: ${errors[0]}`);
           result = { round: tour.round, station: name, ok: true, seconds: 0 };
@@ -662,7 +685,7 @@ export const create: CreateFeature = (game) => {
       console.log(`[tour] round ${tour.round}: ${ok}/${itinerary.length} ok`);
       // Its own saved game: start it anew once the lodge stands; in a test also once no wood is left (live waits for
       // the trees to grow back).
-      if (b && (b.state.dam.length >= SLOTS + LODGE || (!live && !player.carrying && !loose().length && !standingTrees(b).length))) {
+      if (b && (b.state.dam.length >= SLOTS + LODGE || (!live && !player.carrying && (usedUp || (!loose().length && !standingTrees(b).length))))) {
         console.log(`[tour] the saved game is ${b.state.dam.length >= SLOTS + LODGE ? "done: the lodge stands" : "used up"}: starting it anew`);
         b.reset();
         return;
@@ -674,7 +697,7 @@ export const create: CreateFeature = (game) => {
     update(dt) {
       // Photo mode pauses the world but not the tour; the pause menu holds both.
       if (stage.paused && !document.body.classList.contains("photo")) return;
-      if (!stage.paused) clock += dt;
+      if (!stage.paused) tour.clock = clock += dt;
       if (live && tour.activity === "Dam work") label.text = caption();
       if (live && !stage.paused) {
         // Live: every activity has its shot (live.ts); yaw, height, distance and aim drift there over seconds, so a
