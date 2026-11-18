@@ -163,6 +163,18 @@ export class Overlay {
   }
 }
 
+/** The phone's safe area (notch, rounded corners, home bar) in CSS px from each edge; 0 on a desktop. The canvas
+ *  fills the whole screen (viewport-fit=cover in index.html), so the HUD keeps its controls inside these. */
+export function safeArea() {
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)";
+  document.body.append(probe);
+  const s = getComputedStyle(probe), px = (v: string) => parseFloat(v) || 0;
+  const inset = { top: px(s.paddingTop), right: px(s.paddingRight), bottom: px(s.paddingBottom), left: px(s.paddingLeft) };
+  probe.remove();
+  return inset;
+}
+
 /** All HUD positions count CSS pixels regardless of the renderer's resolution. */
 export function onViewport(stage: Stage, layout: (width: number, height: number) => void) {
   let width = -1, height = -1;

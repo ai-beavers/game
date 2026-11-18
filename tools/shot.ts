@@ -3,6 +3,9 @@
 // prints what the page logged.
 //
 //   bun shot <url> [--out shots/name.png] [--size 1280x720] [--wait 500] [--keys "KeyW:1500 Space:80"] [--eval "expr"]
+//                 [--until "expr"]   waits until the expression is true in the page (at most --wait ms, default 120000;
+//                                    exit code 1 if it never is) instead of a fixed time. The whole tour as one check:
+//   bun shot "http://localhost:5180/?play&tour=fast" --no-record --until "tour.round > 1" --eval "tour.results.filter(r => r.ok !== true)"
 //
 // --keys holds one key after the other for the given milliseconds ("KeyW+ShiftLeft:1000" holds both); codes are
 // KeyboardEvent.code values. --eval prints the value of an expression in the page after the keys, as JSON.
@@ -21,7 +24,7 @@ const option = (name: string, fallback: string) => {
   return at < 0 ? fallback : args.splice(at, 2)[1]!;
 };
 const out = option("out", "shots/shot.png"), [width, height] = option("size", "1280x720").split("x").map(Number);
-const wait = Number(option("wait", "500")), keys = option("keys", ""), expression = option("eval", "");
+const until = option("until", ""), wait = Number(option("wait", until ? "120000" : "500")), keys = option("keys", ""), expression = option("eval", "");
 const record = !args.includes("--no-record");
 if (!record) args.splice(args.indexOf("--no-record"), 1);
 const url = args[0];
@@ -54,7 +57,12 @@ try {
     await sleep(Number(hold ?? 100));
     for (const key of each) await page.send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
   }
-  await sleep(wait);
+  if (until) { // done as soon as the page says so: no fixed wait to sit out
+    for (const end = Date.now() + wait; !(await page.evaluate(`!!(${until})`));) {
+      if (Date.now() > end) { failed = true; console.log(`[shot] never true within ${wait} ms: ${until}`); break; }
+      await sleep(200);
+    }
+  } else await sleep(wait);
   if (expression) console.log("[eval]", JSON.stringify(await page.evaluate(expression)));
   const { data } = await page.send("Page.captureScreenshot", { format: "png" });
   mkdirSync(dirname(out), { recursive: true });

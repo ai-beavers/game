@@ -12,12 +12,12 @@
 //   swim     level in the water, hind legs paddle, tail steers
 //   carry    the right arm holds the stick in front of the chest, over all of the above
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
-import type { Action, Animator, Bone, CreateAnimator, Motion } from "../contracts.ts";
+import { WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
 import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
-import { foot, gait, type Gait } from "./gait.ts";
+import { foot, gait, type FootPlan, type Gait } from "./gait.ts";
 import { ANKLE, REACH, aimArm, onChest, placeLeg, reachArm } from "./ik.ts";
-import { axisAngle, clamp, lerp, mul, smooth, type Quat, type Vec } from "./quat.ts";
+import { axisAngle, clamp, lerp, mul, rotate, smooth, type Quat, type Vec } from "./quat.ts";
 import { REST } from "./rest.ts";
 
 export { gait, foot } from "./gait.ts";
@@ -32,9 +32,10 @@ const damp = (from: number, to: number, seconds: number, dt: number) => to + (fr
 class Ease {
   value = 0;
   speed = 0;
+  constructor(readonly lo = 0, readonly hi = 1) {}
   to(target: number, seconds: number, dt: number) {
     const w = 3.9 / seconds, off = this.value - target, k = this.speed + w * off, e = exp(-w * dt);
-    this.value = clamp(target + (off + k * dt) * e);
+    this.value = clamp(target + (off + k * dt) * e, this.lo, this.hi);
     this.speed = (this.speed - w * k * dt) * e;
     return this.value;
   }
@@ -42,6 +43,8 @@ class Ease {
 const ARMS: Bone[] = ["upper_arm_L", "forearm_L", "hand_L", "upper_arm_R", "forearm_R", "hand_R"];
 const RIGHT_ARM: Bone[] = ["upper_arm_R", "forearm_R", "hand_R"];
 /** A number 0 … 1 that looks random but is the same for the same n. */
+/** x, but bending smoothly into ±limit: a hard clamp turns a fast rise into a kink. */
+const soft = (x: number, limit: number) => limit * Math.tanh(x / limit);
 const hash = (n: number) => { const x = sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
 interface Plant { at: Vec; turn: Quat }
@@ -78,13 +81,19 @@ const WALK_ARM: ArmParams = [0.55, 0.45, 0, 0.15, 0.55, 0, 0];
 const RAGE_ARM: ArmParams = [0.12, 0.14, 0.12, -0.55, 0.25, 0, 1];
 const STAND_ARM: ArmParams = [0.5, 0, 0, 0.1, 0.3, 0, 0];
 
-interface Ground { speed: number; phase: number; anger: number; turning: number; dip: number; time: number; flex: number }
+// Turning on the spot the feet step round: the stride runs on as if the feet walked PIVOT m per radian turned, and a
+// planted foot turns back against the body as it moves under it, so it stands still on the ground.
+const PIVOT = 0.15;
+/** stepping: the pace the feet step at, m/s, walking plus pivoting; pivot: rad/s turned on the ground. */
+/** A foot as the stride plans it, plus yaw: turned about the middle, for pivoting. */
+type Step = FootPlan & { yaw: number };
+interface Ground { speed: number; pivot: number; feet: [Step, Step]; phase: number; anger: number; turning: number; dip: number; time: number; flex: number }
 
 /** On its feet: from standing through walking to running, all one function of speed, so it blends by itself. */
 function ground(body: Body, d: Ground, g: Gait) {
   const { run } = g, a = d.anger, t = d.time;
-  const moving = smooth(0.02, 0.4, d.speed), still = 1 - moving;
-  const L = foot(d.phase, g), R = foot(d.phase + 0.5, g);
+  const moving = smooth(0.02, 0.4, d.speed + abs(d.pivot) * PIVOT), still = 1 - moving;
+  const [L, R] = d.feet;
   // +1 when the left foot carries the body in mid-stance, -1 for the right
   const load = cos(TAU * (d.phase - g.duty / 2)) * moving;
   // standing: breathing, a slow shift of weight from foot to foot, now and then a look to one side
@@ -93,25 +102,31 @@ function ground(body: Body, d: Ground, g: Gait) {
   const glance = (hash(glanceAt) < 0.6 ? (hash(glanceAt + 0.5) - 0.5) * 1.6 : 0) * smooth(0.4, 1.0, into) * (1 - smooth(2.6, 3.3, into)) * still;
   const dipN = d.dip / 0.08;
   const lean = lerp(lerp(0.04, -0.12, a), 0.5, run) - 0.05 * still + 0.015 * breath * still + 0.5 * dipN;
-  const roll = clamp(0.13 * d.speed * d.turning, -0.3, 0.3);
+  const roll = soft(0.13 * d.speed * d.turning, 0.3);
   const trunkParams: Trunk = {
     lean,
     sway: lerp(0.09, 0.035, run) * (1 + 0.7 * a) * load + 0.035 * shift * still,
     twist: -lerp(0.12, 0.2, run) * L.forward * moving * (1 + 0.5 * a),
     nod: -0.75 * lean + lerp(0, 0.16, a) + 0.035 * cos(2 * TAU * d.phase) * moving + 0.01 * breath * still - 0.3 * dipN * 0.5,
     tail_up: lerp(-0.05, 0.25, a) - 0.25 * run + 0.08 * sin(2 * TAU * d.phase) * run, // build.py's tail_up lowers the tip
-    tail_sway: 0.2 * L.forward * moving + (0.1 * sin(TAU * t / 2.7) + 0.1 * smooth(0.85, 1, sin(TAU * t / 7.3)) * sin(TAU * t * 1.7)) * still,
+    // the tail swings out of a turn, late (d.turning is eased): follow-through
+    tail_sway: soft(-0.06 * d.turning, 0.35) + 0.2 * L.forward * moving + (0.1 * sin(TAU * t / 2.7) + 0.1 * smooth(0.85, 1, sin(TAU * t / 7.3)) * sin(TAU * t * 1.7)) * still,
   };
   trunk(body, trunkParams);
   // into a turn the upper body leans in; the hips stay level, so the legs keep their reach
-  body.turns.spine = mul(axisAngle(Y, 0.6 * roll), body.turns.spine);
-  body.turns.chest = mul(axisAngle(Y, 0.4 * roll), body.turns.chest);
+  // and twists into it from the chest up, so the head looks round first and the hips follow
+  const lead = soft(0.04 * d.turning, 0.25);
+  body.turns.spine = mul(axisAngle(Y, 0.6 * roll), mul(axisAngle(Z, 0.4 * lead), body.turns.spine));
+  body.turns.chest = mul(axisAngle(Y, 0.4 * roll), mul(axisAngle(Z, 0.6 * lead), body.turns.chest));
   // the head leads into a turn and keeps looking where it goes
-  const twist = trunkParams.twist!, yaw = clamp(0.35 * d.turning, -0.6, 0.6) + glance;
+  const twist = trunkParams.twist!, yaw = soft(0.12 * d.turning, 0.6) + glance; // gain for turns up to 12 rad/s (src/player)
   body.turn("head", [X, trunkParams.nod!], [Z, twist * 0.8 + yaw], [[0, 0, 1], -0.25 * roll + 0.08 * glance]);
 
   const width = lerp(0.015, 0.0, run) + 0.05 * a + 0.025 * still;
-  const plan = (f: typeof L, sign: number): Plant => ({ at: [sign * (FOOT_X + width), ANKLE + f.lift, f.z], turn: footTurn(sign, lerp(0.12, 0.25, a) * (1 - run), f.pitch) });
+  const plan = (f: Step, sign: number): Plant => {
+    const q = axisAngle(UP, f.yaw);
+    return { at: rotate(q, [sign * (FOOT_X + width), ANKLE + f.lift, f.z]), turn: mul(q, footTurn(sign, lerp(0.12, 0.25, a) * (1 - run), f.pitch)) };
+  };
   const compress = (f: typeof L) => (f.planted ? 1 - f.forward * f.forward : 0);
   // the hips ride as low as the longest reach of the stride needs, so they need not dip at every step; walking
   // they rise a little over the planted foot, running they sink into each stance and rise in the flight
@@ -191,11 +206,11 @@ function action(body: Body, what: Action, progress: number, time: number) {
 /** Afloat: level, head up, hind legs paddling, tail steering. */
 function swim(body: Body, phase: number, turning: number) {
   const s = sin(TAU * phase);
-  trunk(body, { tail_up: 1.2, tail_sway: clamp(-0.5 * turning, -0.6, 0.6) + 0.12 * s });
+  trunk(body, { tail_up: 1.2, tail_sway: soft(-0.5 * turning, 0.6) + 0.12 * s });
   body.turn("hips", [Z, 0.05 * s], [X, 1.4]);
   body.turn("spine", [X, 0.08]);
   body.turn("chest", [X, -0.05]);
-  body.turn("head", [X, -1.45], [Z, clamp(0.3 * turning, -0.5, 0.5)]);
+  body.turn("head", [X, -1.45], [Z, soft(0.3 * turning, 0.5)]);
   for (const [sign, lr] of SIDES) {
     const k = sin(TAU * phase + (sign > 0 ? 0 : PI)); // the hind legs kick in turn
     leg(body, sign, lr, 0.15 + 0.5 * k, 0.35 + 0.45 * max(0, -k), 0.5 + 0.3 * k, 0.25);
@@ -206,8 +221,10 @@ function swim(body: Body, phase: number, turning: number) {
 
 export const createAnimator: CreateAnimator = (): Animator => {
   const body = new Body(), layer = new Body();
+  const holds = [0, 1].map(() => ({ planted: false, z: 0, yaw: 0, dz: 0, dyaw: 0 }));
   let phase = 0, lastDistance: number | undefined, swimPhase = 0;
-  let speed = 0, anger = 0, turning = 0, first = true, wasGrounded = true;
+  let speed = 0, anger = 0, first = true, wasGrounded = true;
+  const turning$ = new Ease(-Infinity, Infinity); // eased, not damped: a damped rate jumps in its first frame
   const air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease();
   let shown: Action = "none", progress = 0, vertical = 0;
   return {
@@ -216,32 +233,48 @@ export const createAnimator: CreateAnimator = (): Animator => {
       const set = (from: number, to: number, seconds: number) => (first ? to : damp(from, to, seconds, dt));
       speed = set(speed, m.speed, 0.08);
       anger = set(anger, clamp(m.anger), 0.3);
-      turning = set(turning, m.turning, 0.15);
       const ease = (weight: Ease, target: number, seconds: number) => (first ? (weight.value = target) : weight.to(target, seconds, dt));
+      const turning = ease(turning$, m.turning, 0.25);
       const inAir = ease(air$, m.grounded || m.swimming > 0.5 ? 0 : 1, 0.15);
       const swimming = ease(swimming$, clamp(m.swimming), 0.5);
       const carrying = ease(carrying$, m.carrying ? 1 : 0, 0.35);
       if (m.action !== "none") { shown = m.action; progress = m.actionProgress; }
       if (!m.grounded) vertical = m.vertical; // after touchdown the air pose fades out as it was, not as at the top
       const acting = ease(acting$, m.action !== "none" ? 1 : 0, 0.25);
-      const g = gait(speed, anger);
+      const pivot = m.grounded ? m.turning : 0, stepping = speed + abs(pivot) * PIVOT;
+      const g = gait(Math.min(stepping, max(speed, WALK_SPEED)), anger); // pivoting it walks, quicker, never runs
       // the stride follows the ground walked, not the clock
       const walked = lastDistance === undefined ? m.distance : clamp(m.distance - lastDistance, -0.5, 0.5);
-      phase = lastDistance === undefined ? m.distance / g.cycle : phase + walked / g.cycle;
+      phase = lastDistance === undefined ? m.distance / g.cycle : phase + (walked + (m.grounded ? abs(m.turning) * PIVOT * dt : 0)) / g.cycle;
       phase -= Math.floor(phase);
-      // touching down, the stride starts over with one foot just landing: the legs came forward for it in the air
-      if (m.grounded && !wasGrounded) phase = phase < 0.25 || phase >= 0.75 ? 0 : 0.5;
-      wasGrounded = m.grounded;
+      // touching down the stride goes on where it was: restarting it with a foot just landing (as it once did) made
+      // the legs jump, and the air pose fades out over them anyway
       swimPhase = lastDistance === undefined ? m.distance / 0.6 + m.time * 0.5 : swimPhase + walked / 0.6 + dt * 0.5;
       swimPhase -= Math.floor(swimPhase);
       lastDistance = m.distance;
+      // Where the feet go. The plan's z runs at the stepping pace: the part of it that is walking moves the foot along,
+      // the part that is turning turns it about the middle. A foot that stays planted from one frame to the next is
+      // then held where it stood, moved back by what was walked and turned against the body: the plan alone would
+      // let it slide whenever the stride changes under it (speeding up, slowing down, turning harder). The
+      // difference fades out in the swing, or slowly when it stands still and should come back beside the other.
+      const along = stepping > 1e-4 ? speed / stepping : 1, spin = stepping > 1e-4 ? pivot / stepping : 0;
+      const feet = [foot(phase, g), foot(phase + 0.5, g)].map((f, k): Step => {
+        const held = holds[k]!, z = f.z * along, yaw = spin * f.z;
+        // held no further than a little past the stride's reach: a foot left far behind would pull the hips down
+        if (f.planted && held.planted && m.grounded && wasGrounded) { held.dz = clamp(held.z - walked, -g.reach - 0.02, g.reach + 0.02) - z; held.dyaw = held.yaw - pivot * dt - yaw; }
+        const fade = exp(-dt / (f.planted && stepping > 0.05 ? Infinity : f.planted ? 0.3 : 0.06));
+        held.dz *= fade; held.dyaw *= fade;
+        held.z = z + held.dz; held.yaw = yaw + held.dyaw; held.planted = f.planted;
+        return { ...f, z: held.z, yaw: held.yaw };
+      }) as [Step, Step];
+      wasGrounded = m.grounded;
       const flexing = ease(flexing$, smooth(0.35, 0.75, anger) * (1 - smooth(0.02, 0.3, speed)) * (1 - acting), 0.6);
       first = false;
 
       // the dip after a touchdown: eases in, deepest after 0.07 s, then fades
       const since = max(0, m.sinceLanding) / 0.07, dip = clamp(0.014 * m.landingSpeed, 0, 0.08) * since * since * exp(2 - 2 * since);
       body.reset();
-      ground(body, { speed, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
+      ground(body, { speed, pivot, feet, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
       if (acting > 0.001) { action(layer.reset(), shown, progress, m.time); body.blend(layer, acting); }
       if (inAir > 0.001) { air(layer.reset(), vertical); body.blend(layer, inAir); }
       if (swimming > 0.001) { swim(layer.reset(), swimPhase, turning); body.blend(layer, swimming); }

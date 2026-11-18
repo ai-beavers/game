@@ -1,6 +1,6 @@
 // Tests for the build feature's rules: state changes, trees, wood, the dam plan, goals. Run: bun test src/features/build
 import { describe, expect, test } from "bun:test";
-import { apply, BITES_TO_SPLIT, bitesToFell, crestHeight, DAM, damPlan, goals, load, moundHeight, newState, POND_RISE, pondLevel, pondRise, profile, SLOTS, woodFrom } from "./rules.ts";
+import { apply, BITES_TO_SPLIT, bitesToFell, crestHeight, DAM, damPlan, goals, load, LODGE, lodgeGrow, moundHeight, newState, POND_RISE, pondLevel, pondRise, profile, SLOTS, woodFrom } from "./rules.ts";
 
 describe("changes", () => {
   test("a tree goes bitten, felled, resting, split, in that order only", () => {
@@ -19,14 +19,14 @@ describe("changes", () => {
     expect(apply(s, { type: "split", tree: 2 })).toBe(false);
     expect(apply(s, { type: "bite", tree: 2 })).toBe(false);
   });
-  test("each stick goes into the dam once, into the next slot, up to SLOTS", () => {
+  test("each stick goes into the dam once, into the next slot, up to SLOTS, then LODGE onto the lodge", () => {
     const s = newState();
     expect(apply(s, { type: "place", slot: 0, stick: "w1" })).toBe(true);
     expect(apply(s, { type: "place", slot: 1, stick: "w1" })).toBe(false);
     expect(apply(s, { type: "place", slot: 0, stick: "w2" })).toBe(true); // stale slot from another player: next free
     expect(s.dam).toEqual(["w1", "w2"]);
-    for (let k = 0; k < 40; k++) apply(s, { type: "place", slot: k, stick: `d${k}` });
-    expect(s.dam).toHaveLength(SLOTS);
+    for (let k = 0; k < 50; k++) apply(s, { type: "place", slot: k, stick: `d${k}` });
+    expect(s.dam).toHaveLength(SLOTS + LODGE);
   });
   test("a saved state comes back; a broken one gives a fresh state", () => {
     const s = newState();
@@ -117,4 +117,20 @@ test("goals tick off with the state", () => {
   apply(s, { type: "place", slot: 0, stick: "w0" });
   expect(goals(s).map((g) => g.done)).toEqual([true, true, false, false]);
   expect(goals(s)[3]!.text).toBe("Build the dam: 1 of 30");
+  for (let k = 1; k < SLOTS + 2; k++) apply(s, { type: "place", slot: k, stick: `d${k}` });
+  // The finished dam is not the end: the lodge comes next, counted on its own; the first steps are left behind.
+  expect(goals(s).map((g) => [g.id, g.done])).toEqual([["dam", true], ["lodge", false]]);
+  expect(goals(s)[0]!.text).toBe("Build the dam: 30 of 30");
+  expect(goals(s)[1]!.text).toBe(`Build up the lodge: 2 of ${LODGE}`);
+  for (let k = 0; k < LODGE; k++) apply(s, { type: "place", slot: 0, stick: `x${k}` });
+  expect(goals(s)[1]!.done).toBe(true);
+});
+
+test("the lodge rises only once the dam holds, and is fully up with its last stick", () => {
+  expect(lodgeGrow(0)).toBe(0);
+  expect(lodgeGrow(SLOTS - 1)).toBe(0);
+  expect(lodgeGrow(SLOTS)).toBeGreaterThan(0);
+  for (let n = SLOTS + 1; n <= SLOTS + LODGE; n++) expect(lodgeGrow(n)).toBeGreaterThan(lodgeGrow(n - 1));
+  expect(lodgeGrow(SLOTS + LODGE)).toBe(1);
+  expect(lodgeGrow(SLOTS + LODGE + 3)).toBe(1);
 });

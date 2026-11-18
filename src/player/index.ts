@@ -15,14 +15,13 @@ import { RAPIER, type Stage } from "../engine.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { keyboard, newInput, type Keyboard } from "./input.ts";
-import { approach, jumpStarts, newAction, newJump, newMotion, stepAction, trackMotion, turnTowards } from "./state.ts";
+import { jumpStarts, newAction, newJump, newMotion, newSteering, steer, stepAction, trackMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
 export const HEIGHT = 1.0, RADIUS = 0.225;
 const HALF = HEIGHT / 2 - RADIUS, OFFSET = 0.02; // the controller keeps this gap to everything
 // Moving.
 const ACCEL = 6, BRAKE = 9, AIR_ACCEL = 2.5; // m/s²: quick, but with weight
-const TURN_RATE = 10; // rad/s
 const SLOPE = 40 * Math.PI / 180; // steepest ground it walks up; steeper ground it slides down
 const STEP_UP = 0.15, STEP_WIDTH = 0.1; // m: highest step it walks up, and the least room it needs on top
 const LIFT_EASE = 18; // 1/s: how fast the picture follows a step up
@@ -99,7 +98,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   let carried: { stick: Stick; parent: TransformNode["parent"] } | undefined, target: Stick | undefined;
   const notCarried = (c: RAPIER.Collider) => !carried || c.parent() !== carried.stick.body;
   const camera = followCamera(stage, (c) => c !== collider && !stickBodies.has(c.parent()!));
-  const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion = newMotion();
+  const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion = newMotion(), steering = newSteering();
 
   const node = new TransformNode("player", stage.scene);
   const feet = options.spawn.clone(), before = feet.clone(), velocity = new Vector3();
@@ -213,17 +212,16 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       target = undefined;
     } else if (event === "release") release();
     const busy = act.action !== "none";
-    if (busy && aim !== undefined) facing = turnTowards(facing, aim, TURN_RATE * dt);
 
     // Where it wants to go, relative to the camera; it turns there and walks along its facing.
     forward.set(-Math.sin(camera.yaw), 0, -Math.cos(camera.yaw)); // camera to look point, on the ground
     desired.set(forward.x * input.move.y - forward.z * input.move.x, 0, forward.z * input.move.y + forward.x * input.move.x);
     const wants = !busy && desired.lengthSquared() > 0.01;
-    if (wants) facing = turnTowards(facing, Math.atan2(desired.x, desired.z), TURN_RATE * dt);
-    const along = wants ? Math.max(0, Math.cos(Math.atan2(desired.x, desired.z) - facing)) * desired.length() : 0;
     const top = afloat ? SWIM_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
-    const rate = afloat ? SWIM_ACCEL : !grounded ? AIR_ACCEL : top * along > speed ? ACCEL : BRAKE;
-    speed = approach(speed, top * along, rate * dt);
+    const [accel, brake] = afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
+    steering.facing = facing; steering.speed = speed;
+    steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
+    facing = steering.facing; speed = steering.speed;
 
     // Up and down: jump, gravity, or floating at the surface.
     const level = waterLevel();
@@ -304,7 +302,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       body.setNextKinematicTranslation({ x, y: y + HEIGHT / 2 + OFFSET, z });
       feet.set(x, y, z); before.copyFrom(feet);
       facing = facingBefore = turnTo;
-      speed = vy = lift = 0;
+      speed = vy = lift = steering.spin = 0;
     },
   };
 }

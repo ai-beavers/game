@@ -6,16 +6,20 @@ import { instance, material } from "../../world/models.ts";
 //
 //   const dam = createDam(stage, world);
 //   dam.slot(i)                 where slot i is in the world (position, turn); dam.fit(mesh, i) puts a stick there
-//   dam.freeze(mesh)            draws a stick mesh (already at its slot) as part of the dam, and takes it away
+//                               (slots from SLOTS on lie on the lodge, and rise with it)
+//   dam.freeze(mesh)            draws a stick mesh (already fitted to its slot) as part of the dam or lodge
 //   dam.shape(placed)           mud and collider for this many sticks
 //   dam.frame                   the dam's own frame: origin on the ground, x across (towards the water), z along
 //   dam.lodge(grow)             the lodge in the pond, grow 0 … 1 (rising out of the water)
+//   dam.hint(i, time)           a glowing stick where slot i is, so the player sees where the next one goes; -1 hides it
 import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { World } from "../../contracts.ts";
 import { RAPIER, type Stage } from "../../engine.ts";
 import { fbm, seeded } from "../../world/noise.ts";
-import { DAM, damPlan, moundHeight, crestHeight, profile, SLOTS } from "./rules.ts";
+import { DAM, damPlan, LODGE, moundHeight, crestHeight, profile, SLOTS } from "./rules.ts";
 
 export function createDam(stage: Stage, world: World) {
   const { scene, physics } = stage, site = world.site!, pond = world.pond!;
@@ -29,12 +33,17 @@ export function createDam(stage: Stage, world: World) {
 
   const group = new TransformNode("dam", scene);
   const slot = (i: number) => {
-    const s = plan[Math.min(i, SLOTS - 1)]!, at = toWorld(s.x, s.z);
+    if (i >= SLOTS) { // on the lodge, where it stands now
+      const l = lodgeSlot(i - SLOTS), root = lodgeRoot();
+      return { position: l.position.add(root.position), quaternion: l.quaternion.clone() };
+    }
+    const s = plan[i]!, at = toWorld(s.x, s.z);
     at.y = world.heightAt(at.x, at.z) + s.y;
     const q = turn.clone().multiply(Quaternion.RotationYawPitchRoll(s.yaw, -s.pitch, 0));
     return { position: at, quaternion: q };
   };
-  const freeze = (thing: TransformNode) => { thing.setParent(group); };
+  /** Keeps a stick where it is, as part of the dam; one fitted onto the lodge stays the lodge's, rising with it. */
+  const freeze = (thing: TransformNode) => { if (!lodge || thing.parent !== lodge.root) thing.setParent(group); };
   const mud = MeshBuilder.CreateGround("dam mud", { width: 2 * DAM.base, height: DAM.length, subdivisions: 28, updatable: true }, scene);
   mud.parent = group;
   mud.receiveShadows = true;
@@ -70,6 +79,16 @@ export function createDam(stage: Stage, world: World) {
   // ---- the lodge --------------------------------------------------------------------------------------------------
   const lodgeAt = new Vector3(pond.x, 0, pond.z).add(across.scale(0.6));
   let lodge: ReturnType<typeof buildLodge> | undefined;
+  const lodgeRoot = () => (lodge ??= buildLodge()).root;
+  /** Where the k-th stick the beaver brings goes on the lodge, around it from the roof down, so each lands just above
+   *  the water as it is then; in the lodge's frame (it only moves up and down). */
+  const lodgeSlot = (k: number) => {
+    const a = k * 2.4 + 0.5, h = 0.95 - 0.27 * Math.min(1, k / (LODGE - 1)), r = Math.sqrt(1 - h * h);
+    return {
+      position: new Vector3(Math.cos(a) * r * 1.3, h * 2, Math.sin(a) * r * 1.3),
+      quaternion: Quaternion.FromEulerAngles(0.35 + 0.3 * (k % 2), -a + Math.PI / 2 + (k % 3 - 1) * 0.5, 0),
+    };
+  };
   function buildLodge() {
     const root = new TransformNode("lodge", scene);
     root.position.copyFrom(lodgeAt);
@@ -96,6 +115,33 @@ export function createDam(stage: Stage, world: World) {
     mesh.position.copyFrom(to.position);
     mesh.rotationQuaternion = to.quaternion;
     mesh.scaling.copyFrom(LAID);
+    if (i >= SLOTS) mesh.setParent(lodgeRoot()); // keeps where it is now, and rises with the lodge from here on
+  };
+
+  // The hint: a stick of light where the next one goes, breathing, and a faint beam above it, so the place is seen
+  // from across the clearing.
+  const hintRoot = new TransformNode("next stick", scene), glow = new StandardMaterial("next stick", scene), haze = new StandardMaterial("next stick beam", scene);
+  const rod = MeshBuilder.CreateCylinder("next stick", { height: 0.66, diameter: 0.08, tessellation: 8 }, scene);
+  const beam = MeshBuilder.CreateCylinder("next stick beam", { height: 1.6, diameterTop: 0.02, diameterBottom: 0.16, tessellation: 8 }, scene);
+  rod.parent = beam.parent = hintRoot;
+  beam.position.y = 0.8;
+  rod.rotationQuaternion = new Quaternion();
+  for (const [mesh, mat] of [[rod, glow], [beam, haze]] as const) {
+    mesh.isPickable = false;
+    mat.disableLighting = true;
+    mat.emissiveColor = new Color3(1, 0.85, 0.4);
+    mesh.material = mat;
+  }
+  hintRoot.setEnabled(false);
+  const ALONG_Z = Quaternion.RotationAxis(new Vector3(1, 0, 0), Math.PI / 2); // a cylinder stands on y; sticks lie along z
+  const hint = (i: number, time: number) => {
+    hintRoot.setEnabled(i >= 0 && i < SLOTS + LODGE);
+    if (i < 0 || i >= SLOTS + LODGE) return;
+    const to = slot(i), breath = 0.5 + 0.5 * Math.sin(time * 4);
+    hintRoot.position.copyFrom(to.position).y += 0.06 + 0.04 * breath;
+    to.quaternion.multiplyToRef(ALONG_Z, rod.rotationQuaternion!);
+    glow.alpha = 0.45 + 0.45 * breath;
+    haze.alpha = 0.3 + 0.2 * breath;
   };
 
   return {
@@ -115,6 +161,7 @@ export function createDam(stage: Stage, world: World) {
       lodge.collider?.setTranslation(lodge.root.position);
     },
     lodgeAt,
+    hint,
   };
 }
 export type Dam = ReturnType<typeof createDam>;

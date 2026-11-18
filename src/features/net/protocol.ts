@@ -8,10 +8,13 @@
 //
 // Every message is JSON with a type `t`. The server never takes a player id from a client: it adds the sender's own.
 import type { Action, Motion } from "../../contracts.ts";
-import { apply, BITES_TO_SPLIT, bitesToFell, newState, SLOTS, type BuildChange, type BuildState } from "../build/rules.ts";
+import { apply, BITES_TO_SPLIT, bitesToFell, LODGE, newState, SLOTS, type BuildChange, type BuildState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
 export const MAX_PLAYERS = 16;
+/** Sockets one client address may hold (a household or class behind one router), and how long a new socket has to
+ *  say hello before it is closed: the browser says it the moment the socket opens. */
+export const PER_ADDRESS = 4, HELLO_TIME = 5000;
 export const MAX_MESSAGE = 32 * 1024; // bytes; a whole world's build changes are about 12 KB at most
 export const NAME_LENGTH = 20, CHAT_LENGTH = 140;
 export const SEND_RATE = 20; // states and things per second
@@ -88,9 +91,12 @@ export type ClientMessage =
 export interface PlayerInfo { id: number; name: string }
 
 export type ServerMessage =
-  /** epoch: names the server's world (new at each start and reset); build: its changes from number `from` on. */
+  /** epoch: names the server's world (new at each reset); build: its changes from number `from` on. version: the
+   *  server's build (GIT_SHA), "" in development. */
   | { t: "welcome"; id: number; host: number; players: PlayerInfo[]; addresses: string[]; carried: [player: number, stick: number][];
-      epoch: string; from: number; build: BuildChange[] }
+      epoch: string; from: number; build: BuildChange[]; version: string }
+  /** No room: the server closes the socket after this one; try again much later. */
+  | { t: "full"; players: number; max: number }
   | { t: "join"; id: number; name: string }
   | { t: "leave"; id: number }
   | { t: "name"; id: number; name: string }
@@ -121,8 +127,9 @@ const point = (v: unknown) => list(v, 3) && num(v[0], -WORLD, WORLD) && num(v[1]
 const place = (v: unknown): v is Place => list(v, 8) && int(v[0], 0, MAX_THINGS - 1) && point(v.slice(1, 4))
   && v.slice(4).every((q) => num(q, -1.01, 1.01));
 
-/** Changes a message may hold: more than a whole world needs (MAX_TREES * 17 + SLOTS + 1). */
+/** Changes a message may hold: more than a whole world needs (MAX_TREES * 17 + SLOTS + LODGE + 1). */
 export const MAX_CHANGES = 600;
+const EPOCH = /^[a-z0-9]{1,16}$/;
 const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks
 const turn = (v: unknown) => list(v, 4) && v.every((q) => num(q, -1.01, 1.01));
 
@@ -131,7 +138,7 @@ export function parseChange(v: unknown): BuildChange | undefined {
   if (!v || typeof v !== "object") return;
   const c = v as Record<string, unknown>, tree = c.tree;
   if (c.type === "find") return { type: "find" };
-  if (c.type === "place") return int(c.slot, 0, SLOTS - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
+  if (c.type === "place") return int(c.slot, 0, SLOTS + LODGE - 1) && typeof c.stick === "string" && STICK.test(c.stick) ? { type: "place", slot: c.slot, stick: c.stick } : undefined;
   if (!int(tree, 0, MAX_TREES - 1)) return;
   switch (c.type) {
     case "bite": case "split": return { type: c.type, tree };
@@ -146,7 +153,9 @@ export function parseChange(v: unknown): BuildChange | undefined {
 /** Plain text for a name or a chat line: no control characters, no runs of spaces, at most `length` characters. */
 export function clean(text: unknown, length: number): string {
   if (typeof text !== "string") return "";
-  return [...text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").replace(/\s+/g, " ").trim()].slice(0, length).join("").trim();
+  // At most 3 marks on a letter: enough for any script, too few for "zalgo" text that covers the lines around it.
+  const plain = text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").replace(/(\p{M}{3})\p{M}+/gu, "$1").replace(/\s+/g, " ").trim();
+  return [...plain].slice(0, length).join("").trim();
 }
 
 /** A message from a player, checked; undefined when it is not one we take. Names and chat come back cleaned. */
@@ -162,7 +171,7 @@ export function parseClient(text: unknown): ClientMessage | undefined {
       if (m.t === "name") return { t: "name", name };
       return {
         t: "hello", name, ...(m.bot === true ? { bot: true } : {}),
-        ...(typeof m.epoch === "string" && /^[a-z0-9]{1,16}$/.test(m.epoch) && int(m.have, 0, 1e6) ? { epoch: m.epoch, have: m.have } : {}),
+        ...(typeof m.epoch === "string" && EPOCH.test(m.epoch) && int(m.have, 0, 1e6) ? { epoch: m.epoch, have: m.have } : {}),
       };
     }
     case "away": return typeof m.away === "boolean" ? { t: "away", away: m.away } : undefined;
@@ -204,7 +213,7 @@ export const MAX_BITES = bitesToFell(Infinity);
 
 /** The server's check of a change against its world: it must fit the world as it is (rules.ts apply: in order, not
  *  twice, a stick not used twice) and no tree takes more bites than any tree needs. Applies it when it passes, so
- *  the list of changes a world holds stays bounded (MAX_TREES * 17 + SLOTS + 1). */
+ *  the list of changes a world holds stays bounded (MAX_TREES * 17 + SLOTS + LODGE + 1). */
 export function admit(world: BuildState, change: BuildChange): boolean {
   if (change.type === "bite") {
     const t = world.trees[change.tree];
@@ -236,6 +245,17 @@ export function replay(changes: BuildChange[]): BuildState {
   return s;
 }
 
+/** The world's work as server.ts keeps it in its file ({ epoch, build }), read back through the same checks as live
+ *  changes: undefined when it is not that. Changes that do not fit (a broken file, or rules.ts changed since) are
+ *  left out; whole false then, and the server takes a new epoch, since the players' copies of the old one differ. */
+export function restore(text: string): { epoch: string; world: BuildState; log: BuildChange[]; whole: boolean } | undefined {
+  let saved: { epoch?: unknown; build?: unknown };
+  try { saved = JSON.parse(text); } catch { return; }
+  if (!saved || typeof saved.epoch !== "string" || !EPOCH.test(saved.epoch) || !Array.isArray(saved.build)) return;
+  const world = newState(), log = saved.build.map(parseChange).filter((c): c is BuildChange => !!c && admit(world, c));
+  return { epoch: saved.epoch, world, log, whole: log.length === saved.build.length };
+}
+
 /** Whether two states hold the same world (trees touched without effect do not count). */
 export const sameWorld = (a: BuildState, b: BuildState) => JSON.stringify(changesOf(a)) === JSON.stringify(changesOf(b));
 
@@ -251,6 +271,27 @@ export function hostOf(players: Iterable<{ id: number; joined: number; bot?: boo
   }
   return best?.id;
 }
+
+// ---- who is asking -------------------------------------------------------------------------------------------------
+
+/** The header a proxy in front puts the client's address in (TRUST_PROXY); anyone else could write it. */
+export const PROXY_HEADERS: Record<string, string> = { cloudflare: "cf-connecting-ip", fly: "fly-client-ip" };
+
+/** What the per-address limit counts a socket under: the proxy's header when the server sits behind that proxy
+ *  (`header`), else the socket's own address. An IPv6 address counts by its /64, which one home or phone gets whole.
+ *  Undefined: not limited, this machine itself (bots and test browsers on the host, as on a LAN). */
+export function clientAddress(headers: Headers, socket: string | undefined, header?: string): string | undefined {
+  const forwarded = header ? headers.get(header)?.trim().slice(0, 64) : undefined, ip = (forwarded || socket || "").replace(/%.*$/, "");
+  if (!forwarded && /^(127\.|::1$|::ffff:127\.)/.test(ip)) return;
+  if (!ip.includes(":") || ip.includes(".")) return ip.replace(/^::ffff:/, ""); // IPv4, maybe written as IPv6
+  const [head = "", tail = ""] = ip.split("::"), h = head ? head.split(":") : [], t = tail ? tail.split(":") : [];
+  const groups = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return `${groups.slice(0, 4).map((g) => (parseInt(g, 16) || 0).toString(16)).join(":")}::/64`;
+}
+
+/** Whether a page should reload for the server's build: only when both are known and differ, and not again for a
+ *  build it already reloaded for (a cached page, or a server that keeps changing, never loops). */
+export const shouldReload = (mine: string, server: string, reloadedFor: string | null) => !!mine && !!server && mine !== server && reloadedFor !== server;
 
 // ---- rate ----------------------------------------------------------------------------------------------------------
 

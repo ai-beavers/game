@@ -8,6 +8,8 @@ bun install --frozen-lockfile
 bun dev                      the game on port 5180, for everyone on the network (server.ts); prints the addresses
 bun shot <url> --out shots/x.png      look at a page without a desktop: screenshot + console (tools/shot.ts)
 bun run check                typecheck and tests
+bun shot "<url>/?play&tour=fast" --no-record --until "tour.round > 1" --eval "tour.results.filter(r => r.ok !== true)"
+                             the whole tour once as a check: ends when the first round is through, prints what did not pass
 /?play&tour=live             watch the bot choose activities around the clearing in real time
 /?play&tour=fast             run the full game tour at 4× speed
 /?play&tour&station=Walk     run only the named station; repeat station for its prerequisites

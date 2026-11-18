@@ -307,6 +307,9 @@ export const create: CreateFeature = (game) => {
     }
   });
 
+  // Half the dam: a handful of leaves thrown up over it, a small cheer on the way.
+  events.on("stickPlaced", ({ place, count, total }) => { if (count * 2 === total) leaves(place.x, place.y + 0.3, place.z, 30, 0.3, push.set(0, 0, 0), 3); });
+
   // The dam holds: a fountain of bright bits and leaves over it, and rings running out over the pond.
   events.on("damFinished", ({ place }) => {
     const at = place.clone();

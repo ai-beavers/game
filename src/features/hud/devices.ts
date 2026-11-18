@@ -32,7 +32,7 @@ export const CONTROLS: Record<Device, Control[]> = {
   touch: [
     { caps: ["Left side"], what: "Move", hint: true }, { caps: ["Right side"], what: "Look around", hint: true },
     { caps: ["Pinch"], what: "Zoom" }, { caps: ["Jump"], what: "Jump" }, { caps: ["Use"], what: "Use: gnaw, carry, build" },
-    { caps: ["Run"], what: "Run, until you let go" }, { caps: ["Map"], what: "Tap to enlarge", hint: true }, { caps: ["II"], what: "Pause" },
+    { caps: ["Run"], what: "Run, until you let go" }, { caps: ["Map"], what: "Tap to enlarge", hint: true }, { caps: ["Pause"], what: "Menu: settings, players" },
   ],
 };
 
