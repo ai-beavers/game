@@ -1,5 +1,8 @@
 // A lantern in the beaver's left hand, hanging by its handle (a viewer's wish): it glows warm as it gets dark and lights the ground, the
 // trees and the pond's edge around the beaver, and goes out at dawn. Nothing to press. Only the local beaver has one.
+// By day it rides in the backpack (backpack.ts): at dusk the beaver reaches over its left shoulder and takes it out, at
+// dawn it puts it back (stow.ts says when; the reach is Motion.reachBack, drawn by the animator). Under water it is
+// hidden and back in the paw on surfacing, without the backpack.
 // It is not parented to the hand bone (that turns with the wrist and grows into a fist): each picture it is put below
 // where the paw is, upright, turned the way the beaver faces, so it swings with the arm and its light sways along.
 // Cost per picture: the world matrices from the beaver's root down to the left hand (under ten nodes), recomputed once.
@@ -18,6 +21,8 @@ import type { Node } from "@babylonjs/core/node.js";
 import type { CreateFeature } from "../../game.ts";
 import { daylightOf, LANTERN_REACH } from "../../light.ts";
 import { smoothstep } from "../../world/noise.ts";
+import { makeBackpack } from "./backpack.ts";
+import { busy, newStow, stepStow } from "./stow.ts";
 
 const WARM = new Color3(1, 0.5, 0.17); // deeper than candlelight: the night's grade takes colour out of the midtones
 const HANDLE = { y: 0.075, diameter: 0.045, thickness: 0.006 }; // m: the ring on top of the glass that the paw holds
@@ -25,8 +30,8 @@ const HANDLE_TOP = HANDLE.y + HANDLE.diameter / 2 + HANDLE.thickness / 2; // m a
 const HANG = 0.01 + HANDLE_TOP; // m from the hand bone (the wrist) down to the glass's middle: the handle sits in the paw
 const LIGHT = 2.4, GLOW = 1.0, SHADERS = 1.8; // at full dark: the PointLight, the glass, the self-lit shaders
 
-export const create: CreateFeature = ({ stage: { scene }, beaver, player, settings, sky }) => {
-  const daylight = daylightOf(scene);
+export const create: CreateFeature = ({ stage, beaver, player, settings, sky }) => {
+  const { scene } = stage, daylight = daylightOf(scene);
   if (!daylight || !sky) return {};
   const glassMat = new StandardMaterial("lantern-glass", scene);
   glassMat.diffuseColor.set(0.5, 0.42, 0.3);
@@ -46,6 +51,8 @@ export const create: CreateFeature = ({ stage: { scene }, beaver, player, settin
   frame.material = frameMat;
   frame.parent = glass;
   glass.rotationQuaternion = null;
+  makeBackpack(scene, beaver.chest);
+  const stow = newStow(sky.dark), motion = player.motion;
   const paw = beaver.leftHand, chain: TransformNode[] = [];
   for (let n: Node | null = paw; n; n = n.parent) if (n instanceof TransformNode) chain.unshift(n);
   const ahead = new Vector3();
@@ -69,8 +76,10 @@ export const create: CreateFeature = ({ stage: { scene }, beaver, player, settin
   let lit = true;
   scene.onDisposeObservable.add(settings.on(({ quality }) => { lit = quality !== "low"; light.setEnabled(lit); }));
   return {
-    update() {
-      const on = smoothstep(0.08, 0.5, sky.dark), shown = !player.diving;
+    update(dt) {
+      if (!stage.paused) stepStow(stow, dt, sky.dark, busy(motion, player.diving));
+      motion.reachBack = stow.reach;
+      const on = smoothstep(0.08, 0.5, sky.dark), shown = stow.drawn && !player.diving;
       glass.setEnabled(shown);
       if (shown) hang();
       glassMat.emissiveColor.copyFrom(WARM).scaleInPlace(GLOW * on);

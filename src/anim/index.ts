@@ -13,8 +13,9 @@
 //   dive     under the surface (the player's own motion.diving): long and streamlined, the tail driving in strokes
 //   slap     the tail up and struck down (action "none" with a progress), over all of the above but the carry
 //   carry    the right arm holds the stick in front of the chest, over all of the above
+//   reach    the left paw over the shoulder to the backpack (motion.reachBack), over all of the above, left arm only
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
-import { WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
+import { BACKPACK, WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
 import type { SwimMotion } from "../player/state.ts";
 import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
@@ -45,6 +46,11 @@ class Ease {
 }
 const ARMS: Bone[] = ["upper_arm_L", "forearm_L", "hand_L", "upper_arm_R", "forearm_R", "hand_R"];
 const RIGHT_ARM: Bone[] = ["upper_arm_R", "forearm_R", "hand_R"];
+const LEFT_ARM: Bone[] = ["upper_arm_L", "forearm_L", "hand_L"];
+/** Where the left finger tips go reaching back for the lantern: the backpack's opening, over the left shoulder, as
+ *  onChest() takes it. The elbow points up and out. */
+const BACKPACK_REACH: Vec = [0.05, BACKPACK.y + BACKPACK.height * 0.4, BACKPACK.z - 0.03];
+const REACH_POLE: Vec = [0.6, 1, 0.5];
 /** A number 0 … 1 that looks random but is the same for the same n. */
 /** x, but bending smoothly into ±limit: a hard clamp turns a fast rise into a kink. */
 const soft = (x: number, limit: number) => limit * Math.tanh(x / limit);
@@ -332,6 +338,13 @@ export const createAnimator: CreateAnimator = (): Animator => {
         const placed = layer.fk();
         reachArm(layer, placed, "R", onChest(placed, [-0.03, -0.1, 0.27]), [-1, -0.7, -0.2], 1);
         body.blend(layer, holding, RIGHT_ARM);
+      }
+      const reach = clamp(m.reachBack ?? 0);
+      if (reach > 0) { // the left paw over the shoulder to the backpack, wherever the trunk leans
+        layer.copy(body);
+        const placed = layer.fk();
+        reachArm(layer, placed, "L", onChest(placed, BACKPACK_REACH), rotate(placed.chest.delta, REACH_POLE), 0.5);
+        body.blend(layer, reach, LEFT_ARM);
       }
       brows_at(body, anger);
       return body.pose();

@@ -28,6 +28,10 @@ export interface BonePose { rotation: [number, number, number, number]; translat
 /** Bones left out stand in their rest pose. */
 export type Pose = Partial<Record<Bone, BonePose>>;
 
+/** Where the backpack sits in the chest bone's space (x to the beaver's left, y up, z ahead, from the chest bone's
+ *  head), m: on the back. The lantern feature puts it there; the animator reaches the left paw to it. */
+export const BACKPACK = { y: -0.03, z: -0.17, height: 0.2 };
+
 export interface Beaver {
   /** Move, turn or parent this. Feet on its y = 0, facing its +z. It throws and takes shadows by itself (its
    *  shape once, without the fur's many layers). */
@@ -37,6 +41,8 @@ export interface Beaver {
   /** The left hand (the beaver's own left, its +x side). The lantern hangs below it; read where it is rather than
    *  parent to it, since the hand turns and grows into a fist. */
   leftHand: TransformNode;
+  /** The chest bone: wear things on the trunk here (the backpack, at BACKPACK), so they follow every pose. */
+  chest: TransformNode;
   /** 0 calm … 1 furious: redder, muscular, glowing eyes. */
   anger: number;
   /** Wears its T-shirt; false: fur all over. */
@@ -86,6 +92,10 @@ export interface Motion {
   anger: number;
   /** Seconds since the start, for breathing and other idle motion. */
   time: number;
+  /** 0 … 1: how far the left paw is on its way to the backpack, over the left shoulder (0 at rest, 1 at the
+   *  backpack). Only the left arm follows it; the right arm, a carried stick and the trunk do not. The lantern
+   *  feature writes it into the local player's Motion; the player leaves it alone. Left out: 0 (remotes, bots). */
+  reachBack?: number;
 }
 
 export interface Animator {

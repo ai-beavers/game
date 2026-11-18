@@ -101,7 +101,7 @@ export type SwimMotion = Motion & { diving?: boolean };
 
 export const newMotion = (): Motion => ({
   speed: 0, distance: 0, turning: 0, grounded: false, vertical: 0, airTime: 0, sinceLanding: 100, landingSpeed: 0,
-  swimming: 0, action: "none", actionProgress: 0, carrying: false, anger: 0, time: 0,
+  swimming: 0, action: "none", actionProgress: 0, carrying: false, anger: 0, time: 0, reachBack: 0,
 });
 
 /** What happened in one step, measured from where the character really went. */
