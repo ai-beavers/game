@@ -56,7 +56,7 @@ export const create: CreateFeature = (game) => {
   const apply = () => {
     if (!live) return;
     const { ctx, mix, music, paused } = live, now = ctx.currentTime;
-    mix.master.gain.setTargetAtTime(settings.values.mute || paused ? 0 : settings.values.volume, now, 0.08);
+    mix.master.gain.setTargetAtTime(settings.values.mute || paused || new URLSearchParams(location.search).has("mute") ? 0 : settings.values.volume, now, 0.08);
     music.set(settings.values.music, now);
   };
   settings.on(apply);
