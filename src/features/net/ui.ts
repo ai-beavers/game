@@ -1,12 +1,39 @@
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { type TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { TextBlock } from "@babylonjs/gui";
+import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { Stage } from "../../engine.ts";
 import { Overlay, box, onViewport, safeArea } from "../hud/overlay.ts";
 import { CHAT_LENGTH } from "./protocol.ts";
+import { place, wrap } from "./tags.ts";
 
-const SHOW = 8000, SAY = 6000, HEAD = 1.15;
-interface Tag { name: string; said: string; node: TransformNode; text: TextBlock; until: number; behind: boolean }
+// Over each other beaver a tag: its name in a dark pill, with what it is busy with in small letters; over the speaker
+// (the player too) a light bubble with its last chat line, for a few seconds. Both keep a readable size on screen,
+// fade with distance and behind walls, and are laid out apart (tags.ts place) so close beavers do not cover each other.
+const SHOW = 8000, SAY = 6000, HEAD = 1.0;
+const NEAR = 16, FAR = 34; // m from the camera: tags fade out between these
+const SPOKEN = 4; // px between a bubble and its beaver's tag
+const BUBBLE = "rgba(246,242,231,0.95)", PILL = "rgba(18,32,31,0.66)", INK = "#182825", QUIET = "#bccbbb";
+interface Tag {
+  name: string; said: string; node: TransformNode; until: number; behind: boolean; doing: string;
+  pill: Rectangle; label: TextBlock; activity: TextBlock; bubble: Rectangle; speech: TextBlock;
+  /** What it was last fitted for, its sizes then, where it was last put, and this frame's point over its head. */
+  fitted: string; w: number; h: number; pillW: number; pillH: number; nameW: number; actW: number; pad: number; bubbleW: number; bubbleH: number;
+  at: string; x: number; y: number; distance: number;
+}
+
+const context = document.createElement("canvas").getContext("2d")!, widths = new Map<string, number>();
+/** Width of a text in px as the HUD draws it, kept per text and size. */
+function measure(text: string, size: number, weight = "normal") {
+  const key = weight + size + "|" + text;
+  let width = widths.get(key);
+  if (width === undefined) {
+    if (widths.size > 500) widths.clear();
+    context.font = `${weight} ${size}px system-ui, sans-serif`;
+    widths.set(key, width = context.measureText(text).width);
+  }
+  return width;
+}
 
 export function createUi(stage: Stage, actions: { send(text: string): void; rename(): void; canChat(): boolean }) {
   const layer = new Overlay(stage, "beaver-net",false,6), tagLayer = new Overlay(stage,"name-tags");
@@ -63,18 +90,58 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
     log.value = text;
   }
   onViewport(stage,layout);
-  const identity = Matrix.Identity();
+  const identity = Matrix.Identity(), point = new Vector3(), screen = new Vector3(), up = new Vector3(0,HEAD,0);
+  const controls = (t: Tag) => [t.bubble,t.speech,t.pill,t.label,t.activity];
+  /** Sizes the tag and its bubble for what they say now at this font size; nothing to do when that is unchanged. */
+  function fit(t: Tag, name: string, speech: string, size: number, width: number) {
+    const key = `${size}|${width}|${name}|${t.doing}|${speech}`;
+    if (t.fitted === key) return;
+    t.fitted = key;
+    const small = Math.round(size*0.8), pad = t.pad = Math.round(size*0.55), doing = name && t.doing ? "· " + t.doing : "";
+    t.nameW = name ? measure(name,size,"600") : 0;
+    t.actW = doing ? measure(doing,small) : 0;
+    t.pillW = name ? Math.ceil(2*pad + t.nameW + (doing ? size*0.4 + t.actW : 0)) : 0;
+    t.pillH = name ? Math.round(size*1.55) : 0;
+    t.label.text = name; t.label.fontSize = size;
+    t.activity.text = doing; t.activity.fontSize = small;
+    const lines = speech ? wrap(speech,Math.max(120,Math.min(280,width*0.3))-2*pad,s => measure(s,size)) : [];
+    t.speech.text = lines.join("\n"); t.speech.fontSize = size;
+    t.bubbleW = lines.length ? Math.ceil(2*pad + Math.max(...lines.map(l => measure(l,size)))) : 0;
+    t.bubbleH = lines.length ? Math.round(lines.length*size*1.25 + size*0.7) : 0;
+    t.w = Math.max(t.pillW,t.bubbleW);
+    t.h = t.pillH + t.bubbleH + (t.pillH && t.bubbleH ? SPOKEN : 0);
+    t.at = ""; // sizes changed: move everything again
+  }
+  /** Puts the tag's group with its top-left corner at x, y: the bubble on top, the pill under it. */
+  function put(t: Tag, x: number, y: number) {
+    x = Math.round(x); y = Math.round(y);
+    if (t.at === x + "," + y) return;
+    t.at = x + "," + y;
+    const bx = x + (t.w-t.bubbleW)/2, px = x + (t.w-t.pillW)/2, py = y + t.h - t.pillH;
+    tagLayer.move(t.bubble,box(bx,y,t.bubbleW,t.bubbleH)); tagLayer.move(t.speech,box(bx,y,t.bubbleW,t.bubbleH));
+    tagLayer.move(t.pill,box(px,py,t.pillW,t.pillH));
+    tagLayer.move(t.label,box(px+t.pad,py,t.nameW+2,t.pillH));
+    tagLayer.move(t.activity,box(px+t.pillW-t.pad-t.actW-1,py,t.actW+2,t.pillH));
+  }
   return {
     get typing() { return typing; },
     tag(id: number | "me", name: string, node: TransformNode) {
       this.untag(id);
-      const text = tagLayer.text("name-"+id,"",box(0,0,200,50),14,"center");
-      text.outlineWidth = 3; text.outlineColor = "#152322";
-      tags.set(id,{name,said:"",node,text,until:0,behind:false});
+      const bubble = tagLayer.rect("bubble-"+id,box(0,0,0,0),BUBBLE,8), speech = tagLayer.text("said-"+id,"",box(0,0,0,0),14,"center",false);
+      const pill = tagLayer.rect("tag-"+id,box(0,0,0,0),PILL,6), label = tagLayer.text("name-"+id,"",box(0,0,0,0),14,"left");
+      const activity = tagLayer.text("doing-"+id,"",box(0,0,0,0),11,"left",false);
+      speech.color = INK; label.fontWeight = "600"; activity.color = QUIET;
+      for (const text of [speech,label,activity]) text.textWrapping = false;
+      const tag: Tag = { name, said: "", node, until: 0, behind: false, doing: "", pill, label, activity, bubble, speech,
+        fitted: "", w: 0, h: 0, pillW: 0, pillH: 0, nameW: 0, actW: 0, pad: 0, bubbleW: 0, bubbleH: 0, at: "", x: 0, y: 0, distance: 0 };
+      for (const c of controls(tag)) c.isVisible = false;
+      tags.set(id,tag);
     },
     rename(id: number | "me", name: string) { const t = tags.get(id); if (t) t.name = name; },
     behind(id: number | "me", yes: boolean) { const t = tags.get(id); if (t) t.behind = yes; },
-    untag(id: number | "me") { tags.get(id)?.text.dispose(); tags.delete(id); },
+    /** What it is busy with, a word ("carrying"), or "" for nothing. */
+    doing(id: number | "me", value: string) { const t = tags.get(id); if (t) t.doing = value; },
+    untag(id: number | "me") { const t = tags.get(id); if (t) for (const c of controls(t)) c.dispose(); tags.delete(id); },
     say(id: number | "me", name: string, message: string) {
       const tag = tags.get(id); if (tag) { tag.said = message; tag.until = performance.now()+SAY; }
       push(name + ": " + message);
@@ -89,17 +156,32 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
       if (!visible) { if (typing) closeChat(); return; }
       const now = performance.now(), w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
       messages.text = lines.filter(l => typing || now-l.at<SHOW).slice(-5).map(l => l.text).join("\n");
-      const camera = stage.camera, viewport = camera.viewport.toGlobal(w,h);
+      const camera = stage.camera, viewport = camera.viewport.toGlobal(w,h), transform = stage.scene.getTransformMatrix();
+      // A constant size on screen, larger on a larger one (12 px on a 640×360 stream tile, 17 at 1080p), a little smaller far off.
+      const base = Math.max(12,Math.min(17,Math.round(h/30))), shown: Tag[] = [];
       for (const [id,tag] of tags) {
-        const speech = tag.until > now ? tag.said : "";
-        tag.text.text = [speech,id === "me" ? "" : tag.name].filter(Boolean).join("\n");
-        if (!tag.text.text || !tag.node.isEnabled()) { tag.text.isVisible = false; continue; }
-        const point = tag.node.getAbsolutePosition().add(new Vector3(0,HEAD,0));
-        const screen = Vector3.Project(point,identity,stage.scene.getTransformMatrix(),viewport);
-        tag.text.isVisible = screen.z > 0 && screen.z < 1 && screen.x > -50 && screen.x < w+50;
-        tag.text.alpha = tag.behind ? 0.22 : 1;
-        if (tag.text.isVisible) tagLayer.move(tag.text,box(screen.x-120,screen.y-56,240,56));
+        const speech = tag.until > now ? tag.said : "", name = id === "me" ? "" : tag.name; // our own name: never over our head
+        let alpha = 0;
+        if ((name || speech) && tag.node.isEnabled()) {
+          tag.node.getAbsolutePosition().addToRef(up,point);
+          Vector3.ProjectToRef(point,identity,transform,viewport,screen);
+          tag.distance = Vector3.Distance(point,camera.globalPosition);
+          alpha = Math.min(1,(FAR-tag.distance)/(FAR-NEAR)) * (tag.behind ? 0.22 : 1);
+          if (!(screen.z > 0 && screen.z < 1 && screen.x > -50 && screen.x < w+50)) alpha = 0;
+        }
+        const on = alpha > 0.02;
+        if (on) {
+          fit(tag,name,speech,Math.max(11,Math.round(base*Math.max(0.8,Math.min(1,1.05-tag.distance/80)))),w);
+          tag.x = screen.x; tag.y = screen.y;
+          shown.push(tag);
+        }
+        alpha = Math.round(alpha*20)/20;
+        tag.pill.isVisible = tag.label.isVisible = tag.activity.isVisible = on && tag.pillW > 0;
+        tag.bubble.isVisible = tag.speech.isVisible = on && tag.bubbleW > 0;
+        for (const c of controls(tag)) c.alpha = alpha;
       }
+      shown.sort((a,b) => a.distance-b.distance); // the nearest keeps its place, the others make way above it
+      place(shown,w,h).forEach((p,i) => put(shown[i]!,p.x,p.y));
     },
   };
 }
