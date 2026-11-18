@@ -24,13 +24,13 @@
 //
 // Where the stations live: src/features/tour/stations/, one file per feature or activity, each a function that takes
 // the Kit (kit.ts: walkTo, reach, until, expect, after, the dam work, ...) and returns its Station[] (live.ts). This
-// file holds the round loop, the live camera and the label, and STATIONS below puts the files together in order. A
+// file holds the round loop, the live camera and the label (live: the beaver's reason for what it does, live.ts), and STATIONS below puts the files together in order. A
 // station for a feature that has a file goes into that file, where it belongs in the order; a new feature adds one
 // file and one entry in STATIONS. Live, a station with an activity joins that activity; one without is its own.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Overlay, onViewport, box, hudLayout } from "../hud/overlay.ts";
 import type { CreateFeature } from "../../game.ts";
-import { bodyPoints, direct, enter, eyeAt, framing, glide, inside, KEEP_OUT, liveDirector, newHold, shotFor, sight, type Choice, type Volume, type XYZ } from "./live.ts";
+import { bodyPoints, direct, enter, eyeAt, framing, glide, inside, KEEP_OUT, liveDirector, newHold, reason, shotFor, sight, type Choice, type Moment, type Volume, type XYZ } from "./live.ts";
 import { fader, occluders } from "./clearview.ts";
 import { RAPIER } from "../../engine.ts";
 import { CACHE, LODGE, SLOTS, STICKS } from "../build/rules.ts";
@@ -121,10 +121,12 @@ export const create: CreateFeature = (game) => {
     overlay.move(label, at);
   });
 
-  /** Live: the activity and its station, and how far the long work is, so viewers see the dam grow over the hour. */
+  /** Live: why the beaver does this now, in its own words (live.ts: reason), and how far the long work is, so viewers
+   *  see the dam grow over the hour. */
+  let why = "";
   const caption = () => {
-    const a = tour.activity, name = tour.station, n = build()?.state.dam.length ?? 0, line = a === name ? name : a + " · " + name;
-    if (a !== "Dam work") return line;
+    const n = build()?.state.dam.length ?? 0, line = why;
+    if (tour.activity !== "Dam work") return line;
     return line + (n < SLOTS ? ` · ${n} of ${SLOTS}` : n < SLOTS + LODGE ? ` · lodge ${n - SLOTS} of ${LODGE}` : ` · cache ${n - SLOTS - LODGE} of ${CACHE}`);
   };
 
@@ -153,6 +155,7 @@ export const create: CreateFeature = (game) => {
       tour.round++;
       const b = build(), placed = b?.state.dam.length ?? 0, canFell = !!b && standingTrees(b).length > 0;
       // Live: what can be played now; the dam work only while there is something to build, its stations as they apply.
+      const moment: Moment = { now: clock, shown, previous: tour.activity, hour: game.sky?.hour, weather: game.sky?.weather, ducks: clock - startledAt > DUCKS_BACK, carrying: !!player.carrying, day: Date.now() };
       const itinerary = live ? liveDirector(stations.filter(([name, , activity, stream]) => {
         if (stream === false) return false;
         if (name === "Regrow a tree") return !!regrowing();
@@ -164,8 +167,8 @@ export const create: CreateFeature = (game) => {
         if (player.carrying) return false;
         if (name === "Carry a stick") return loose().length > 0;
         return canFell; // fell a tree and gnaw it into wood
-      }), { now: clock, shown, previous: tour.activity, hour: game.sky?.hour, weather: game.sky?.weather, ducks: clock - startledAt > DUCKS_BACK, carrying: !!player.carrying }) : focused ?? stations;
-      if (live) shown[tour.activity = itinerary[0]![2] ?? itinerary[0]![0]] = clock;
+      }), moment) : focused ?? stations;
+      if (live) { shown[tour.activity = itinerary[0]![2] ?? itinerary[0]![0]] = clock; why = reason(tour.activity, moment); }
       let ok = 0, failed = false;
       for (const [n, [name, run]] of itinerary.entries()) {
         tour.station = name;
@@ -217,8 +220,9 @@ export const create: CreateFeature = (game) => {
       if (!stage.paused) tour.clock = clock += dt;
       if (live && tour.activity === "Dam work") label.text = caption();
       if (live && !stage.paused) {
-        // Live: every activity has its shot (live.ts); yaw, height, distance and aim glide there over seconds, so a
-        // new activity or a stop to gnaw is a slow camera move, never a cut. Rounds alternate the side it films from.
+        // Live: the camera is held as a player holds it, behind the beaver, and an activity turns it only to show what
+        // it does (live.ts: its shot); yaw, height, distance and aim glide there over seconds, so a new activity or a
+        // stop to gnaw is a slow camera move, never a cut. Rounds alternate the side a shot from the side is taken from.
         // Four times a second the director looks whether the beaver is seen, and if not takes another angle (or fades).
         const walking = !!want.to, shot = shotFor(tour.activity, walking), cam = player.camera, feet = player.feet;
         volumes = near!(feet, dt);
