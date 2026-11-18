@@ -6,6 +6,7 @@ import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { hex as C } from "../../world/color.ts";
 import { smoothstep } from "../../world/noise.ts";
+import { LANTERN_GLSL, LANTERN_UNIFORMS } from "../../light.ts";
 
 const smooth = (x: number, a: number, b: number) => smoothstep(a, b, x);
 type Paint = (p: Vector3, n: Vector3, out: Color3) => void;
@@ -94,16 +95,16 @@ export function animalMesh(scene: Scene, shape: Shape, count: number) {
       }`,
     // Lit: the sky from above and the ground's bounce from below, as a hemispheric light does, and the sun or moon.
     fragmentSource: `precision highp float; varying vec4 shade; varying float vPart,vLifeY; varying vec3 vWorld; uniform float daylight, waterLevel; uniform vec3 cameraPosition;
-      ${lit ? `varying vec3 vNormal; uniform vec3 sunDirection, sunColor, skyColor, groundColor;` : ""}
+      ${lit ? `varying vec3 vNormal; uniform vec3 sunDirection, sunColor, skyColor, groundColor; ${LANTERN_GLSL}` : ""}
       void main(){vec4 diffuseColor=shade;
         ${lit ? `vec3 n=normalize(vNormal);
-        diffuseColor.rgb*=mix(groundColor,skyColor,.5+.5*n.y)+sunColor*max(0.,dot(n,-sunDirection));` : ""}
+        diffuseColor.rgb*=mix(groundColor,skyColor,.5+.5*n.y)+sunColor*max(0.,dot(n,-sunDirection))+lantern(vWorld)*max(0.,dot(n,normalize(lanternAt-vWorld)));` : ""}
         ${shape.fragment ?? ""}
         gl_FragColor=vec4(diffuseColor.rgb${lit ? "" : "*daylight"},diffuseColor.a);
       }`,
   }, {
     attributes: ["position", "normal", "color", "part", "aAnim", "color2", lit ? "aMore" : "tint"],
-    uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition", ...lit ? ["sunDirection", "sunColor", "skyColor", "groundColor"] : []],
+    uniforms: ["world", "viewProjection", "daylight", "waterLevel", "cameraPosition", ...lit ? ["sunDirection", "sunColor", "skyColor", "groundColor", ...LANTERN_UNIFORMS] : []],
     needAlphaBlending: shape.name === "fish" || shape.name === "dragonfly" || !!shape.blend,
   });
   // For the depth map under water (src/features/post/underwater.ts: camera-space z): posed as drawn, and opaque, so a
