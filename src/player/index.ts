@@ -274,7 +274,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     lift *= Math.exp(-LIFT_EASE * dt); // a step up shows as a quick rise, not a jump of the whole body
     node.position.y += lift;
     node.rotation.set(0, facingBefore + Math.atan2(Math.sin(facing - facingBefore), Math.cos(facing - facingBefore)) * alpha, 0);
-    camera.update(dt, show.copyFrom(node.position));
+    camera.update(dt, show.copyFrom(node.position), { velocity, facing, afloat, busy: act.action === "gnaw" || act.action === "build", level: waterLevel() });
     if (carried && options.hand) holdInHand(carried.stick.mesh, options.hand, node);
   };
 
