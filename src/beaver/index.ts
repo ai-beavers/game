@@ -76,6 +76,7 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   });
   material.albedoColor.copyFrom(calm);
   let anger = 0;
+  for (const morph of morphs) morph.influence = 0; // the file stores the furious body at 1: a calm beaver starts calm
   return {
     root, hand: nodes.get("hand_R")!,
     get anger() { return anger; },
