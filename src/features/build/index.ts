@@ -1,7 +1,8 @@
 // The build feature: what a beaver does. Hold E at a tree to gnaw it until it falls; hold E at the fallen tree to
 // break it into logs and sticks; carry sticks to the building site by the pond and press E there to build each into
 // the dam (30 sticks). A small goals panel leads through it; the pond rises with each stick, and at the end a lodge
-// rises out of it.
+// rises out of it, and the work goes on there: swim sticks out to it until it stands tall. While a stick is in the hand,
+// a glowing stick shows where it goes.
 //
 //   import { create as build } from "./features/build/index.ts";     createGame(canvas, [build])
 //
@@ -10,7 +11,7 @@
 // (remote false); a change from another player comes back in the same event with remote true.
 //
 // Debug, for bun shot --eval (window.build): build.at(i) stands at tree i facing it · build.fell(i) · build.split(i)
-// · build.fill(n) puts n sticks into the dam · build.toSite() stands at the dam with a stick in hand · build.reset()
+// · build.fill(n) puts n sticks into the dam (past 30: onto the lodge) · build.toSite() stands at the dam with a stick in hand · build.reset()
 // forgets everything and reloads · build.state · build.trees() lists them by distance · build.keepLying() keeps where
 // the loose wood lies now (it is also kept every few seconds and when the page goes).
 import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
@@ -20,7 +21,8 @@ import type { Stick } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
 import type { Offer } from "../../player/index.ts";
 import { waterOf } from "../../world/water.ts";
-import { apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, DAM, goals, load, pondLevel, pondRise, SLOTS, woodFrom } from "./rules.ts";
+import { apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, DAM, goals, load, LODGE, lodgeGrow, pondLevel, pondRise, SLOTS, woodFrom } from "./rules.ts";
+import { fxOf } from "../fx/index.ts";
 import { createDam } from "./dam.ts";
 import { goalsPanel } from "./panel.ts";
 import { BITE_HEIGHT, measure, takeTree, type TreeView } from "./tree.ts";
@@ -88,18 +90,22 @@ export const create: CreateFeature = (game) => {
 
   // ---- what each change does to the world ---------------------------------------------------------------------------
   let flight: { mesh: TransformNode; from: Vector3; turn: Quaternion; slot: number; t: number } | undefined;
-  let finishing = -1; // seconds since the dam was finished, while the lodge rises; -1 before
+  let lodgeShown = 0; // how far the lodge stands out of the water now (lodgeGrow), rising to where the sticks say
 
   const placed = (slot: number) => {
-    dam.shape(slot + 1);
     const count = slot + 1, place = dam.slot(slot).position;
+    if (count <= SLOTS) dam.shape(count);
     events.emit("stickPlaced", { place, slot, count, total: SLOTS });
     pondTo(count);
     events.emit("pondLevel", { level: pondLevel(full, count), rise: pondRise(count) });
+    if (count * 2 === SLOTS) panel.praise("Half a dam!", "The pond is rising behind it.");
     if (count === SLOTS) {
       events.emit("damFinished", { place });
-      finishing = 0;
-      panel.praise("The dam holds!", "The pond is yours, and a lodge rises out of it.");
+      panel.praise("The dam holds!", "A lodge rises in the pond: swim sticks out to it.", 8);
+    }
+    if (count === SLOTS + LODGE) {
+      fxOf(stage.scene)?.splash(dam.lodgeAt, 2);
+      panel.praise("The lodge stands!", "A home for every beaver in the pond.", 8);
     }
   };
 
@@ -139,7 +145,7 @@ export const create: CreateFeature = (game) => {
     save();
     react(c, handed);
     if (!remote) events.emit("buildChange", { change: c, remote: false });
-    goals(state).forEach((g, k) => { if (g.done && !before[k]!.done) events.emit("goalDone", { goal: g.id, text: g.text }); });
+    for (const g of goals(state)) if (g.done && !before.some((b) => b.id === g.id && b.done)) events.emit("goalDone", { goal: g.id, text: g.text });
     panel.show(goals(state));
     return true;
   };
@@ -156,13 +162,14 @@ export const create: CreateFeature = (game) => {
       else v.fall(new Vector3(Math.sin(t.fell), 0, Math.cos(t.fell))); // saved mid-fall: it falls again
       if (t.split) { const line = v.trunkLine(); v.dispose(); if (line) spawnWood(i, line); }
     }
+    lodgeShown = lodgeGrow(state.dam.length);
+    if (lodgeShown > 0) dam.lodge(lodgeShown); // first: the sticks on it are put where it stands
     state.dam.forEach((id, slot) => {
       const mesh = stickMesh(id);
       dam.fit(mesh, slot);
       dam.freeze(mesh);
     });
-    dam.shape(state.dam.length);
-    if (state.dam.length >= SLOTS) { dam.lodge(1); finishing = 99; }
+    dam.shape(Math.min(SLOTS, state.dam.length));
     panel.show(goals(state));
   };
   restore();
@@ -221,10 +228,14 @@ export const create: CreateFeature = (game) => {
     const local = feet.clone().subtract(dam.frame.origin).applyRotationQuaternion(Quaternion.Inverse(dam.frame.turn));
     return Math.abs(local.x) < DAM.base + 1 && Math.abs(local.z) < DAM.length / 2 + 0.7;
   };
+  // Swimming beside it, or standing on its foot: the lodge is 2.5 m across where it meets the water.
+  const atLodge = () => Math.hypot(feet.x - dam.lodgeAt.x, feet.z - dam.lodgeAt.z) < 2;
 
-  /** What E starts here: building in the carried stick, or gnawing the nearest tree (standing, or lying: split). */
+  /** What E starts here: building in the carried stick (into the dam, or onto the lodge once the dam holds), or
+   *  gnawing the nearest tree (standing, or lying: split). */
   const choice = (carrying: boolean) => {
-    if (carrying) return state.dam.length >= SLOTS || flight || !atDam() ? undefined : { kind: "build" as const };
+    const n = state.dam.length;
+    if (carrying) return n >= SLOTS + LODGE || flight || !(n < SLOTS ? atDam() : atLodge()) ? undefined : { kind: "build" as const, lodge: n >= SLOTS };
     const target = gnawTarget();
     return target && { kind: "gnaw" as const, target, lying: state.trees[target.tree]?.fell !== undefined };
   };
@@ -243,7 +254,7 @@ export const create: CreateFeature = (game) => {
     offer(carrying): Offer | undefined {
       const c = choice(carrying);
       if (!c) return undefined;
-      if (c.kind === "build") return { action: "build", text: "Build into dam" };
+      if (c.kind === "build") return { action: "build", text: c.lodge ? "Build onto lodge" : "Build into dam" };
       return c.lying ? { action: "split", text: "Gnaw into wood" } : { action: "gnaw", text: "Gnaw tree" };
     },
     step(dt, held) {
@@ -316,7 +327,7 @@ export const create: CreateFeature = (game) => {
         }
         return commit({ type: "split", tree: i });
       },
-      fill(n: number) { while (state.dam.length < Math.min(SLOTS, n)) commit({ type: "place", slot: state.dam.length, stick: `d${state.dam.length}` }); return state.dam.length; },
+      fill(n: number) { while (state.dam.length < Math.min(SLOTS + LODGE, n)) commit({ type: "place", slot: state.dam.length, stick: `d${state.dam.length}` }); return state.dam.length; },
       toSite() {
         const o = dam.frame.origin.add(dam.frame.across.scale(-1.25));
         player.teleport(o.x, world.heightAt(o.x, o.z), o.z, Math.atan2(dam.frame.across.x, dam.frame.across.z));
@@ -330,6 +341,7 @@ export const create: CreateFeature = (game) => {
     },
   });
 
+  let time = 0;
   return {
     step(dt) {
       for (const [i, v] of views) {
@@ -359,7 +371,10 @@ export const create: CreateFeature = (game) => {
         Vector3.LerpToRef(Vector3.One(), dam.laid, e, flight.mesh.scaling);
         if (flight.t >= 1) { dam.fit(flight.mesh, flight.slot); dam.freeze(flight.mesh); const slot = flight.slot; flight = undefined; placed(slot); }
       }
-      if (finishing >= 0 && finishing < 4) { finishing += moving; dam.lodge(finishing / 3.5); }
+      const grow = lodgeGrow(state.dam.length);
+      if (lodgeShown < grow) { lodgeShown = Math.min(grow, lodgeShown + moving / 3.5); dam.lodge(lodgeShown); }
+      // Where the stick in the hand goes, while there is somewhere for it and it is not on its way already.
+      dam.hint(player.carrying && !flight && job?.kind !== "build" ? state.dam.length : -1, time += moving);
     },
   };
 };

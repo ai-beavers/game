@@ -103,6 +103,8 @@ export const create: CreateFeature = (game) => {
   // The sfx bus, not the music's: these say something happened, so they sound with the music turned off too.
   events.on("damFinished", () => play("fanfare", undefined, 1, "sfx", 0.3));
   events.on("goalDone", () => play("chime", undefined, 1, "sfx", 0.1));
+  // Half the dam: a chime on the way, so the long middle of the work has a moment too.
+  events.on("stickPlaced", ({ count, total }) => { if (count * 2 === total) play("chime", undefined, 1, "sfx", 0.25); });
 
   // Lasting sounds: paddling, counted in physics steps so it stops with the pause.
   let stroke = 0;
