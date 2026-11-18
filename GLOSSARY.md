@@ -92,6 +92,10 @@ _Avoid_: test case, scenario, step
 A named group of stations that are played in order and shown as one thing on the stream ("Dam work").
 _Avoid_: suite, chapter, sequence
 
+**Reason**:
+The line in the live tour's caption that says, in the beaver's own words, why it does the activity now ("Warm noon. Time for a swim.").
+_Avoid_: thought, motive, subtitle
+
 **Round**:
 One pass of the tour through its stations.
 _Avoid_: run, iteration, cycle
@@ -101,7 +105,7 @@ The tour as a test: the world runs four times faster and long ways are skipped.
 _Avoid_: test mode, speedrun
 
 **Live tour**:
-The tour for the stream: real time, a director that picks the next activity, a camera that keeps the beaver in view.
+The tour for the stream: real time, a director that picks the activity the beaver wants most now, a caption with its reason, and a camera held as a player holds it, behind the beaver.
 _Avoid_: stream mode, spectator mode, demo mode
 
 **Soak**:

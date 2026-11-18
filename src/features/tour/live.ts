@@ -1,20 +1,23 @@
+import { REST_DISTANCE, REST_PITCH } from "../../player/camera.ts";
+
 /** Stations in one activity play in order, so building can use the wood gathered earlier. stream false: a test of the
  *  player's controls (a menu, a pad), played in the test but left out of the live stream. */
 export type Station = [name: string, play: () => Promise<void>, activity?: string, stream?: false];
 
-/** How the live view frames an activity: metres from the beaver, radians above the horizon (low, so the sky is in
- *  the picture), radians round from straight behind it, and metres above its look point (0.7 m up) it aims at:
- *  about the beaver's middle, so it stays above the bottom third (stream overlays) and below the caption. */
+/** How the live view frames an activity: metres from the beaver, radians above the horizon, radians round from
+ *  straight behind it, and metres above its look point (0.7 m up) it aims at: above the beaver, so it sits in the
+ *  lower third as it does for a player. */
 export interface Shot { distance: number; pitch: number; side: number; lift: number }
+// The live view is the player's own: behind the beaver, as someone playing holds the camera (src/player/camera.ts),
+// so the stream looks played, not filmed. An activity turns it only as a player would to see what they do.
+const SHOT: Shot = { distance: REST_DISTANCE, pitch: REST_PITCH, side: 0, lift: 0.45 };
 const SHOTS: Record<string, Shot> = {
-  "Around the clearing": { distance: 7, pitch: 0.14, side: 0.5, lift: -0.05 },
-  "Dam work": { distance: 4.5, pitch: 0.2, side: 1.1, lift: -0.15 }, // close and from the side: teeth on the trunk
-  "Pond patrol": { distance: 5.5, pitch: 0.06, side: 0.4, lift: -0.1 }, // low over the water
-  "Tail slap": { distance: 5, pitch: 0.08, side: 0.9, lift: -0.1 }, // from the side: the tail coming down
-  "Sky watch": { distance: 7, pitch: 0.03, side: 0.9, lift: 0.05 }, // more sky
-  "Wears a hat": { distance: 1.6, pitch: 0.3, side: 2.3, lift: 0.12 }, // close, from in front and above: the hat on the head
+  "Dam work": { ...SHOT, distance: 3.5, side: 0.45 }, // closer and round to the side, as the player's camera does for work
+  "Pond patrol": { ...SHOT, distance: 4.9, pitch: 0.11 }, // lower and a little back, as it does for a swim
+  "Tail slap": { ...SHOT, pitch: 0.11, side: 0.6 }, // a look from the side: the tail coming down
+  "Sky watch": { ...SHOT, pitch: 0.08, lift: 0.9 }, // looking up
+  "Wears a hat": { distance: 1.6, pitch: 0.3, side: 2.3, lift: 0.12 }, // turned round to the front, close: the hat on the head
 };
-const SHOT: Shot = { distance: 6, pitch: 0.14, side: 0.6, lift: -0.05 };
 
 // ---- a clear view: the beaver must always be seen ----
 // Crowns, bushes, reeds, crates, the lodge have no collider (or one the camera's cast ignores); their bounds are
@@ -140,10 +143,10 @@ export function glide(x: number, v: number, goal: number, rate: number, top: num
   return [x + Math.max(-most, Math.min(most, to - x)), Math.max(-top, Math.min(top, speed))];
 }
 
-/** On the way somewhere the camera stands back and more behind, so the way ahead is in the picture. */
+/** On the way somewhere the camera is straight behind at the player's distance, so the way ahead is in the picture. */
 export function shotFor(activity: string, walking: boolean): Shot {
   const shot = SHOTS[activity] ?? SHOT;
-  return walking ? { ...shot, distance: shot.distance + 2.5, side: Math.min(shot.side, 0.5) } : shot;
+  return walking ? { ...shot, distance: Math.max(shot.distance, SHOT.distance), side: 0, lift: SHOT.lift } : shot;
 }
 
 /** What the director knows when it picks: the clock (s), when each activity was last shown on it, the one just
@@ -152,19 +155,52 @@ export function shotFor(activity: string, walking: boolean): Shot {
 export interface Moment {
   now: number; shown: Record<string, number>; previous?: string;
   hour?: number; weather?: string; ducks?: boolean; carrying?: boolean;
+  /** The real date, ms: an activity is new for FRESH days after it came into the game. */
+  day?: number;
 }
 
-/** How much a viewer wants an activity now, against the others: the time of day and the weather steer it. */
+/** The activities the newest features added, and the day each came (UTC). A feature with an activity of its own
+ *  enters it here; the beaver is curious about it for FRESH days. Drop an entry once it is older. */
+const NEW: Record<string, string> = { "Wears a hat": "2026-11-18" };
+const FRESH = 7; // days
+export const fresh = (activity: string, m: Moment) => {
+  const since = m.day === undefined || !NEW[activity] ? NaN : (m.day - Date.parse(NEW[activity]!)) / 86_400_000;
+  return since >= 0 && since < FRESH;
+};
+const NOON = (h: number) => h >= 11 && h < 15, DUSK = (h: number) => h >= 18 && h < 21.5, NIGHT = (h: number) => h >= 21.5 || h < 5;
+
+/** How much the beaver wants an activity now, against the others: the time of day, the weather and what is new
+ *  steer it. The wish grows with the time since it last did it (liveDirector). */
 export function weight(activity: string, m: Moment): number {
   const hour = m.hour ?? 12, wet = m.weather === "rain" || m.weather === "fog";
+  if (fresh(activity, m)) return 3; // curious about what is new
   switch (activity) {
-    case "Pond patrol": return hour >= 11 && hour < 15 ? 2.5 : 1; // a swim at noon
+    case "Pond patrol": return NOON(hour) ? 2.5 : 1; // a swim at noon
     case "Tail slap": return m.ducks === false ? 0.2 : 1.3; // only with ducks on the pond to send off
-    case "Sky watch": return (hour >= 18 && hour < 21.5) || wet ? 3 : 0.6; // dusk and rain
+    case "Sky watch": return DUSK(hour) || wet ? 3 : NIGHT(hour) ? 1.5 : 0.6; // dusk and rain; at night the lantern
     case "Dam work": return 1.6; // the long work, a few sticks a visit: it comes round often
     case "Regrowth": return 1.3;
     case "Around the clearing": return 0.7;
     default: return 1;
+  }
+}
+
+/** Why the beaver does this activity now, in its own words: the live caption, so a viewer reads a player with a
+ *  reason, not a list being played. One short line (under 40 characters: the caption is one row). An activity
+ *  without a line of its own says its name. */
+export function reason(activity: string, m: Moment): string {
+  const hour = m.hour ?? 12;
+  if (fresh(activity, m)) return `New! Let me try: ${activity}`;
+  switch (activity) {
+    case "Dam work": return m.carrying ? "Got a stick. Off to the dam." : "My dam won't build itself.";
+    case "Pond patrol": return NOON(hour) ? "Warm noon. Time for a swim." : "A lap round my pond.";
+    case "Tail slap": return "Ducks on my pond. Not for long!";
+    case "Sky watch": return m.weather === "rain" ? "Rain. Let me watch the weather." : m.weather === "fog" ? "Fog. Can I still see the sky?"
+      : NIGHT(hour) ? "Dark out. Lantern on." : DUSK(hour) ? "Dusk. The deer come out now." : "What is the sky up to?";
+    case "Regrowth": return "Are my trees growing back?";
+    case "Around the clearing": return "Stretching my legs.";
+    case "Furious beaver": return "That makes me furious!";
+    default: return activity;
   }
 }
 
