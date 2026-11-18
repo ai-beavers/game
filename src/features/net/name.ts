@@ -2,11 +2,17 @@ import type { Stage } from "../../engine.ts";
 import { box, onViewport, Overlay } from "../hud/overlay.ts";
 import { clean, NAME_LENGTH } from "./protocol.ts";
 
+// A name nobody has to type: an adjective and an animal of the pond, "Mossy Otter". At most 20 letters (NAME_LENGTH).
+const ADJECTIVES = ["Busy", "Brave", "Sleepy", "Muddy", "Mossy", "Swift", "Quiet", "Lucky", "Jolly", "Sturdy", "Clever", "Fuzzy", "Bold", "Gentle", "Sunny", "Wet"];
+const ANIMALS = ["Beaver", "Otter", "Heron", "Muskrat", "Frog", "Badger", "Duck", "Vole", "Newt", "Mink", "Owl", "Moose"];
+const pick = (list: string[]) => list[Math.floor(Math.random() * list.length)]!;
+export const randomName = () => `${pick(ADJECTIVES)} ${pick(ANIMALS)}`;
+
 export function askName(stage: Stage, current: string, address?: string): Promise<string> {
   const layer = new Overlay(stage,"net-name",true,40);
   // Paused while open, so the pad's A that confirms does not jump the beaver as well.
   const paused = stage.paused;
-  let draft = current, field: HTMLInputElement;
+  let draft = current || randomName(), field: HTMLInputElement;
   stage.paused = true;
   return new Promise(resolve => {
     function finish(value: string) {

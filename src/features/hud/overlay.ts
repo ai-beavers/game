@@ -8,7 +8,8 @@ import type { Stage } from "../../engine.ts";
 
 type Box = { x: number; y: number; w: number; h: number };
 export const box = (x: number, y: number, w: number, h: number): Box => ({ x, y, w, h });
-const PAPER = "#f6f2e7", INK = "#182825", EDGE = "#88958a", GOLD = "#f7ca77";
+const PAPER = "#f6f2e7", INK = "#182825", EDGE = "#88958a";
+export const GOLD = "#f7ca77";
 export const PANEL = "rgba(18,32,31,0.92)";
 const left = Control.HORIZONTAL_ALIGNMENT_LEFT, top = Control.VERTICAL_ALIGNMENT_TOP;
 type Action = HTMLButtonElement | HTMLInputElement;
