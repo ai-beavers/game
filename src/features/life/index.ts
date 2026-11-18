@@ -21,7 +21,7 @@ import { hex } from "../../world/color.ts";
 import type { CreateFeature, Feature } from "../../game.ts";
 import { seeded } from "../../world/noise.ts";
 import { placeAll } from "../../world/place.ts";
-import { BASIN, CELL, POND, RIM, SIZE, heightAt } from "../../world/terrain.ts";
+import { BASIN, POND, RIM, groundAt } from "../../world/terrain.ts";
 import {
   circling, deerHours, makeBirds, makeDeer, makeDucks, makeFlyers, makeFrogs, makeOwl, makeSchool, owlHours, shoreSpots, startle, stepBirds,
   stepButterflies, stepDeer, stepDragonflies, stepDucks, stepFrogs, stepOwl, stepSchool, type Land, type Perch, type Splash, type Threat,
@@ -58,7 +58,7 @@ export const create = ((game) => {
   const land: Land = { heightAt: world.heightAt, get water() { return world.waterLevel; }, rim: RIM - 2.5, pond: { x: POND.x, z: POND.z, radius: POND.radius } };
   // The basin's animals walk and lie on the ground as it is drawn (its triangles), not on the smooth heights: on the
   // steep slope the two differ by centimetres, and a mussel would vanish into it.
-  const bedLand: Land = { heightAt: drawnHeight, get water() { return world.waterLevel; }, rim: land.rim, pond: land.pond };
+  const bedLand: Land = { heightAt: groundAt, get water() { return world.waterLevel; }, rim: land.rim, pond: land.pond };
   const layout = placeAll(), random = seeded(7);
   const reeds = layout.reed.map(({ x, z }) => ({ x, z }));
   // Logs, stumps and rocks stand out of the grass: where songbirds like to sit, and where they are seen.
@@ -336,13 +336,6 @@ export const create = ((game) => {
   draw();
   return feature;
 }) satisfies CreateFeature;
-
-/** The ground's height as its mesh draws it (src/world/terrain.ts buildTerrain: a grid of CELL, two triangles a cell). */
-function drawnHeight(x: number, z: number) {
-  const fx = (x + SIZE / 2) / CELL, fz = (z + SIZE / 2) / CELL, i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
-  const at = (a: number, b: number) => heightAt(-SIZE / 2 + (i + a) * CELL, -SIZE / 2 + (j + b) * CELL);
-  return u + v < 1 ? at(0, 0) + (at(1, 0) - at(0, 0)) * u + (at(0, 1) - at(0, 0)) * v : at(1, 1) + (at(0, 1) - at(1, 1)) * (1 - u) + (at(1, 0) - at(1, 1)) * (1 - v);
-}
 
 /** The tufts of pondweed: the meadow's blades that stand taller than any grass, one point per tuft. */
 function weedTufts(scene: Scene) {

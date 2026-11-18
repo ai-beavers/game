@@ -425,7 +425,8 @@ export const create: CreateFeature = (game) => {
     ["Dive", async () => {
       if (!pond) return skip("no pond");
       const look = () => (stage.scene.metadata.underwater as { on: boolean } | undefined)?.on, depth = () => (player.waterLevel ?? 0) - player.feet.y;
-      await walkTo(pond.x, pond.z - clear(), { near: 0.5, limit: 40 });
+      // Beside the lodge: south-east of it, where the camera behind has room to go under (by the basin's south wall it has not)
+      await walkTo(pond.x + clear(), pond.z - clear(), { near: 0.5, limit: 40 });
       expect(player.afloat, "out in the pond, yet not afloat");
       want.dive = true;
       try {

@@ -3,7 +3,8 @@ import { material } from "./models.ts";
 // The ground: one height function for the whole place, and the mesh and Rapier collider made from the same samples.
 //
 //   heightAt(x, z)                 ground height; pure, also used by the tests and the placement rules
-//   buildTerrain(stage)            adds the ground mesh and its fixed trimesh collider, returns the mesh
+//   groundAt(x, z)                 the ground as drawn and collided: over samples of heightAt, within 0.1 m of it in the pond
+//   buildTerrain(stage)            adds the ground mesh and its fixed colliders (groundColliders), returns the mesh
 //
 // The layout, in metres, y up, +z is where the beaver looks at the start:
 //   meadow clearing around (0, 0), about 33 m across, closed by a bank that rises 4 m into thicket
@@ -121,29 +122,95 @@ export function groundColor(x: number, z: number, h: number, slope: number, out:
   return out;
 }
 
-/** The ground mesh and its collider, from one grid of heightAt samples. */
-export function buildTerrain({ scene, physics }: Stage) {
-  const n = Math.round(SIZE / CELL) + 1, half = SIZE / 2;
-  const positions = new Float32Array(n * n * 3), colors = new Float32Array(n * n * 4);
-  const color = new Color3();
+/** The basin's wall drops up to 2 m within one CELL; there the ground is sampled FINE.split times finer, so what is
+ *  drawn and collided stays within 0.1 m of heightAt (world.test.ts). A rectangle on the coarse grid's lines, m. */
+export const FINE = { x0: 2, z0: 1.5, x1: 6.5, z1: 4.5, split: 8 };
+
+/** A grid of samples: heights[j * nx + i] at (x0 + i * cell, z0 + j * cell). */
+interface Grid { x0: number; z0: number; cell: number; nx: number; nz: number; heights: Float32Array }
+
+/** Height over a grid's triangles: two a cell, split from (i + 1, j) to (i, j + 1), as the mesh and Rapier's
+ *  heightfield split them. */
+function overGrid(g: Grid, x: number, z: number) {
+  const u = Math.min(Math.max((x - g.x0) / g.cell, 0), g.nx - 1), v = Math.min(Math.max((z - g.z0) / g.cell, 0), g.nz - 1);
+  const i = Math.min(Math.floor(u), g.nx - 2), j = Math.min(Math.floor(v), g.nz - 2), fu = u - i, fv = v - j;
+  const at = (a: number, b: number) => g.heights[(j + b) * g.nx + i + a]!;
+  return fu + fv <= 1 ? at(0, 0) + (at(1, 0) - at(0, 0)) * fu + (at(0, 1) - at(0, 0)) * fv
+    : at(1, 1) + (at(0, 1) - at(1, 1)) * (1 - fu) + (at(1, 0) - at(1, 1)) * (1 - fv);
+}
+
+function grid(x0: number, z0: number, cell: number, nx: number, nz: number, sample: (x: number, z: number, i: number, j: number) => number): Grid {
+  const heights = new Float32Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) heights[j * nx + i] = sample(x0 + i * cell, z0 + j * cell, i, j);
+  return { x0, z0, cell, nx, nz, heights };
+}
+
+let grids: { coarse: Grid; fine: Grid } | undefined;
+/** The samples the ground is drawn and collided from, made once: every CELL over the whole map, and the FINE patch,
+ *  whose edge samples lie on the coarse triangles' edges so the two meet without a crack. */
+function groundGrids() {
+  if (grids) return grids;
+  const n = Math.round(SIZE / CELL) + 1, coarse = grid(-SIZE / 2, -SIZE / 2, CELL, n, n, heightAt);
+  const cell = CELL / FINE.split, nx = Math.round((FINE.x1 - FINE.x0) / cell) + 1, nz = Math.round((FINE.z1 - FINE.z0) / cell) + 1;
+  const fine = grid(FINE.x0, FINE.z0, cell, nx, nz, (x, z, i, j) =>
+    i === 0 || j === 0 || i === nx - 1 || j === nz - 1 ? overGrid(coarse, x, z) : heightAt(x, z));
+  return grids = { coarse, fine };
+}
+
+const inFine = (x: number, z: number) => x >= FINE.x0 && x <= FINE.x1 && z >= FINE.z0 && z <= FINE.z1;
+/** The height of the ground as drawn and as its collider has it: over the same samples and triangles. Within 0.1 m
+ *  of heightAt in the pond; what stands or swims on the ground reads this one (World.heightAt). */
+export function groundAt(x: number, z: number) {
+  const { coarse, fine } = groundGrids();
+  return overGrid(inFine(x, z) ? fine : coarse, x, z);
+}
+
+/** A grid's vertices (x, h, z) and its triangles, numbered from `first`; the coarse grid leaves out the FINE patch. */
+function surface(g: Grid, coarse: boolean, first = 0) {
+  const positions = new Float32Array(g.nx * g.nz * 3), indices: number[] = [];
+  for (let j = 0; j < g.nz; j++) for (let i = 0; i < g.nx; i++) positions.set([g.x0 + i * g.cell, g.heights[j * g.nx + i]!, g.z0 + j * g.cell], (j * g.nx + i) * 3);
+  for (let j = 0; j < g.nz - 1; j++) for (let i = 0; i < g.nx - 1; i++) {
+    if (coarse && inFine(g.x0 + (i + 0.5) * g.cell, g.z0 + (j + 0.5) * g.cell)) continue;
+    const a = first + j * g.nx + i, b = a + 1, c = a + g.nx, d = c + 1;
+    indices.push(a, b, c, b, d, c);
+  }
+  return { positions, indices };
+}
+
+/** The ground's colliders over the same samples and triangles. The coarse grid is a Rapier heightfield: rows run
+ *  along z, columns along x, stored column by column, centred on the collider (checked with ray casts, see
+ *  world.test.ts); smoother contacts than a trimesh, thin sticks come to rest on it. Under the FINE patch it is sunk
+ *  out of the way, and the patch is a trimesh: a level ball or capsule cast passes through a heightfield whose cells
+ *  are smaller than the ball (Rapier 0.21, measured), and the camera and a swimming beaver cast level. */
+export function groundColliders(physics: RAPIER.World) {
+  const { coarse, fine } = groundGrids(), n = coarse.nx, heights = new Float32Array(n * n);
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const x = -half + i * CELL, z = -half + j * CELL, h = heightAt(x, z), k = (j * n + i) * 3;
-    positions.set([x, h, z], k);
-    groundColor(x, z, h, slopeAt(x, z), color).toArray(colors, (j * n + i) * 4);
-    colors[(j * n + i) * 4 + 3] = 1;
+    const x = coarse.x0 + i * CELL, z = coarse.z0 + j * CELL, h = coarse.heights[j * n + i]!;
+    heights[j + i * n] = x > FINE.x0 && x < FINE.x1 && z > FINE.z0 && z < FINE.z1 ? h - 10 : h;
   }
-  const indices = new Uint32Array((n - 1) * (n - 1) * 6);
-  let q = 0;
-  for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
-    const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
-    indices.set([a, b, c, b, d, c], q);
-    q += 6;
+  physics.createCollider(RAPIER.ColliderDesc.heightfield(n - 1, n - 1, heights, { x: SIZE, y: 1, z: SIZE }));
+  const patch = surface(fine, false);
+  physics.createCollider(RAPIER.ColliderDesc.trimesh(patch.positions, new Uint32Array(patch.indices), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES));
+}
+
+/** The ground mesh and its collider, from the same samples (groundGrids). */
+export function buildTerrain({ scene, physics }: Stage) {
+  const grids = groundGrids(), count = grids.coarse.heights.length + grids.fine.heights.length;
+  const land = surface(grids.coarse, true), patch = surface(grids.fine, false, grids.coarse.heights.length);
+  const positions = new Float32Array(count * 3), colors = new Float32Array(count * 4), color = new Color3();
+  positions.set(land.positions);
+  positions.set(patch.positions, land.positions.length);
+  for (let k = 0; k < count; k++) {
+    const x = positions[k * 3]!, h = positions[k * 3 + 1]!, z = positions[k * 3 + 2]!;
+    groundColor(x, z, h, slopeAt(x, z), color).toArray(colors, k * 4);
+    colors[k * 4 + 3] = 1;
   }
+  const indices = new Uint32Array([...land.indices, ...patch.indices]);
   const geometry = new VertexData();
   geometry.positions = positions;
   geometry.indices = indices;
-  geometry.uvs = new Float32Array(n * n * 2);
-  for (let i = 0; i < n*n; i++) {
+  geometry.uvs = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
     geometry.uvs[i*2] = positions[i*3]! / 2.5;
     geometry.uvs[i*2+1] = positions[i*3+2]! / 2.5;
   }
@@ -187,10 +254,6 @@ export function buildTerrain({ scene, physics }: Stage) {
   fine.update();
   soil.ambientTexture = fine;
   mesh.material = soil;
-  // Rapier's heightfield: rows run along z, columns along x, stored column by column, centred on the collider
-  // (checked with ray casts, see world.test.ts). Smoother contacts than a trimesh: thin sticks come to rest on it.
-  const heights = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) heights[j + i * n] = positions[(j * n + i) * 3 + 1]!;
-  physics.createCollider(RAPIER.ColliderDesc.heightfield(n - 1, n - 1, heights, { x: SIZE, y: 1, z: SIZE }));
+  groundColliders(physics);
   return mesh;
 }
