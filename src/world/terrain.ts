@@ -97,7 +97,7 @@ export function groundColor(x: number, z: number, h: number, slope: number, out:
   // Sand at the water, mud below it.
   const near = 1 - smoothstep(1.15, 1.6, pondRatio(x, z));
   Color3.LerpToRef(out, PALETTE.sand, near * (1 - smoothstep(0.12, 0.35 + noise(x * 3, z * 3) * 0.1, h)), out);
-  Color3.LerpToRef(out, PALETTE.mud, smoothstep(-0.03, -0.45, h), out);
+  Color3.LerpToRef(out, PALETTE.mud, smoothstep(-0.25, -0.7, h), out); // below the lowest level the pond has: sand shows through the shallows
   // Rock where it is steep; on the bank only in patches, it is earth and roots there.
   Color3.LerpToRef(out, PALETTE.rock, smoothstep(0.7, 1.05, slope + noise(x * 1.7, z * 1.7) * 0.12) * (1 - bank), out);
   Color3.LerpToRef(out, PALETTE.earth, bank * Math.max(0, noise(x * 0.7, z * 0.7)) * 0.7, out);
