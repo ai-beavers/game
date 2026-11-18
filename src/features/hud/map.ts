@@ -3,7 +3,8 @@
 // as it is built, the lodge, other players as named dots, and the beaver as an arrow.
 //
 //   const map = createMap(world.heightAt, world.waterLevel);
-//   map.draw(canvas, { centre, span, beaver, facing, yaw, sticks, trees, dam, lodge, players, level });
+//   map.draw(canvas, { centre, span, beaver, facing, yaw, sticks, trees, dam, lodge, players, level }, size);
+//                                         size: CSS pixels across where it is shown; the canvas gets size × devicePixelRatio
 //
 // North up, fixed: up on the map is +z, the way the camera looks at the start, so right is -x.
 import * as THREE from "three";
@@ -81,8 +82,9 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
   paint(waterLevel);
 
   return {
-    draw(canvas: HTMLCanvasElement, view: MapView) {
-      const px = Math.round(canvas.clientWidth * devicePixelRatio);
+    /** Paints the view into canvas (made size × devicePixelRatio pixels square), size CSS pixels across on screen. */
+    draw(canvas: HTMLCanvasElement, view: MapView, size: number) {
+      const px = Math.round(size * devicePixelRatio);
       if (!px) return;
       if (view.level !== undefined && Math.abs(view.level - painted) > 0.005) paint(view.level);
       if (canvas.width !== px) canvas.width = canvas.height = px;
@@ -95,7 +97,7 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
       const sw = Math.min(size, sx + view.span / RESOLUTION) - cx, sh = Math.min(size, sy + view.span / RESOLUTION) - cy;
       if (sw > 0 && sh > 0) g.drawImage(ground, cx, cy, sw, sh, ox * RESOLUTION * k, oy * RESOLUTION * k, sw * RESOLUTION * k, sh * RESOLUTION * k);
 
-      const unit = devicePixelRatio * Math.max(0.8, Math.min(1.7, canvas.clientWidth / 128)); // marks: about the same size on screen at any span
+      const unit = devicePixelRatio * Math.max(0.8, Math.min(1.7, size / 128)); // marks: about the same size on screen at any span
       g.lineWidth = 1.2 * unit;
       for (const tree of view.trees ?? []) {
         const [x, y] = at(tree);

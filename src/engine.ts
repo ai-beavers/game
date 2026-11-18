@@ -9,6 +9,7 @@
 // World conventions, the same everywhere: right-handed, y up, 1 unit = 1 m, the beaver's forward is +z.
 //   stage.paused = true;                        the world stands still, pictures go on
 //   stage.draw = () => composer.render();       draw through an effect chain
+//   stage.hud.scene.add(mesh);                  on-screen UI, drawn over the picture in CSS pixels (Stage.hud)
 // ?debug in the address draws Rapier's colliders as lines.
 import * as THREE from "three";
 import RAPIER from "@dimforge/rapier3d-compat";
@@ -32,6 +33,11 @@ export interface Stage {
   timeScale: number;
   /** Draws one picture. Replace it to draw through an effect chain instead of straight to the screen. */
   draw(): void;
+  /** The game's on-screen UI, drawn by the same renderer after every picture, over it, without tone mapping or
+   *  effects. The camera counts CSS pixels from the canvas's top left: x to the right, y = -(pixels down), so a
+   *  point at CSS (left, top) of the canvas sits at (left, -top). Use materials with toneMapped: false and
+   *  depthTest: false; renderOrder decides what lies on top. */
+  hud: { scene: THREE.Scene; camera: THREE.OrthographicCamera };
 }
 
 export async function start(canvas: HTMLCanvasElement): Promise<Stage> {
@@ -47,8 +53,9 @@ export async function start(canvas: HTMLCanvasElement): Promise<Stage> {
   const physics = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   physics.timestep = STEP;
   const bound = new Map<THREE.Object3D, RAPIER.RigidBody>();
+  const hud = { scene: new THREE.Scene(), camera: new THREE.OrthographicCamera(0, 1, 0, -1, -10, 10) };
   const stage: Stage & { bound: typeof bound } = {
-    renderer, scene, camera, physics, bound, paused: false, timeScale: 1,
+    renderer, scene, camera, physics, bound, hud, paused: false, timeScale: 1,
     draw: () => renderer.render(scene, camera),
     bind: (object, body) => void bound.set(object, body),
     unbind: (object) => void bound.delete(object),
@@ -60,7 +67,7 @@ export async function start(canvas: HTMLCanvasElement): Promise<Stage> {
  *  picture; alpha is how far the picture is between the last physics step (0) and the next (1).
  *  Marks the page ready for tools/shot.ts after the first frames. */
 export function run(stage: Stage, fixed: (dt: number) => void = () => {}, frame: (dt: number, alpha: number) => void = () => {}) {
-  const { renderer, scene, camera, physics } = stage, bound = (stage as Stage & { bound: Map<THREE.Object3D, RAPIER.RigidBody> }).bound;
+  const { renderer, scene, camera, physics, hud } = stage, bound = (stage as Stage & { bound: Map<THREE.Object3D, RAPIER.RigidBody> }).bound;
   const lines = new URLSearchParams(location.search).has("debug")
     ? new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false })) : undefined;
   if (lines) { lines.frustumCulled = false; lines.renderOrder = 999; scene.add(lines); }
@@ -73,6 +80,7 @@ export function run(stage: Stage, fixed: (dt: number) => void = () => {}, frame:
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      Object.assign(hud.camera, { right: width, bottom: -height }).updateProjectionMatrix();
     }
     if (stage.paused) owed = 0;
     else for (owed += dt; owed >= STEP; owed -= STEP) { fixed(STEP); physics.step(); }
@@ -88,6 +96,13 @@ export function run(stage: Stage, fixed: (dt: number) => void = () => {}, frame:
     }
     frame(dt, owed / STEP);
     stage.draw();
+    if (hud.scene.children.length) { // over the picture, wherever stage.draw drew it from
+      renderer.setRenderTarget(null);
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      renderer.render(hud.scene, hud.camera);
+      renderer.autoClear = true;
+    }
     if (++frames === 5) document.title = "ready";
   });
 }

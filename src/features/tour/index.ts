@@ -3,6 +3,7 @@
 //
 //   http://localhost:5180/?play&tour                       in a browser: watch it
 //   bun shot "http://localhost:5180/?play&tour" --wait 240000 --out shots/tour.png        headless, filmed, logged
+//   ?play&tour&station=Map                                 play only the named station (repeat station for prerequisites)
 //   ?tour=fast                                             the test: FAST times real time, long ways hopped over
 //   bun run tour                                           the test without end, headless (tools/tour.ts)
 //
@@ -38,7 +39,8 @@ interface BuildDebug {
 class Skip extends Error {}
 
 export const create: CreateFeature = (game) => {
-  const mode = new URLSearchParams(location.search).get("tour");
+  const params = new URLSearchParams(location.search);
+  const mode = params.get("tour");
   if (mode === null) return {};
   const { player, world, stage, events, beaver } = game, fast = mode === "fast";
   if (fast) stage.timeScale = FAST;
@@ -242,12 +244,66 @@ export const create: CreateFeature = (game) => {
       } finally { s.setWeather("auto"); }
     }],
     ["Map", async () => {
-      const map = document.querySelector("#beaver-hud .map") ?? skip("no HUD");
+      // three.js draws the map (stage.hud) where its invisible <button> is: checked in the HUD scene, not the page.
+      const button = document.querySelector<HTMLElement>("#beaver-hud .map") ?? skip("no HUD");
+      const drawn = stage.hud.scene.getObjectByName("map") ?? skip("no map in the HUD scene");
+      const disc = drawn.getObjectByName("map-disc") as THREE.Mesh, north = drawn.getObjectByName("map-north") as THREE.Mesh;
+      expect(!!disc && !!north, "the drawn map has no disc or no N");
+      expect(!button.childElementCount && !button.textContent, "the map's button shows something of its own");
+      // Where an object is drawn, in CSS px of the page: the HUD camera counts CSS px from the canvas's top left, y up.
+      const onPage = (o: THREE.Object3D) => {
+        const p = o.getWorldPosition(new THREE.Vector3()), c = stage.renderer.domElement.getBoundingClientRect();
+        return { x: c.left + p.x, y: c.top - p.y };
+      };
+      const onButton = () => {
+        const r = button.getBoundingClientRect(), d = onPage(disc);
+        return drawn.visible && Math.abs(d.x - (r.left + r.width / 2)) < 1 && Math.abs(d.y - (r.top + r.height / 2)) < 1
+          && Math.abs(disc.scale.x - (r.width - 4)) < 1;
+      };
+      const painted = () => (disc.material as THREE.MeshBasicMaterial).map!.version;
+      // The last picture's last draw is the HUD scene's: at least one call per mesh of the map that is visible.
+      const drawCalls = () => { let n = 0; drawn.traverseVisible((o) => { if ((o as THREE.Mesh).isMesh) n++; }); return stage.renderer.info.render.calls >= n; };
+      // The button's size and place are animated by CSS: wait for the end of that, then the drawn map must be there too.
+      const settled = (why: string) => until(() => !button.getAnimations().length && onButton(), 3, why);
+
+      if (button.classList.contains("large")) key("KeyM"); // as a round that failed half-way left it
+      await settled("the small map is not drawn where its button is");
+      const small = disc.scale.x, since = painted();
+      await frame(); await frame();
+      expect(painted() > since, "the map texture is not painted anew every frame");
+      expect(!north.visible && drawCalls(), "north marker on the small map, or the map not drawn");
+
       key("KeyM");
-      expect(map.classList.contains("large"), "M did not enlarge the map");
-      await wait(3);
-      key("KeyM");
-      expect(!map.classList.contains("large"), "M did not shrink the map");
+      try {
+        expect(button.classList.contains("large"), "M did not enlarge the map");
+        await settled("the large map is not drawn where its button is");
+        expect(disc.scale.x > small * 1.5, `the large map is drawn ${disc.scale.x.toFixed(0)} px across, the small ${small.toFixed(0)}`);
+        expect(north.visible && drawCalls(), "no N drawn on the large map");
+        const n = onPage(north), d = onPage(disc), radius = disc.scale.x / 2;
+        expect(Math.abs(n.x - d.x) < 1 && d.y - n.y > radius * 0.85 && d.y - n.y < radius, "N is not at the top edge of the large map");
+        expect((north.material as THREE.MeshBasicMaterial).opacity > 0.9, "the N is faded");
+
+        // Paused: drawn on under the menu. Photo mode: not drawn at all.
+        key("Escape");
+        try {
+          for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame); // the tour holds while paused; pictures go on
+          expect(stage.paused && drawn.visible && north.visible, "the map is gone while paused");
+        } finally { key("Escape"); }
+        await frame();
+        expect(!stage.paused, "Escape did not close the pause menu");
+        key("KeyP");
+        if (document.body.classList.contains("photo")) {
+          try { await frame(); await frame(); expect(!drawn.visible, "the map is drawn in photo mode"); } finally { key("KeyP"); }
+          await until(() => drawn.visible, 2, "the map did not come back after photo mode");
+        }
+        await wait(2);
+
+        key("KeyM");
+        expect(!button.classList.contains("large"), "M did not shrink the map");
+        await settled("the small map is not drawn where its button is, after M");
+        expect(Math.abs(disc.scale.x - small) < 1, "the map did not go back to its small size");
+        expect(!north.visible, "north marker stayed on the small map");
+      } finally { if (button.classList.contains("large")) key("KeyM"); } // the next station sees the small map
     }],
     ["Photo mode", async () => {
       key("KeyP");
@@ -256,6 +312,14 @@ export const create: CreateFeature = (game) => {
       expect(!document.body.classList.contains("photo") && !stage.paused, "P did not leave photo mode");
     }],
   ];
+
+  // A feature run may request prerequisite stations followed by the new behavior.
+  const requested = params.getAll("station");
+  const itinerary = requested.length ? requested.map(name => {
+    const station = stations.find(([candidate]) => candidate === name);
+    if (!station) throw new Error("Unknown tour station: " + name);
+    return station;
+  }) : stations;
 
   // ---- on screen: where the tour is ----
   const label = document.createElement("div");
@@ -277,9 +341,9 @@ export const create: CreateFeature = (game) => {
       tour.round++;
       player.teleport(world.spawn.x, world.heightAt(world.spawn.x, world.spawn.z), world.spawn.z);
       let ok = 0, failed = false;
-      for (const [n, [name, run]] of stations.entries()) {
+      for (const [n, [name, run]] of itinerary.entries()) {
         tour.station = name;
-        label.textContent = `Tour · round ${tour.round} · ${n + 1}/${stations.length} · ${name}`;
+        label.textContent = `Tour · round ${tour.round} · ${n + 1}/${itinerary.length} · ${name}`;
         const t0 = performance.now();
         errors.length = 0;
         let result: (typeof results)[number];
@@ -307,7 +371,7 @@ export const create: CreateFeature = (game) => {
         }
         await wait(PAUSE);
       }
-      console.log(`[tour] round ${tour.round}: ${ok}/${stations.length} ok`);
+      console.log(`[tour] round ${tour.round}: ${ok}/${itinerary.length} ok`);
       // Its own saved game: start it anew once there is nothing left to build with or into.
       const b = build();
       if (b && (b.state.dam.length >= SLOTS || world.trees!.every((_, i) => b.state.trees[i]?.fell !== undefined))) {

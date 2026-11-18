@@ -8,7 +8,8 @@
 //   pressing Play sends a "beaver:play" event on window, still inside the click, so other features may start sound
 // - what the context key does right now (player.offer(), or its own reach rule while the player has none)
 // - the goals of the build feature (build/panel.ts hands them over), a line when one is reached or the dam is done
-// - a round map, true to the world (M, Y on a gamepad or a click makes it large), and under it the hour and weather
+// - a round map, true to the world (M, Y on a gamepad or a click makes it large), and under it the hour and weather;
+//   the map and its N are drawn by three.js (map-display.ts), its <button> here only places it and takes input
 // - control hints for the first seconds, for the device used last (keyboard, gamepad, touch)
 // - the players on the network while Tab is held, and in the pause menu
 // - the pause menu (Escape, Start, or the button top left): Resume, Players, Settings, Controls
@@ -30,7 +31,8 @@ import { showGoalsIn } from "../build/panel.ts";
 import { BUTTON, down, firstPad } from "../controls/pad.ts";
 import { clean, INFO_PATH, NAME_LENGTH } from "../net/protocol.ts";
 import { cap, caps, CONTROLS, DEVICE_NAMES, USE, type Device } from "./devices.ts";
-import { createMap, EXTENT } from "./map.ts";
+import { createMap, EXTENT, type MapView } from "./map.ts";
+import { createMapDisplay } from "./map-display.ts";
 import { contextAction } from "./reach.ts";
 import { SKY_ICONS, skyLabel } from "./sky.ts";
 import { CSS } from "./style.ts";
@@ -66,7 +68,7 @@ const HTML = `
   <button class="pause panel" type="button" aria-label="Pause menu (Escape)"></button>
   <span class="fps panel" aria-hidden="true" hidden></span>
 </div>
-<button class="map play" type="button" aria-label="Map. Press M to enlarge or shrink it."><canvas aria-hidden="true"></canvas><span class="map-n" aria-hidden="true">N</span></button>
+<button class="map play" type="button" aria-label="Map. Press M to enlarge or shrink it."></button>
 <div class="side play">
   <div class="sky panel" hidden><span class="icon"></span><span class="time"></span><span class="weather"></span></div>
   <section class="goals panel" aria-label="Goals" hidden><h3>Beaver work</h3><ol></ol></section>
@@ -142,7 +144,7 @@ export const create: CreateFeature = (game) => {
   const $ = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const start = $<HTMLDialogElement>(".start"), menu = $<HTMLDialogElement>(".menu");
   const prompt = $(".prompt"), promptCap = $(".prompt .cap"), promptText = $(".prompt .text"), hints = $(".hints"), note = $(".note"), fps = $(".fps");
-  const mapButton = $(".map"), mapCanvas = $<HTMLCanvasElement>(".map canvas");
+  const mapButton = $(".map"), mapDisplay = createMapDisplay(stage);
   const map = createMap(world.heightAt, world.waterLevel);
   const photo = () => document.body.classList.contains("photo");
   const touchOverlay = !!document.querySelector(".touch-controls");
@@ -385,7 +387,7 @@ export const create: CreateFeature = (game) => {
         if (pressed[BUTTON.y] && !padWas[BUTTON.y] && playing && !stage.paused && !photo()) toggleMap();
         padWas = pressed;
       }
-      if (!playing || photo()) return;
+      if (!playing || photo()) { mapDisplay.hide(); return; }
 
       // What the context key does now.
       const m = player.motion, loose = world.sticks.filter((s) => s.body.isEnabled());
@@ -421,18 +423,20 @@ export const create: CreateFeature = (game) => {
       // The map, as the world is now.
       const large = mapButton.classList.contains("large"), at = player.node.position, b = build(), n = net();
       const trees = (world.trees ?? []).filter((_, i) => !felled.has(i) && b?.state.trees[i]?.fell === undefined).map((t) => t.place);
-      let dam;
+      let dam: MapView["dam"];
       if (b) {
         const { origin, across } = b.dam.frame, along = { x: -across.z, z: across.x }, half = DAM.length / 2;
         dam = { from: { x: origin.x - along.x * half, z: origin.z - along.z * half }, to: { x: origin.x + along.x * half, z: origin.z + along.z * half }, built: b.state.dam.length / SLOTS };
       }
       const players = n?.connected ? [...n.remotes.values()].filter((r) => r.node.visible).map((r) => ({ x: r.node.position.x, z: r.node.position.z, name: r.name })) : [];
-      map.draw(mapCanvas, {
+      // Drawn by three.js where CSS puts the button, as visible as the button would be (it fades in with .play).
+      const look = getComputedStyle(mapButton), opacity = look.visibility === "hidden" ? 0 : Number(look.opacity);
+      mapDisplay.show(mapButton.getBoundingClientRect(), { large, focused: mapButton.matches(":focus-visible"), opacity }, (canvas, size) => map.draw(canvas, {
         centre: large ? { x: 0, z: 0 } : at, span: large ? 2 * EXTENT : SMALL_SPAN,
         beaver: at, facing: player.facing, yaw: player.camera.yaw,
         sticks: loose.map((s) => s.mesh.position), trees, dam, players, level: world.waterLevel,
         lodge: b && b.state.dam.length >= SLOTS ? b.dam.lodgeAt : undefined,
-      });
+      }, size));
       if (!who.hidden && frames % 30 === 0) showPlayers();
     },
   };
