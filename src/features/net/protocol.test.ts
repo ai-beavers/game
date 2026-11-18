@@ -4,8 +4,8 @@ import { describe, expect, test } from "bun:test";
 import { newMotion } from "../../player/state.ts";
 import { newState, SLOTS, type BuildChange } from "../build/rules.ts";
 import {
-  admit, bucket, changesOf, clean, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, packMotion, parseChange, parseClient,
-  replay, sameWorld, stickId, unpackMotion, woodId,
+  admit, bucket, changesOf, clean, clientAddress, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, packMotion, parseChange,
+  parseClient, replay, restore, sameWorld, shouldReload, stickId, unpackMotion, woodId,
 } from "./protocol.ts";
 import { Track } from "./track.ts";
 
@@ -62,6 +62,8 @@ describe("parseClient", () => {
     expect(clean("<img src=x onerror=alert(1)>", 140)).toBe("<img src=x onerror=alert(1)>"); // shown with textContent
     expect(clean("🦫".repeat(30), 20)).toBe("🦫".repeat(20)); // whole characters, not halves
     expect(clean(5, 20)).toBe("");
+    expect(clean("e" + "́".repeat(50) + "x", 140)).toBe("é́́x"); // no zalgo towers
+    expect(clean("Tiếng Việt", 20)).toBe("Tiếng Việt");
   });
 });
 
@@ -83,6 +85,35 @@ describe("hostOf", () => {
     expect(hostOf([{ id: 1, joined: 0, bot: true }])).toBeUndefined();
     expect(hostOf([{ id: 1, joined: 0, away: true }, { id: 9, joined: 7 }, { id: 4, joined: 9 }])).toBe(9); // a hidden tab is not
     expect(hostOf([{ id: 1, joined: 0, away: true }, { id: 9, joined: 7, away: true }])).toBe(1); // unless all are
+  });
+});
+
+describe("clientAddress", () => {
+  const headers = new Headers({ "cf-connecting-ip": "198.51.100.7", "fly-client-ip": "203.0.113.5" });
+  test("trusts a proxy's header only when told to", () => {
+    expect(clientAddress(headers, "10.0.0.2")).toBe("10.0.0.2");
+    expect(clientAddress(headers, "10.0.0.2", "fly-client-ip")).toBe("203.0.113.5");
+    expect(clientAddress(headers, "10.0.0.2", "cf-connecting-ip")).toBe("198.51.100.7");
+    expect(clientAddress(new Headers(), "10.0.0.2", "fly-client-ip")).toBe("10.0.0.2"); // not through the proxy
+  });
+  test("counts IPv6 by its /64 and leaves this machine unlimited", () => {
+    const none = new Headers();
+    expect(clientAddress(none, "2001:db8:1:2:aaaa::1")).toBe("2001:db8:1:2::/64");
+    expect(clientAddress(none, "2001:db8:1:2:bbbb:cccc:dddd:eeee")).toBe("2001:db8:1:2::/64");
+    expect(clientAddress(none, "2001:db8::5")).toBe("2001:db8:0:0::/64");
+    expect(clientAddress(none, "::ffff:192.0.2.1")).toBe("192.0.2.1");
+    for (const self of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) expect(clientAddress(none, self)).toBeUndefined();
+    expect(clientAddress(new Headers({ "fly-client-ip": "127.0.0.1" }), "10.0.0.2", "fly-client-ip")).toBe("127.0.0.1"); // said by the proxy: limited
+  });
+});
+
+describe("shouldReload", () => {
+  test("only for a known, different build, and once", () => {
+    expect(shouldReload("abc", "def", null)).toBe(true);
+    expect(shouldReload("abc", "def", "def")).toBe(false); // reloaded for it already: a cached page does not loop
+    expect(shouldReload("abc", "abc", null)).toBe(false);
+    expect(shouldReload("", "def", null)).toBe(false); // the page's server had no GIT_SHA
+    expect(shouldReload("abc", "", null)).toBe(false); // development
   });
 });
 
@@ -184,6 +215,17 @@ describe("build changes", () => {
     touched.trees[9] = { bites: 0, splitBites: 0 }; // touched without effect: the same world
     expect(sameWorld(s, touched)).toBe(true);
     expect(changesOf({ ...newState(), trees: { 1: { bites: 1e9, splitBites: 0 } } })).toHaveLength(MAX_BITES); // a broken save
+  });
+
+  test("a kept world comes back through the same checks, or not at all", () => {
+    const changes: BuildChange[] = [{ type: "find" }, { type: "bite", tree: 2 }, { type: "place", slot: 0, stick: "w1" }];
+    const back = restore(JSON.stringify({ epoch: "k3x9", build: changes }))!;
+    expect(back).toEqual({ epoch: "k3x9", world: replay(changes), log: changes, whole: true });
+    // A change that does not fit (twice, out of order, unknown) is left out, and then the world is not whole.
+    const broken = restore(JSON.stringify({ epoch: "k3x9", build: [...changes, { type: "find" }, { type: "split", tree: 7 }, { type: "admin" }] }))!;
+    expect(broken.log).toEqual(changes);
+    expect(broken.whole).toBe(false);
+    for (const bad of ["", "{\"epoch\":", "null", "[]", '{"epoch":"K!","build":[]}', '{"epoch":"k3","build":{}}', '{"build":[]}']) expect(restore(bad)).toBeUndefined();
   });
 
   test("sticks have the same id everywhere, inside the range a place may name", () => {
