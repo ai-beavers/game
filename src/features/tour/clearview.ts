@@ -28,8 +28,11 @@ function volumeOf(mesh: AbstractMesh, local: { min: Vector3; max: Vector3 }, wor
   return volume(Vector3.TransformCoordinates(local.min.add(local.max).scaleInPlace(0.5), world), axes as [Vector3, Vector3, Vector3],
     mesh.material?.name === "leaves" && !mesh.name.startsWith("reed"), mesh); // crowns and bushes round; reeds a box the camera may stand in
 }
+/** A trunk, never faded: a tree's wood, also the bark a tree view clips above and below its Bite (src/features/build/
+ *  tree.ts names those "cut " + the part's name) and the Bite's fresh wood. */
+export const isTrunk = (name: string) => /^(cut )?tree_\d+_wood/.test(name) || name === "gnawed wood";
 const hides = (mesh: AbstractMesh, mine: TransformNode) => (HIDES.has(mesh.material?.name ?? "") || mesh.name === "lodge mound")
-  && !/^tree_\d+_wood/.test(mesh.name) // trunks have colliders (the camera's cast, and sight's solid)
+  && !isTrunk(mesh.name) // trunks have colliders (the camera's cast, and sight's solid)
   && !mesh.isDescendantOf(mine);
 
 export function occluders(scene: Scene, mine: TransformNode) {

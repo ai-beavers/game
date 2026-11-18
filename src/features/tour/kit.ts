@@ -15,9 +15,11 @@ import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import type { SkyState } from "../sky/index.ts";
 import { LODGE, live as standing, SLOTS, type BuildState } from "../build/rules.ts";
+import type { BiteReport } from "../build/tree.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
+const BITES = [[0.15, "shallow"], [0.8, "deep"]] as const; // how deep the Bite is when fell() looks at it
 const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is jumped over (teleport), but the last metre
 
 /** What the build feature puts on window for tools (src/features/build/index.ts); only the part the tour needs. */
@@ -25,7 +27,7 @@ export interface BuildDebug {
   state: BuildState;
   dam: { frame: { origin: Vector3; across: Vector3 }; lodgeAt: Vector3; cacheAt: Vector3 };
   fill(n: number): number;
-  views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined }>;
+  views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined; biteReport(): BiteReport }>;
   saplings: Map<number, unknown>;
   age(i: number, seconds: number): number | false;
   split(i: number): boolean;
@@ -93,6 +95,7 @@ export interface Kit {
   /** m south of the pond's middle to swim to (clear of the lodge). */
   clear(): number;
   standingTrees(b: BuildDebug): number[];
+  /** Gnaws tree i down from the clearing's side, checking its Bite shallow and deep, until it lands. */
   fell(i: number): Promise<void>;
   split(i: number): Promise<void>;
   /** Sticks lying about, not in the hand nor built in. */
@@ -214,11 +217,33 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     await reach("gnaw", (attempt) => attempt ? tree.place : stand, true).catch((e: Error) => { throw new Error(`tree ${i}: ${e.message}`); });
     const falls = after("treeFalls"), lands = after("treeLands");
     want.act = true;
-    try { await until(falls, 15, `gnawed tree ${i} for 15 s, it still stands`); } finally { want.act = false; }
+    try {
+      // The Bite while it deepens, shallow and then deep: drawn, outwards, its rims over the bark's clip, the bark
+      // around it whole and opaque (also with the live camera's clear view fading what is in the way).
+      for (const [depth, name] of BITES) {
+        await until(() => falls() || (build()?.views.get(i)?.biteReport().depth ?? 0) >= depth, 15, `gnawed tree ${i} for 15 s, its Bite never got ${name}`);
+        expect(!falls(), `tree ${i} fell before its Bite was seen ${name}`);
+        await paint(); // the picture of this moment, which the report reads what was drawn from
+        checkBite(i, name);
+      }
+      await until(falls, 15, `gnawed tree ${i} for 15 s, it still stands`);
+    } finally { want.act = false; }
     expect(last.treeFalls!.tree === i, `tree ${last.treeFalls!.tree} fell, not ${i}`);
     // A crown caught in another tree, or a slow tall one, comes to rest without the "landed" moment; the build feature
     // lays every falling tree to rest within 10 s (tree.ts step), so either ends the fall.
     await until(() => lands() || !!standing(build()?.state.trees[i])?.rest, 12, "the tree fell but never landed nor came to rest");
+  };
+  const checkBite = (i: number, name: string) => {
+    const r = needBuild().views.get(i)?.biteReport();
+    expect(!!r, `tree ${i} is gnawed, yet no tree view shows its Bite`);
+    const { wood, rims, bark } = r!, at = `the ${name} Bite (${r!.depth.toFixed(2)}) of tree ${i}`;
+    expect(wood.shown, `${at}: its fresh wood is hidden or see-through`);
+    expect(wood.placed && wood.drawn, `${at}: its fresh wood is not drawn (bounds off the trunk, or culled from the picture)`);
+    expect(wood.outward, `${at}: its fresh wood faces inwards, unseen from outside the trunk`);
+    expect(rims.covered, `${at}: a gap between its rims (${rims.low.toFixed(3)} … ${rims.high.toFixed(3)}) and the bark's clip (${rims.clipLow.toFixed(3)} … ${rims.clipHigh.toFixed(3)})`);
+    expect(bark.some((b) => b.above) && bark.some((b) => !b.above), `${at}: ${bark.length} pieces of bark, not one above and one below`);
+    expect(bark.every((b) => b.shown), `${at}: bark above or below it is hidden`);
+    expect(bark.every((b) => b.opaque), `${at}: bark above or below it is faded see-through`);
   };
   const split = async (i: number) => {
     const b = needBuild();
