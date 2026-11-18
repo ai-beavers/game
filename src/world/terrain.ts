@@ -60,7 +60,7 @@ export function heightAt(x: number, z: number): number {
   // Low where the evening sun goes down; inside the clearing (r < RIM) nothing changes.
   const r = rimDistance(x, z), gap = sunsetGap(x, z);
   h += 4 * smoothstep(RIM, RIM + 6, r) * (1 - 0.7 * gap);
-  h += (Math.max(0, r - RIM - 6) * 0.18 + 5 * smoothstep(RIM + 6, RIM + 25, r) * (0.6 + fbm(x * 0.04, z * 0.04, 2))) * (1 - 0.85 * gap);
+  h += (Math.max(0, r - RIM - 6) * 0.08 + 2 * smoothstep(RIM + 6, RIM + 25, r) * (0.6 + fbm(x * 0.04, z * 0.04, 2))) * (1 - 0.85 * gap);
   // The building site: levelled.
   const ds = Math.hypot(x - SITE.x, z - SITE.z);
   h = mix(SITE.height, h, smoothstep(SITE.radius, SITE.radius + 1.4, ds));
