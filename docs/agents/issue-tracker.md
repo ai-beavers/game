@@ -18,6 +18,10 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 
 File issues only into the user's own repo. Never file into `mattpocock/skills` (the repo these skills come from) unless the user owns it. In a fork, `gh` can default to the upstream parent, so before the first `gh issue create` of a session, check the target with `gh repo view --json nameWithOwner` and confirm it with the user if it is not their repo.
 
+## Wishes
+
+An issue labelled `wish` came from a viewer: the wish flow wrote it up as a spec from a message in the stream's chat and opened it without a triage label. A maintainer reads it and decides: `ready-for-agent` starts the build, `wontfix` ends it. An issue a person opens carries no `wish` label.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
