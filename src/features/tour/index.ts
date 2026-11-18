@@ -440,7 +440,8 @@ export const create: CreateFeature = (game) => {
       if (!live && look() !== undefined) await until(() => !look(), 3, "up again, the picture stays under water");
     }, "Pond patrol"],
     // Down into the deep basin: the school is there and parts round the beaver as it swims into it (C held while above
-    // the school's depth, let go below it, so it stays level with them); up again, a tail slap scatters it.
+    // the school's depth, let go below it, so it stays level with them); up again, the school gathers, a tail slap
+    // scatters it.
     ["Life in the deep", async () => {
       if (!pond) return skip("no pond");
       const deep = (window as { life?: { animals: { deep?: Deep } } }).life?.animals.deep ?? skip("no life in the deep");
@@ -453,26 +454,33 @@ export const create: CreateFeature = (game) => {
       try {
         want.dive = true;
         await until(() => player.diving && depth() > 1, 6, `held C over the basin, never went down (${depth().toFixed(2)} m deep)`);
-        for (let t = 0; t < 12 && met < 1.5;) {
+        for (let t = 0; t < 15 && met < 3;) {
           const c = centre(fish()), b = body();
           want.dive = b.y > c.y - 0.1;
           want.to = new Vector3(c.x, 0, c.z);
-          t += await frame();
+          const dt = await frame();
+          t += dt;
           if (Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 0.6) {
-            met += 1 / 60;
+            met += dt;
             closest = Math.min(closest, ...fish().map((f) => Math.hypot(f.x - b.x, f.y - b.y, f.z - b.z)));
           }
         }
-        expect(met > 0, "swam after the school for 12 s, never got into it");
+        expect(met > 0, "swam after the school for 15 s, never got into it");
         expect(closest > 0.25, `in the school, a fish swam ${closest.toFixed(2)} m from the beaver: it did not part`);
       } finally { want.dive = false; want.to = undefined; }
       await until(() => !player.diving && depth() < 0.45, 6, "let go of C, it never came up");
-      await wait(0.5);
+      // Off to one side, out of the school's way (it parts round a beaver floating over it too), until it is one school
+      // again: the scatter is measured from that, not from the hole the beaver left.
+      const c = centre(fish()), away = Math.hypot(BASIN.x - c.x, BASIN.z - c.z), ux = away > 0.3 ? (BASIN.x - c.x) / away : 1, uz = away > 0.3 ? (BASIN.z - c.z) / away : 0;
+      const apart = () => fish().every((f) => Math.hypot(f.x - player.feet.x, f.z - player.feet.z) > 1.2);
+      await walkTo(c.x + ux * 1.5, c.z + uz * 1.5, { near: 0.6, arrived: apart, limit: 20 });
+      await until(() => spread(fish()) < 0.4, 10, "up again and off to one side, the school never gathered");
       const before = spread(fish()), slapped = after("tailSlap");
       await tap("slap");
       await until(slapped, 2, "pressed Q over the basin, the tail never came down");
-      await wait(1);
-      expect(spread(fish()) > before * 1.5, `slapped, the school stayed together (${before.toFixed(2)} → ${spread(fish()).toFixed(2)} m)`);
+      let most = 0;
+      for (let t = 0; t < 1;) { t += await frame(); most = Math.max(most, spread(fish())); }
+      expect(most > before * 1.5, `slapped, the school stayed together (${before.toFixed(2)} → at most ${most.toFixed(2)} m)`);
       await wait(3); // it gathers again
     }, "Pond patrol"],
     ["Animals at the pond", async () => {

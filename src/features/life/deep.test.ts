@@ -55,6 +55,25 @@ describe("the school in the deep", () => {
     for (let i = 0; i < 60 * 8; i++) stepDeepSchool(school, land, bed, ashore, DT, random);
     expect(spread(school.fish)).toBeLessThan(0.45); // one school again
   });
+  test("never inside the beaver's body, chased down to the bed, in short frames and in long ones", () => {
+    // As the game steps it (index.ts): a frame's time in steps of at most 1/30 s, the beaver where the frame left it.
+    // The beaver after the school's middle at a diving pace, held just under its level: it herds it onto the bed.
+    for (const frame of [1 / 15, 0.4]) for (let seed = 1; seed <= 20; seed++) {
+      const random = seeded(seed), school = makeDeepSchool(land, bed, 14, random);
+      for (let i = 0; i < 300; i++) stepDeepSchool(school, land, bed, ashore, 1 / 30, random);
+      const b = { x: BASIN.x, y: WATER_LEVEL - 1.2, z: BASIN.z };
+      let closest = Infinity;
+      for (let t = 0; t < 8; t += frame) {
+        const c = centre(school.fish), dx = c.x - b.x, dz = c.z - b.z, d = Math.hypot(dx, dz), go = Math.min(d, 0.5 * frame) / (d || 1);
+        b.x += dx * go; b.z += dz * go;
+        b.y = Math.max(heightAt(b.x, b.z), b.y + Math.sign(c.y - 0.1 - b.y - 0.25) * Math.min(Math.abs(c.y - 0.1 - b.y - 0.25), 0.6 * frame));
+        const at = diver(b.x, b.y + 0.25, b.z);
+        for (let left = frame; left > 1e-4; left -= 1 / 30) stepDeepSchool(school, land, bed, at, Math.min(left, 1 / 30), random);
+        closest = Math.min(closest, ...school.fish.map((f) => reachOf(at, f)));
+      }
+      expect(closest).toBeGreaterThan(0.29);
+    }
+  });
   test("scatters at a tail slap and reforms", () => {
     const random = seeded(3), deep = makeDeep(land, bed, { school: 30, carp: 1, crayfish: 2, mussels: 6, snails: 3, striders: 4 }, random);
     for (let i = 0; i < 60 * 10; i++) stepDeepSchool(deep.school, land, bed, ashore, DT, random);
