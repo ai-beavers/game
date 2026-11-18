@@ -7,7 +7,7 @@
 //   const dive = newDive();      stepDive(dive, dt, diveHeld, afloat, headUnder);              // diving, C held
 //   const { low, slow } = stepLow(diveHeld, crawlHeld, facts);                                 // sit (C) and crawl (Y)
 //   trackMotion(motion, dt, facts);                                                            // fills motion in place
-import type { Action, Motion } from "../contracts.ts";
+import { WALK_SPEED, type Action, type Motion } from "../contracts.ts";
 
 export const COYOTE = 0.1; // s after leaving the ground in which a jump still starts
 export const BUFFER = 0.1; // s a press before landing is remembered
@@ -99,7 +99,7 @@ export function stepDive(s: Dive, dt: number, held: boolean, afloat: boolean, un
 // all fours, slower than walking). Both last only while held; nothing is kept from one step to the next.
 export type Low = "none" | "sit" | "crawl";
 /** m/s: a crawl goes at about half the walking speed, and never runs. */
-export const CRAWL_SPEED = 0.4;
+export const CRAWL_SPEED = WALK_SPEED / 2;
 export interface LowFacts { grounded: boolean; afloat: boolean; moving: boolean; acting: boolean; jumping: boolean }
 
 /** Once per step. sit: the dive key held; crawl: Y held. Sit holds only standing still (moving, it walks); crawl

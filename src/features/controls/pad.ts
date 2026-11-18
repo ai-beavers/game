@@ -51,7 +51,7 @@ export function padInput(pad: PadLike, into: Input): Input {
   into.jump = down(pad, BUTTON.a);
   into.act = down(pad, BUTTON.x);
   into.slap = down(pad, BUTTON.rb);
-  into.dive = down(pad, BUTTON.b); // B, as crouch in most games: sits on land, dives swimming (src/player)
+  into.dive = down(pad, BUTTON.b); // B: sits on land, dives swimming (src/player)
   return into;
 }
 

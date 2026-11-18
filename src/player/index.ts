@@ -235,6 +235,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     steering.facing = facing; steering.speed = speed;
     steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
     facing = steering.facing; speed = steering.speed;
+    if (low === "sit") speed = 0; // sitting, it does not slide on: it stops where it sat down
 
     // Up and down: jump, gravity, or floating at the surface.
     const level = waterLevel();
