@@ -1,6 +1,6 @@
 // Tests for the player's pure logic: jump timing, the carry sequence, the Motion bookkeeping. bun test src/player
 import { describe, expect, test } from "bun:test";
-import { TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSteering, steer, stepAction, trackMotion, turnTowards, type ActionState } from "./state.ts";
+import { SLAP_COOLDOWN, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
 
 const dt = 1 / 60;
 
@@ -143,5 +143,32 @@ describe("steer", () => {
     for (let i = 0; i < 30; i++) steer(s, undefined, 0, 0.8, 6, 9, dt);
     expect(s.spin).toBe(0);
     expect(s.facing - at).toBeLessThan(0.25);
+  });
+});
+
+describe("tail slap", () => {
+  test("one strike per press, none while not held up, the next only after the cooldown", () => {
+    const s = newSlap(), act = newAction();
+    let m = newMotion(), hits = 0, steps = 0;
+    const step = (pressed: boolean, allowed = true) => {
+      stepSlap(s, dt, pressed, allowed);
+      const before = { ...m };
+      trackMotion(m, dt, { moved: 0, vertical: 0, turning: 0, grounded: true, afloat: false, act, slap: s.progress });
+      if (slapHits(before, m)) hits++;
+      steps++;
+    };
+    step(true, false);
+    expect(s.progress).toBe(0); // in the air: nothing
+    step(true);
+    for (let i = 0; i < 60; i++) step(i === 30); // a press during the slap is not a second one
+    expect(hits).toBe(1);
+    expect(s.progress).toBe(0);
+    step(true); // still cooling down
+    expect(s.progress).toBe(0);
+    while (steps * dt < SLAP_COOLDOWN + 0.05) step(false);
+    step(true);
+    expect(s.progress).toBeGreaterThan(0);
+    m = { ...m, action: "pickup", actionProgress: 0.6 };
+    expect(slapHits({ ...m, actionProgress: 0.4 }, m)).toBe(false); // a pickup's half way is not a slap
   });
 });

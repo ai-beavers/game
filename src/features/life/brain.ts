@@ -7,7 +7,7 @@
 // Every step function moves its animals by dt seconds and keeps them where they belong: fish under the surface and
 // above the floor, birds and insects above the ground, frogs and ducks at or in the pond, everything inside the rim.
 // The `threat` is the beaver; each kind flees from it in its own way. Splashes (frog jumps, fish darting, ducks
-// rushing) are pushed into `splashes` for whoever draws rings.
+// rushing) are pushed into `splashes` for whoever draws rings. startle() is a tail slap's alarm: all of them at once.
 
 export interface Land {
   heightAt(x: number, z: number): number;
@@ -370,18 +370,7 @@ export function stepFrogs(frogs: Frog[], land: Land, spots: Perch[], threat: Thr
     f.t -= dt;
     if (f.state === "sit") {
       f.stretch = Math.max(0, f.stretch - dt * 5);
-      if (far(threat, f.x, f.z) < (threat.speed > 1.2 ? 3 : 2.2)) {
-        // Into the water: a long jump the way the water is deepest.
-        const toPond = headingOf(land.pond.x - f.x, land.pond.z - f.z), awayBeaver = headingOf(f.x - threat.x, f.z - threat.z);
-        const heading = toPond + clamp(turnTo(toPond, awayBeaver), -0.7, 0.7);
-        let len = 1.1, tx = f.x, tz = f.z;
-        for (; len < 2.2; len += 0.2) { tx = f.x + Math.sin(heading) * len; tz = f.z + Math.cos(heading) * len; if (depthAt(land, tx, tz) > 0.12) break; }
-        f.from = { x: f.x, y: f.y, z: f.z };
-        f.to = { x: tx, y: Math.max(land.heightAt(tx, tz) + 0.02, land.water - 0.07), z: tz };
-        f.heading = heading;
-        f.state = "jump";
-        f.length = f.t = 0.5;
-      }
+      if (far(threat, f.x, f.z) < (threat.speed > 1.2 ? 3 : 2.2)) leap(f, land, threat);
     } else if (f.state === "jump") {
       const k = clamp(1 - f.t / f.length, 0, 1);
       f.x = lerp(f.from.x, f.to.x, k); f.z = lerp(f.from.z, f.to.z, k);
@@ -409,6 +398,19 @@ export function stepFrogs(frogs: Frog[], land: Land, spots: Perch[], threat: Thr
   }
 }
 
+/** Into the water: a long jump the way the water is deepest, turned away from the threat. */
+function leap(f: Frog, land: Land, threat: { x: number; z: number }) {
+  const toPond = headingOf(land.pond.x - f.x, land.pond.z - f.z), awayBeaver = headingOf(f.x - threat.x, f.z - threat.z);
+  const heading = toPond + clamp(turnTo(toPond, awayBeaver), -0.7, 0.7);
+  let len = 1.1, tx = f.x, tz = f.z;
+  for (; len < 2.2; len += 0.2) { tx = f.x + Math.sin(heading) * len; tz = f.z + Math.cos(heading) * len; if (depthAt(land, tx, tz) > 0.12) break; }
+  f.from = { x: f.x, y: f.y, z: f.z };
+  f.to = { x: tx, y: Math.max(land.heightAt(tx, tz) + 0.02, land.water - 0.07), z: tz };
+  f.heading = heading;
+  f.state = "jump";
+  f.length = f.t = 0.5;
+}
+
 function pickShore(spots: Perch[], frogs: Frog[], threat: Threat, random: Random) {
   const free = spots.filter((s) => far(threat, s.x, s.z) > 4 && frogs.every((o) => o.home === s ? false : Math.hypot(o.home.x - s.x, o.home.z - s.z) > 0.3));
   return free.length ? free[Math.floor(random() * free.length)]! : undefined;
@@ -416,20 +418,26 @@ function pickShore(spots: Perch[], frogs: Frog[], threat: Threat, random: Random
 
 // ---- ducks -------------------------------------------------------------------------------------------------------
 
-export interface Duck { x: number; z: number; heading: number; speed: number; goal: { x: number; z: number }; t: number; phase: number; wake: number }
+export interface Duck {
+  x: number; z: number; heading: number; speed: number; goal: { x: number; z: number }; t: number; phase: number; wake: number;
+  /** Seconds of flight left (0: on the water) and how long it is; metres above the water; wings 0 folded … 1 spread. */
+  flying: number; flight: number; air: number; wings: number;
+}
 
 const DUCK_DEPTH = 0.3;
 
 export function makeDucks(land: Land, count: number, random: Random): Duck[] {
   const at = pondPoint(land, random, 0.7);
   return Array.from({ length: count }, (_, i) => ({
-    x: at.x + i * 0.6, z: at.z, heading: random() * TAU, speed: 0, goal: at, t: 0, phase: random() * TAU, wake: 0,
+    x: at.x + i * 0.6, z: at.z, heading: random() * TAU, speed: 0, goal: at, t: 0, phase: random() * TAU, wake: 0, flying: 0, flight: 0, air: 0, wings: 0,
   })).map((d) => (depthAt(land, d.x, d.z) > DUCK_DEPTH ? d : { ...d, x: at.x, z: at.z + 0.01 }));
 }
 
 /** The first duck leads and wanders; the others follow it. All paddle away from the beaver, staying on the water. */
 export function stepDucks(ducks: Duck[], land: Land, threat: Threat, dt: number, random: Random, splashes: Splash[] = []) {
   ducks.forEach((d, i) => {
+    d.wings = clamp(d.wings + (d.flying > 0 ? dt : -dt) * 4, 0, 1);
+    if (d.flying > 0) { fly(d, land, dt, splashes); return; }
     const danger = far(threat, d.x, d.z), scared = danger < (threat.swimming ? 4.5 : 3.2);
     d.t -= dt;
     if (scared && (d.t <= 0 || far(threat, d.goal.x, d.goal.z) < 4)) {
@@ -460,4 +468,78 @@ export function stepDucks(ducks: Duck[], land: Land, threat: Threat, dt: number,
     if (d.wake <= 0 && d.speed > 0.4) { splashes.push({ x: d.x, z: d.z, size: 0.35 }); d.wake = 0.4; }
     d.phase += dt * (1 + d.speed * 12);
   });
+}
+
+const FLIGHT_HEIGHT = 3.5, FLIGHT_SPEED = 3.2, CIRCLE = 0.75; // m over the water, m/s, rad/s it turns while circling
+const COMING_DOWN = 2.5; // s at the end of a flight in which it glides to its landing place
+
+/** Up off the water for `seconds`, to circle the clearing and come down on the pond at `to`. */
+export function takeOffDuck(d: Duck, to: { x: number; z: number }, seconds: number, splashes: Splash[] = []) {
+  d.flying = d.flight = seconds;
+  d.goal = to;
+  splashes.push({ x: d.x, z: d.z, size: 0.6 });
+}
+
+/** A flight: up in a second, round the clearing, then a glide that ends on the water at the goal, with a splash. */
+function fly(d: Duck, land: Land, dt: number, splashes: Splash[]) {
+  d.flying = Math.max(0, d.flying - dt);
+  const dx = d.goal.x - d.x, dz = d.goal.z - d.z, dist = Math.hypot(dx, dz);
+  if (d.flying > COMING_DOWN) {
+    // Circling; near the rim it turns in towards the middle.
+    const turn = Math.hypot(d.x, d.z) > land.rim - 3 ? turnTo(d.heading, headingOf(-d.x, -d.z)) * 2 : CIRCLE;
+    d.heading += turn * dt;
+    d.speed = lerp(d.speed, FLIGHT_SPEED, Math.min(1, dt * 2));
+  } else {
+    // Coming down: towards the goal, at the pace that gets it there as the flight ends.
+    d.heading += turnTo(d.heading, headingOf(dx, dz)) * Math.min(1, dt * 4);
+    d.speed = clamp(dist / Math.max(d.flying, 0.2), 0.3, FLIGHT_SPEED * 1.3);
+  }
+  d.x += Math.sin(d.heading) * d.speed * dt;
+  d.z += Math.cos(d.heading) * d.speed * dt;
+  const up = clamp((d.flight - d.flying) / 1.2, 0, 1), down = clamp(d.flying / COMING_DOWN, 0, 1);
+  d.air = FLIGHT_HEIGHT * up * up * (3 - 2 * up) * down * down * (3 - 2 * down); // eased in and out: no jolt at either end
+  d.phase += dt * 40;
+  if (d.flying > 0) return;
+  // Down: on the water at the goal, sliding on a little, the way it came.
+  if (depthAt(land, d.x, d.z) <= DUCK_DEPTH) { d.x = d.goal.x; d.z = d.goal.z; }
+  d.air = 0; d.speed = 0.4; d.t = 3;
+  splashes.push({ x: d.x, z: d.z, size: 0.6 });
+}
+
+// ---- a tail slap: the alarm --------------------------------------------------------------------------------------
+
+export interface Animals { school: School; birds: Bird[]; frogs: Frog[]; ducks: Duck[] }
+
+/** A tail slap at `at`: everything within `reach` metres flees as from a beaver right there. Fish dart off, frogs on
+ *  the shore leap in, birds on the ground fly up, ducks take off and circle the clearing. Each comes back by its own
+ *  rules (frogs swim home, birds land away from it, ducks come down on the pond). Returns how many reacted. */
+export function startle(animals: Animals, land: Land, perches: Perch[], at: { x: number; z: number }, reach: number, random: Random, splashes: Splash[] = []) {
+  const threat: Threat = { x: at.x, y: land.water, z: at.z, speed: 2, swimming: true };
+  const near = (o: { x: number; z: number }) => far(threat, o.x, o.z) < reach;
+  let count = 0;
+  const school = animals.school.fish.filter(near);
+  for (const f of school) {
+    const d = Math.max(0.1, far(threat, f.x, f.z));
+    f.fear = 1;
+    f.vx = (f.x - at.x) / d * 1.8; f.vz = (f.z - at.z) / d * 1.8;
+    splashes.push({ x: f.x, z: f.z, size: 0.25 });
+  }
+  if (school.length) {
+    let best = animals.school.goal, score = -1;
+    for (let k = 0; k < 8; k++) { const p = pondPoint(land, random, 0.6), s = far(threat, p.x, p.z); if (s > score) { score = s; best = p; } }
+    animals.school.goal = best; animals.school.goalTime = 6;
+  }
+  count += school.length;
+  for (const f of animals.frogs) if (f.state === "sit" && near(f)) { leap(f, land, at); count++; }
+  for (const b of animals.birds) if (b.state === "ground" && near(b)) {
+    takeOff(b, land, pickLanding(land, perches, threat, random, animals.birds.filter((o) => o !== b).map((o) => o.to)));
+    count++;
+  }
+  for (const d of animals.ducks) if (d.flying <= 0 && near(d)) {
+    let best = d.goal, score = -1;
+    for (let k = 0; k < 12; k++) { const p = pondPoint(land, random, DUCK_DEPTH + 0.2), s = far(threat, p.x, p.z); if (s > score) { score = s; best = p; } }
+    takeOffDuck(d, best, 7 + random() * 3, splashes);
+    count++;
+  }
+  return count;
 }

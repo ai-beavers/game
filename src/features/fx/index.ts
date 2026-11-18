@@ -1,6 +1,6 @@
 // The "fx" feature: small effects that make the world answer to the beaver. Dust under its feet on bare earth and
 // sand, blades kicked up when it runs through grass, a puff when it lands; a splash, rings and a wake in the pond,
-// drops falling off when it climbs out; dust when it drops a stick; motes drifting in the light near the camera and
+// drops falling off when it climbs out; a tall splash or a puff of dust for a tail slap; dust when it drops a stick; motes drifting in the light near the camera and
 // now and then a leaf falling under the trees. The work (src/features/build): chips from each bite, leaves shaken loose
 // when a tree starts to fall, dust and leaves where it lands, splinters when it breaks, mud or a splash for each stick
 // in the dam, a cheerful burst when the dam is finished. The weather (game.sky): rain splashing on the ground and the
@@ -204,6 +204,19 @@ export const create: CreateFeature = (game) => {
   stage.scene.metadata.fx = fx;
 
   events.on("enterWater", ({ place, speed }) => splash(place, Math.min(1, 0.3 + speed / 4)));
+
+  // A tail slap: on the water a tall splash and rings running far out, the alarm seen across the pond; on land a
+  // low puff of dust (or grass flung up) round the tail.
+  events.on("tailSlap", ({ place, water }) => {
+    if (water && inWater(place)) {
+      splash(place, 1.4);
+      for (let i = 0; i < 3; i++) ring(place.x, place.z, 0.4, 2.2 + i * 1.3, 1.8 + i * 0.5, 0.55 - i * 0.1);
+      return;
+    }
+    const at = new Vector3(place.x, world.heightAt(place.x, place.z), place.z), ground = surface(at.x, at.z);
+    puff(at, Color3.Lerp(dustColor(ground.color), DUST, 0.3), 7, 0.7, 0.22, 1.1);
+    if (ground.grass) { facing(); kickGrass(at, ground.color); }
+  });
 
   let dripping = 0;
   events.on("leaveWater", () => { dripping = 2.5; });

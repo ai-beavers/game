@@ -200,7 +200,8 @@ export function fishShape(): Shape {
 }
 
 // ---- a mallard pair, 55 cm long ----------------------------------------------------------------------------------
-// anim: x paddling phase, z head dip 0 … 1, w 0 drake … 1 hen. Floats with y = 0 at the water line. Parts: 0 body, 1 head.
+// anim: x paddling phase (it beats the wings too), y wings 0 folded … 1 spread in flight, z head dip 0 … 1, w 0 drake …
+// 1 hen. Floats with y = 0 at the water line. Parts: 0 body, 1 head, 2 left wing, 3 right wing.
 
 export function duckShape(): Shape {
   const green = C(0x0e3a22), collar = C(0xf0f0e8), chest = C(0x5a2e1c), grey = C(0xa8a6a0), back = C(0x5e5444), black = C(0x16161a);
@@ -227,6 +228,15 @@ export function duckShape(): Shape {
     if (Math.abs(n.x) > 0.5 && n.y > 0.05 && n.y < 0.25 && p.y > 0.17) out.copyFrom(henDark); // the eye stripe
   };
   const neckBase = new Vector3(0, 0.09, 0.16);
+  const drakeWing: Paint = (p, n, out) => {
+    Color3.LerpToRef(grey, back, smooth(Math.abs(p.x), 0.1, 0.3), out);
+    if (p.z < -0.005 && p.z > -0.035 && Math.abs(p.x) > 0.08 && Math.abs(p.x) < 0.2 && n.y < 0) out.copyFrom(speculum); // the blue under the wing
+  };
+  const henWing: Paint = (p, _n, out) => void Color3.LerpToRef(hen, henDark, streak(p.x, p.z, 0.5) * 0.5, out);
+  // Spread out from the shoulder; the pose folds them along the back, inside the body, until it flies.
+  const wing = (side: number) => ellipsoid([0.15, 0.008, 0.07], [side * 0.2, 0.1, 0.03], [10, 4], side > 0 ? 2 : 3, drakeWing, {
+    paint2: henWing, bend: (p) => { p.z -= 0.25 * p.x * p.x; },
+  });
   return {
     name: "duck",
     variant: true,
@@ -245,10 +255,16 @@ export function duckShape(): Shape {
       }),
       ellipsoid([0.046, 0.046, 0.066], [0, 0.21, 0.21], [14, 10], 1, drakeHead, { paint2: henHead, bend: (p) => { p.y *= 1 - Math.max(0, p.z) * 0.25; } }),
       ellipsoid([0.026, 0.009, 0.055], [0, 0.196, 0.29], [8, 5], 1, flat(yellow), { turn: [0.25, 0, 0], paint2: flat(orange) }),
+      wing(1), wing(-1),
     ]),
     pose: /* glsl */`
       void pose(float part, vec4 anim, inout vec3 p, inout vec3 n) {
-        if (part > 0.5) turnAround(rotX(anim.z * 1.1 + sin(anim.x * 0.5) * 0.06), vec3(${neckBase.x}, ${neckBase.y}, ${neckBase.z}), p, n);
+        if (part > 1.5) {
+          float side = part < 2.5 ? 1.0 : -1.0, fold = 1.0 - anim.y;
+          vec3 shoulder = vec3(side * 0.05, 0.1, 0.03);
+          turnAround(rotZ(side * sin(anim.x * 0.8) * 0.9 * anim.y) * rotY(side * 1.5 * fold), shoulder, p, n);
+          p = mix(shoulder, p, 0.35 + 0.65 * anim.y); // folded, small and inside the body
+        } else if (part > 0.5) turnAround(rotX(anim.z * 1.1 + sin(anim.x * 0.5) * 0.06), vec3(${neckBase.x}, ${neckBase.y}, ${neckBase.z}), p, n);
         p.x += sin(anim.x) * 0.004 * smoothstep(-0.1, -0.3, p.z);
       }`,
   };

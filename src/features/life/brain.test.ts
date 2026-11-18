@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { POND, RIM, WATER_LEVEL, heightAt } from "../../world/terrain.ts";
 import { seeded } from "../../world/noise.ts";
 import {
-  circling, depthAt, makeBirds, makeDucks, makeFlyers, makeFrogs, makeSchool, shoreSpots, stepBirds, stepButterflies,
+  circling, depthAt, makeBirds, makeDucks, makeFlyers, makeFrogs, makeSchool, shoreSpots, startle, stepBirds, stepButterflies,
   stepDragonflies, stepDucks, stepFrogs, stepSchool, type Land, type Threat,
 } from "./brain.ts";
 
@@ -112,5 +112,39 @@ describe("ducks", () => {
       stepDucks(ducks, land, roaming(i * DT), DT, random);
       for (const d of ducks) expect(depthAt(land, d.x, d.z)).toBeGreaterThan(0.25);
     }
+  });
+});
+
+describe("a tail slap", () => {
+  test("sends every kind off at once, and they come back: ducks down on the pond, frogs to the shore", () => {
+    const random = seeded(8), spots = shoreSpots(land, 20, random);
+    const animals = { school: makeSchool(land, 10, random), birds: makeBirds(land, 4, [], random), frogs: makeFrogs(land, spots, 5, random), ducks: makeDucks(land, 2, random) };
+    const step = () => {
+      stepSchool(animals.school, land, away, DT, random);
+      stepBirds(animals.birds, land, [], away, DT, random);
+      stepFrogs(animals.frogs, land, spots, away, DT, random);
+      stepDucks(animals.ducks, land, away, DT, random);
+    };
+    for (let i = 0; i < 60; i++) step();
+    const slap = { x: POND.x, z: POND.z };
+    for (const b of animals.birds) Object.assign(b, { x: slap.x + 4, z: slap.z + 4, y: heightAt(slap.x + 4, slap.z + 4) }); // one near the pond
+    const n = startle(animals, land, [], slap, 9, random);
+    expect(n).toBeGreaterThanOrEqual(animals.school.fish.length + animals.ducks.length + 1);
+    expect(animals.school.fish.every((f) => f.fear === 1)).toBe(true);
+    expect(animals.frogs.some((f) => f.state === "jump")).toBe(true);
+    expect(animals.birds.every((b) => b.state === "fly")).toBe(true);
+    let highest = 0;
+    for (let i = 0; i < 60 * 12; i++) {
+      step();
+      for (const d of animals.ducks) {
+        highest = Math.max(highest, d.air);
+        expect(Math.hypot(d.x, d.z)).toBeLessThan(land.rim + 0.5);
+        if (d.flying <= 0) expect(depthAt(land, d.x, d.z)).toBeGreaterThan(0.25);
+      }
+    }
+    expect(highest).toBeGreaterThan(2); // they flew
+    expect(animals.ducks.every((d) => d.flying === 0 && d.air === 0)).toBe(true); // and are back on the water
+    for (let i = 0; i < 60 * 30; i++) step();
+    expect(animals.frogs.every((f) => f.state === "sit")).toBe(true);
   });
 });

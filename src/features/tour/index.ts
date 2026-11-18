@@ -55,10 +55,10 @@ export const create: CreateFeature = (game) => {
   const build = () => (window as { build?: BuildDebug }).build;
 
   // ---- what the tour wants, read once per physics step like any other device ----
-  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false }, aimAt = new Vector3();
+  const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false }, aimAt = new Vector3();
   player.keys.add({
     read(into: Input) {
-      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act });
+      Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap });
       if (!want.to) return into;
       const d = new Vector3(want.to.x - player.feet.x, 0, want.to.z - player.feet.z);
       if (d.lengthSquared() < 1e-4) return into;
@@ -79,7 +79,7 @@ export const create: CreateFeature = (game) => {
   const until = async (done: () => boolean, limit: number, why: string) => {
     for (let t = 0; !done();) if ((t += await frame()) > limit) throw new Error(why);
   };
-  const tap = async (key: "act" | "jump", hold = 0.15) => { want[key] = true; await wait(hold); want[key] = false; };
+  const tap = async (key: "act" | "jump" | "slap", hold = 0.15) => { want[key] = true; await wait(hold); want[key] = false; };
   const key = (code: string) => {
     window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
     window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
@@ -128,7 +128,7 @@ export const create: CreateFeature = (game) => {
   };
 
   // ---- what happened: counts and the last of each event ----
-  const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced"] as const;
+  const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "tailSlap", "startled"] as const;
   const count = {} as Record<(typeof NAMES)[number], number>, last: Partial<GameEvents> = {};
   for (const name of NAMES) {
     count[name] = 0;
@@ -267,6 +267,20 @@ export const create: CreateFeature = (game) => {
       const dry = after("leaveWater");
       await walkTo(pond.x + pond.radius + 1.5, pond.z, { arrived: dry, limit: 40 });
       expect(dry(), "swam across, never out again");
+    }, "Pond patrol"],
+    // Out on the pond, the alarm: Q slaps the tail; the crack (tailSlap) must send at least one animal off (startled).
+    ["Tail slap", async () => {
+      if (!pond) return skip("no pond");
+      await walkTo(pond.x - 0.5, pond.z, { near: 0.8, limit: 40 });
+      expect(player.afloat, "out in the pond, yet not afloat");
+      await wait(0.4);
+      const slapped = after("tailSlap"), startled = after("startled");
+      await tap("slap");
+      await until(slapped, 2, "pressed Q afloat, the tail never came down");
+      expect(last.tailSlap!.water, "slapped in the pond, but not on the water");
+      await until(startled, 1, "the tail came down, no animal heard it");
+      expect(last.startled!.count > 0, "the tail came down, no animal fled");
+      await wait(4); // the ducks circle, the fish dart off: something to see
     }, "Pond patrol"],
     ["Animals at the pond", async () => {
       if (!pond) return skip("no pond");
@@ -413,7 +427,7 @@ export const create: CreateFeature = (game) => {
           result = { round: tour.round, station: name, ok: skipped ? "skipped" : false, why: (e as Error).message, seconds: 0 };
           if (!skipped) failed = true;
         }
-        want.act = want.jump = false;
+        want.act = want.jump = want.slap = false;
         result.seconds = +((performance.now() - t0) / 1000).toFixed(1);
         results.push(result);
         if (results.length > 500) results.shift();

@@ -7,10 +7,11 @@
 //
 // Showing a little in the past (DELAY) means there is nearly always a sample on both sides to blend between.
 // Quaternions: pass `quaternion: i` and the four values from i on keep the sign of the previous sample, so the blend
-// takes the short way round.
+// takes the short way round. `follows: { 10: 9 }`: value 10 blends only while value 9 (a step) is the same on both
+// sides; across a change of 9 it holds (the progress of one action never blends into the next one's).
 export const DELAY = 110; // ms: two updates at 20 a second, and some jitter
 
-export interface TrackOptions { angles?: number[]; steps?: number[]; quaternion?: number }
+export interface TrackOptions { angles?: number[]; steps?: number[]; quaternion?: number; follows?: Record<number, number> }
 
 export class Track {
   samples: { t: number; v: number[] }[] = [];
@@ -40,8 +41,9 @@ export class Track {
     while (i < s.length - 1 && s[i + 1]!.t <= t) i++;
     const a = s[i]!, b = s[Math.min(i + 1, s.length - 1)]!;
     const k = b === a ? 0 : Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t)));
-    const steps = this.options.steps ?? [];
-    for (let j = 0; j < a.v.length; j++) out[j] = steps.includes(j) ? a.v[j]! : a.v[j]! + (b.v[j]! - a.v[j]!) * k;
+    const steps = this.options.steps ?? [], follows = this.options.follows ?? {};
+    const holds = (j: number) => steps.includes(j) || (follows[j] !== undefined && a.v[follows[j]!] !== b.v[follows[j]!]);
+    for (let j = 0; j < a.v.length; j++) out[j] = holds(j) ? a.v[j]! : a.v[j]! + (b.v[j]! - a.v[j]!) * k;
     const q = this.options.quaternion;
     if (q !== undefined) {
       const length = Math.hypot(out[q]!, out[q + 1]!, out[q + 2]!, out[q + 3]!) || 1;
