@@ -9,28 +9,32 @@
 // socket is rate limited, a player only ever speaks as itself, and only the host may move the loose things.
 //
 // It keeps the world's work (the build feature's changes: trees gnawed and felled, wood, the dam) in order, as long
-// as it runs (with WORLD_FILE over restarts too), checked by admit() against its own copy of the world; a joiner gets the list. While its world is still
+// as it runs (with WORLD_FILE over restarts too), checked by admit() against its own copy of the world; a joiner gets the list,
+// kept as short as the present world (compact). A player whose change it refuses gets the whole world again. While its world is still
 // empty, the first player with a saved world brings it. Type `reset` and Enter in its terminal to start the world
 // afresh: every player's saved world is forgotten too.
 //
 // On the internet (all optional; without them it behaves as on a LAN):
-//   PUBLIC_URL=https://beaver.example/   the address players are told to share, instead of this machine's
+//   PUBLIC_URL=https://beaver.example/   the address players are told to share, instead of this machine's; pages
+//                                        from there may open the socket too (else only those from the Host asked)
 //   TRUST_PROXY=cloudflare | fly         the client's address comes from that proxy's header (for the per-address limit)
 //   WORLD_FILE=/data/world.json          keeps the world's work there over restarts
 //   GIT_SHA=<commit>                     the build; a page from another build reloads once when it reconnects
-// GET /net/info answers 200 with JSON while the server runs: it is the health check too.
+// GET /net/info answers 200 with JSON while the server runs: it is the health check too. Its changes come only with
+// ?build (the page asks once as it loads).
 import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { networkInterfaces, hostname } from "node:os";
 import index from "./index.html";
 import {
-  admit, bucket, clientAddress, HELLO_TIME, hostOf, INFO_PATH, MAX_MESSAGE, MAX_PLAYERS, parseClient, PATH, PER_ADDRESS,
-  PROXY_HEADERS, restore, type PlayerInfo, type ServerMessage,
+  admit, bucket, clientAddress, compact, HELLO_TIME, hostOf, INFO_PATH, MAX_MESSAGE, MAX_PLAYERS, newEpoch, parseClient, PATH,
+  PER_ADDRESS, PROXY_HEADERS, restore, sameOrigin, uniqueName, type PlayerInfo, type ServerMessage, type Work,
 } from "./src/features/net/protocol.ts";
 import { newState, type BuildChange } from "./src/features/build/rules.ts";
 import type { Built } from "./tools/build.ts";
 
 const PORT = Number(process.env.PORT ?? 5180);
 const RATE = 60, BURST = 120, CHAT_RATE = 1, CHAT_BURST = 4; // messages a second
+const RESEND_RATE = 0.5, RESEND_BURST = 3; // whole worlds a second to one player whose changes are refused
 const STRIKES = 600; // messages dropped for rate before the socket is closed
 const MAX_SOCKETS = 2 * MAX_PLAYERS; // players, and room for those still saying hello or being told it is full
 const VERSION = process.env.GIT_SHA ?? "", WORLD_FILE = process.env.WORLD_FILE || undefined, SAVE_AFTER = 2000; // ms
@@ -80,8 +84,7 @@ async function bundle() {
 
 // ---- the world's work ---------------------------------------------------------------------------------------------
 
-const newEpoch = () => Math.random().toString(36).slice(2, 10);
-let epoch = newEpoch(), world = newState(), log: BuildChange[] = [];
+const work: Work = { epoch: newEpoch(), world: newState(), log: [] };
 
 // With WORLD_FILE, the world comes back after a restart, with its epoch: returning players hold it already and send
 // only what they made meanwhile. It is read through the same checks as live changes; a file that is no world at all
@@ -89,9 +92,9 @@ let epoch = newEpoch(), world = newState(), log: BuildChange[] = [];
 if (WORLD_FILE && existsSync(WORLD_FILE)) {
   const saved = restore(readFileSync(WORLD_FILE, "utf8"));
   if (saved) {
-    ({ world, log } = saved);
-    epoch = saved.whole ? saved.epoch : newEpoch();
-    console.log(`The world from ${WORLD_FILE}: ${log.length} changes${saved.whole ? "" : ", some left out"}.`);
+    Object.assign(work, { world: saved.world, log: saved.log, epoch: saved.whole ? saved.epoch : newEpoch() });
+    console.log(`The world from ${WORLD_FILE}: ${work.log.length} changes${saved.whole ? "" : ", some left out"}.`);
+    compact(work); // a file from before the server compacted
   } else {
     copyFileSync(WORLD_FILE, `${WORLD_FILE}.bad`);
     console.warn(`${WORLD_FILE} holds no world (kept as ${WORLD_FILE}.bad): starting afresh.`);
@@ -104,7 +107,7 @@ function save() {
   saving = undefined;
   if (!WORLD_FILE) return;
   try {
-    writeFileSync(`${WORLD_FILE}.new`, JSON.stringify({ epoch, build: log }));
+    writeFileSync(`${WORLD_FILE}.new`, JSON.stringify({ epoch: work.epoch, build: work.log }));
     renameSync(`${WORLD_FILE}.new`, WORLD_FILE);
   } catch (error) { console.error(`Could not keep the world in ${WORLD_FILE}:`, error); }
 }
@@ -112,18 +115,22 @@ function save() {
 const changed = () => { if (WORLD_FILE) saving ??= setTimeout(save, SAVE_AFTER); };
 if (WORLD_FILE) for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { save(); process.exit(0); });
 
-/** Takes the changes that fit the world, in order, and tells everyone (the sender too, so it can count them). */
-function build(id: number, changes: BuildChange[]) {
-  const taken = changes.filter((c) => admit(world, c));
-  if (!taken.length) return;
-  const n = log.length;
-  log.push(...taken);
-  everyone({ t: "build", id, n, c: taken });
-  changed();
+/** Takes the changes that fit the world, in order, and tells everyone (the sender too, so it can count them). One
+ *  that does not fit was already applied by its sender (a grow asked too early, a tree felled by two at once): it
+ *  gets the server's world again, to take that instead. */
+function build(ws: Socket, changes: BuildChange[]) {
+  const taken = changes.filter((c) => admit(work.world, c)), n = work.log.length;
+  if (taken.length) {
+    work.log.push(...taken);
+    everyone({ t: "build", id: ws.data.peer!.id, n, c: taken });
+    if (compact(work)) everyone({ t: "epoch", epoch: work.epoch, n: work.log.length });
+    changed();
+  }
+  if (taken.length < changes.length && ws.data.resend.take()) send(ws, { t: "world", epoch: work.epoch, build: work.log });
 }
 
 function reset() {
-  epoch = newEpoch(); world = newState(); log = [];
+  Object.assign(work, { epoch: newEpoch(), world: newState(), log: [] });
   everyone({ t: "reset" });
   changed();
   console.log("The world is reset.");
@@ -135,7 +142,7 @@ interface Peer { id: number; name: string; joined: number; carry: number; bot: b
 /** address: what the per-address limit counts it under (undefined: not limited); hello: the timer that closes it
  *  unless it says hello. */
 interface Data {
-  peer?: Peer; rate: ReturnType<typeof bucket>; chat: ReturnType<typeof bucket>; strikes: number; address?: string;
+  peer?: Peer; rate: ReturnType<typeof bucket>; chat: ReturnType<typeof bucket>; resend: ReturnType<typeof bucket>; strikes: number; address?: string;
   hello?: ReturnType<typeof setTimeout>;
 }
 type Socket = Bun.ServerWebSocket<Data>;
@@ -172,14 +179,16 @@ function receive(ws: Socket, text: string) {
       ws.close(1013, "full"); // "try again later"
       return;
     }
-    const me: Peer = { id: nextId++, name: m.name, joined: joins++, carry: -1, bot: !!m.bot, away: false };
+    const name = uniqueName(m.name, [...peers.values()].map((p) => p.name));
+    const me: Peer = { id: nextId++, name, joined: joins++, carry: -1, bot: !!m.bot, away: false };
     data.peer = me;
     peers.set(ws, me);
     const players: PlayerInfo[] = [...peers.values()].filter((p) => p !== me).map(({ id, name }) => ({ id, name }));
     const carried = [...peers.values()].filter((p) => p.carry >= 0).map((p) => [p.id, p.carry] as [number, number]);
     elect();
-    const from = m.epoch === epoch && m.have! <= log.length ? m.have! : 0;
+    const { epoch, log } = work, from = m.epoch === epoch && m.have! <= log.length ? m.have! : 0;
     send(ws, { t: "welcome", id: me.id, host: host ? peers.get(host)!.id : -1, players, addresses, carried, epoch, from, build: log.slice(from), version: VERSION });
+    if (name !== m.name) send(ws, { t: "name", id: me.id, name }); // the name it is known by
     others(ws, { t: "join", id: me.id, name: me.name });
     ws.subscribe("all");
     if (host && host !== ws) send(host, { t: "need" });
@@ -189,8 +198,9 @@ function receive(ws: Socket, text: string) {
   switch (m.t) {
     case "hello": case "name":
       if (!data.chat.take()) return; // each shows as a line in everyone's chat: under the chat's rate
-      peer.name = m.name;
-      others(ws, { t: "name", id: peer.id, name: m.name });
+      peer.name = uniqueName(m.name, [...peers.values()].filter((p) => p !== peer).map((p) => p.name));
+      others(ws, { t: "name", id: peer.id, name: peer.name });
+      if (peer.name !== m.name) send(ws, { t: "name", id: peer.id, name: peer.name });
       return;
     case "away":
       peer.away = m.away;
@@ -217,12 +227,12 @@ function receive(ws: Socket, text: string) {
       if (ws === host) others(ws, m);
       return;
     case "build":
-      build(peer.id, m.c);
+      build(ws, m.c);
       return;
     case "bring":
       // Only into an empty world; one that came too late gets the world there is.
-      if (log.length) send(ws, { t: "world", epoch, build: log });
-      else build(peer.id, m.c);
+      if (work.log.length) send(ws, { t: "world", epoch: work.epoch, build: work.log });
+      else build(ws, m.c);
       return;
   }
 }
@@ -234,13 +244,18 @@ const server = Bun.serve<Data>({
   routes,
   fetch(req, server) {
     const url = new URL(req.url);
-    if (url.pathname === INFO_PATH) return Response.json({ addresses, players: peers.size, max: MAX_PLAYERS, epoch, build: log, version: VERSION });
+    if (url.pathname === INFO_PATH) {
+      // Small for health checks and the join screen; not rate limited, since it costs less than the page itself.
+      const { epoch, log } = work, info = { addresses, players: peers.size, max: MAX_PLAYERS, epoch, changes: log.length, version: VERSION };
+      return Response.json(url.searchParams.has("build") ? { ...info, build: log } : info);
+    }
     if (url.pathname === PATH) {
+      if (!sameOrigin(req.headers.get("origin"), req.headers.get("host"), process.env.PUBLIC_URL)) return new Response("not from here", { status: 403 });
       // Full of players is told after hello (the browser cannot read why an upgrade failed); this only bounds sockets.
       const address = clientAddress(req.headers, server.requestIP(req)?.address, PROXY_HEADER);
       if (address && (perAddress.get(address) ?? 0) >= PER_ADDRESS) return new Response("too many from here", { status: 429 });
       if (sockets.size >= MAX_SOCKETS) return new Response("full", { status: 503 });
-      const data: Data = { rate: bucket(RATE, BURST), chat: bucket(CHAT_RATE, CHAT_BURST), strikes: 0, address };
+      const data: Data = { rate: bucket(RATE, BURST), chat: bucket(CHAT_RATE, CHAT_BURST), resend: bucket(RESEND_RATE, RESEND_BURST), strikes: 0, address };
       return server.upgrade(req, { data }) ? undefined : new Response("WebSocket only", { status: 400 });
     }
     return new Response("not found", { status: 404 });
