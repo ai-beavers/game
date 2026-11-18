@@ -5,7 +5,8 @@
 //
 //   const world = await loadWorld();
 //   world.trees[i] · world.fallDirection(i) · world.restFor(i, direction) · world.woodOf(i, rest)
-//   world.groundAt(x, z, placed) · world.level(placed) · world.atDam(x, z) · world.obstacles(state)
+//   world.groundAt(x, z, placed) · world.level(placed) · world.atDam(x, z) · world.atCache(x, y, z) · world.cache
+//   world.obstacles(state, crates)                what stands in the way, the crates where the host last said
 //   heading(from, to, world.obstacles(state))     which way to walk, round what stands in the way
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
@@ -19,8 +20,8 @@ import { vertices } from "../../world/models.ts";
 import { placeAll } from "../../world/place.ts";
 import { heightAt, POND, SITE, WATER_LEVEL } from "../../world/terrain.ts";
 import { BITE_HEIGHT, measure } from "../build/tree.ts";
-import { bitesToFell, crestHeight, DAM, damPlan, live, pondLevel, profile, SLOTS, woodFrom, type BuildState, type TreeState } from "../build/rules.ts";
-import { woodId } from "./protocol.ts";
+import { bitesToFell, CACHE_AT, crestHeight, DAM, damPlan, live, pondLevel, profile, SLOTS, woodFrom, type BuildState, type TreeState } from "../build/rules.ts";
+import { CRATES, woodId } from "./protocol.ts";
 
 export type Rest = NonNullable<TreeState["rest"]>;
 export interface Circle { x: number; z: number; r: number }
@@ -143,15 +144,16 @@ export async function loadWorld() {
     });
   };
 
-  /** What a beaver walks around: trees standing and lying, stumps, rocks, logs, and the lodge once it stands. */
+  /** What a beaver walks around: trees standing and lying, stumps, rocks, logs, the crates (where the host last said
+   *  they are, by id: a player may push them; else where they wait), and the lodge once it stands. */
   const fixed: Circle[] = [
     ...layout.rock.map((s) => ({ x: s.x, z: s.z, r: 0.55 * s.scale })),
     ...layout.stump.map((s) => ({ x: s.x, z: s.z, r: 0.4 })),
-    ...layout.crate.map((s) => ({ x: s.x, z: s.z, r: 0.35 })), // where they wait: a player may push them elsewhere
     ...layout.log.flatMap((s) => [-0.8, 0, 0.8].map((d) => ({ x: s.x + Math.sin(s.turn) * d, z: s.z + Math.cos(s.turn) * d, r: 0.45 }))),
   ];
-  const obstacles = (state: BuildState): Circle[] => {
+  const obstacles = (state: BuildState, crates?: Map<number, [number, number, number]>): Circle[] => {
     const out = [...fixed];
+    layout.crate.forEach((s, i) => { const at = crates?.get(CRATES + i); out.push({ x: at?.[0] ?? s.x, z: at?.[2] ?? s.z, r: 0.35 }); });
     trees.forEach((t, i) => {
       const now = live(state.trees[i]);
       if (now && now.fell === undefined) out.push({ x: t.x, z: t.z, r: t.collider });
@@ -165,8 +167,12 @@ export async function loadWorld() {
     return out;
   };
 
+  // The food cache on the bed, and where a beaver floats to dive down to it: beside it, off the lodge and the sunken log.
+  const bed = heightAt(CACHE_AT.x, CACHE_AT.z);
+  const cache = { x: CACHE_AT.x, z: CACHE_AT.z, bed, spot: { x: CACHE_AT.x + 0.35, z: CACHE_AT.z - 0.2 } };
+
   return {
-    trees, sticks, groundAt, level, fallDirection, restFor, lineOf, woodOf, obstacles,
+    trees, sticks, groundAt, level, fallDirection, restFor, lineOf, woodOf, obstacles, cache,
     dam: {
       origin, across, along, lodgeAt, local, world,
       /** Where the next stick goes into the dam (slot n < SLOTS). */
@@ -175,6 +181,8 @@ export async function loadWorld() {
     /** Where E builds into the dam (build/index.ts atDam) and onto the lodge (atLodge). */
     atDam: (x: number, z: number) => { const l = local(x, z); return Math.abs(l.x) < DAM.base + 1 && Math.abs(l.z) < DAM.length / 2 + 0.7; },
     atLodge: (x: number, z: number) => Math.hypot(x - lodgeAt.x, z - lodgeAt.z) < 2,
+    /** Diving down by the pile, where E wedges a stick into the cache (build/index.ts atCache). */
+    atCache: (x: number, y: number, z: number) => Math.hypot(x - cache.x, z - cache.z) < 1.4 && y < bed + 1.6,
   };
 }
 export type BotWorld = Awaited<ReturnType<typeof loadWorld>>;
