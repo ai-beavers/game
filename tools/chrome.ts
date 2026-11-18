@@ -4,6 +4,9 @@
 //   page.on("Runtime.consoleAPICalled", (params) => …);
 //   await page.send("Page.navigate", { url });   await page.evaluate("document.title");   await page.close();
 //   page.failed                                      true once a DevTools call came back with an error
+//
+// In a sandbox Chrome does not start. With LOOK_PORT set (the host's look service), the page is then a tab of a Chrome
+// on the host, driven over ws://127.0.0.1:$LOOK_PORT/chrome; pages there load only from this machine.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +25,50 @@ export interface Page {
 }
 
 export async function openChrome(width: number, height: number): Promise<Page> {
+  try { return await localChrome(width, height); }
+  catch (error) {
+    const look = process.env.LOOK_PORT;
+    if (look && /^\d+$/.test(look) && /Chrome did not start/.test(String(error))) return hostChrome(look, width, height);
+    throw error;
+  }
+}
+
+/** A tab of the host's Chrome, lent by the look service to code in a sandbox. */
+async function hostChrome(look: string, width: number, height: number): Promise<Page> {
+  const socket = new WebSocket(`ws://127.0.0.1:${look}/chrome?width=${width}&height=${height}`);
+  let id = 0, ready = false, closing = false;
+  const pending = new Map<number, (result: any) => void>(), listeners = new Map<string, ((params: any) => void)[]>();
+  const page: Page = {
+    failed: false,
+    send: (method, params = {}) => new Promise<any>((done) => {
+      pending.set(++id, done);
+      socket.send(JSON.stringify({ id, method, params }));
+    }),
+    evaluate: async (code) => (await page.send("Runtime.evaluate", { expression: code, returnByValue: true, awaitPromise: true })).result?.value,
+    on: (method, listener) => void listeners.set(method, [...listeners.get(method) ?? [], listener]),
+    close: async () => { closing = true; socket.close(); },
+  };
+  await new Promise<void>((started, failed) => {
+    socket.onmessage = ({ data }) => {
+      const message = JSON.parse(String(data));
+      if (message.ready) { ready = true; return started(); }
+      if (message.id) {
+        if (message.failed) { page.failed = true; if (message.error) console.error("devtools:", message.error); }
+        pending.get(message.id)?.(message.result ?? {});
+        pending.delete(message.id);
+      } else for (const listener of listeners.get(message.method) ?? []) listener(message.params);
+    };
+    socket.onclose = ({ reason }) => {
+      if (!ready) return failed(new Error(`Chrome did not start here, nor on the host: ${reason || "the look service did not answer"}`));
+      if (closing) return;
+      console.error("[chrome] the browser went away");
+      process.exit(1);
+    };
+  });
+  return page;
+}
+
+async function localChrome(width: number, height: number): Promise<Page> {
   const profile = mkdtempSync(join(tmpdir(), "beaver-chrome-"));
   const chrome = Bun.spawn([CHROME, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run",
     "--enable-unsafe-webgpu", "--hide-scrollbars", "--mute-audio", "about:blank"], { stderr: "pipe", stdout: "ignore" });
