@@ -25,9 +25,10 @@ export const newStow = (dark: number): Stow => ({ drawn: dark > OUT, reach: 0 })
 
 const ease = (x: number) => smoothstep(0, 1, x);
 
-/** Busy, so a switch waits: an action under way (the tail slap too), in the air, swimming or diving. */
+/** Busy, so a switch waits: an action under way (the tail slap too), in the air, swimming or diving, sitting or
+ *  crawling (the reach over the shoulder would fight the pose). */
 export const busy = (m: Motion, diving: boolean) =>
-  m.action !== "none" || m.actionProgress > 0 || !m.grounded || m.swimming > 0 || diving;
+  m.action !== "none" || m.actionProgress > 0 || !m.grounded || m.swimming > 0 || diving || m.low !== undefined;
 
 export function stepStow(s: Stow, dt: number, dark: number, busy: boolean): void {
   if (s.at === undefined) {

@@ -1,5 +1,5 @@
 // Another player's beaver: a real beaver (loadBeaver) with its own animator, moved smoothly between the updates
-// its player sends, so it walks, runs, jumps, swims, carries, gnaws and slaps its tail as it does on its own screen.
+// its player sends, so it walks, runs, jumps, swims, sits, crawls, carries, gnaws and slaps its tail as it does on its own screen.
 //
 //   const remote = createRemote(stage, id, name);    starts loading the beaver; updates before it is ready are kept
 //   remote.receive(state, now);                      on every "state" message
@@ -21,11 +21,11 @@ import { unpackMotion } from "./protocol.ts";
 import { doing as doingOf } from "./tags.ts";
 import { DELAY, Track } from "./track.ts";
 
-// The sample is feet x y z, facing, then the 14 packed Motion numbers (protocol.ts): grounded, action and carrying
-// jump from one value to the next instead of blending; actionProgress blends only within one action (the tail slap's
+// The sample is feet x y z, facing, then the 15 packed Motion numbers (protocol.ts): grounded, action, carrying and
+// low (sitting, crawling) jump from one value to the next instead of blending; actionProgress blends only within one action (the tail slap's
 // is action "none"'s, and must not run up from a gnaw's).
 const FACING = 3, MOTION_AT = 4;
-const STEPS = [3, 9, 11].map((i) => i + MOTION_AT), FOLLOWS = { [10 + MOTION_AT]: 9 + MOTION_AT };
+const STEPS = [3, 9, 11, 14].map((i) => i + MOTION_AT), FOLLOWS = { [10 + MOTION_AT]: 9 + MOTION_AT };
 const LIFT = HEIGHT / 2 + 0.02; // feet to the capsule's middle, with the player's gap to the ground
 const NO_CONTACTS = 0x0002_0000; // member of group 1, takes contacts with no group
 const CLOCK = 13, HOLD = 1500; // the Motion's time in the packed list; ms a short action (a build) stays on its tag
