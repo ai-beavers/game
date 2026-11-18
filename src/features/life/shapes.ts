@@ -136,8 +136,8 @@ const THROUGH_SURFACE = /* glsl */`
   float under = waterLevel - vLifeY;
   if (cameraPosition.y > waterLevel && under > 0.) {
     float facing = abs(normalize(cameraPosition - vWorld).y);
-    diffuseColor.rgb = mix(diffuseColor.rgb, skyColor * vec3(.22, .32, .27), clamp(.45 + under * .2, 0., .85));
-    diffuseColor.a = clamp(.65 - under * .13, .25, .55) * smoothstep(.06, .35, facing);
+    diffuseColor.rgb = mix(diffuseColor.rgb, skyColor * vec3(.22, .32, .27), clamp(1. - exp(-.2 * (under + under / max(facing, .25))), .35, .9)); // as src/world/water.ts
+    diffuseColor.a = .85 * smoothstep(.1, .6, facing);
   }`;
 // The light from above, as it comes down through the surface: steeper than the sun.
 const FROM_ABOVE = /* glsl */`normalize(vec3(-sunDirection.x * .4, 1., -sunDirection.z * .4))`;
