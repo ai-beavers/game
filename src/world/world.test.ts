@@ -3,7 +3,8 @@
 import { describe, expect, test } from "bun:test";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { placeAll, SPAWN } from "./place.ts";
-import { heightAt, HILL, POND, pondRatio, RIM, SITE, slopeAt, WATER_LEVEL } from "./terrain.ts";
+import { dayAt } from "../features/sky/clock.ts";
+import { heightAt, HILL, POND, pondRatio, RIM, SITE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
 
 describe("heightAt", () => {
   test("the pond is about 1.2 m deep in its middle", () => {
@@ -39,9 +40,17 @@ describe("heightAt", () => {
     expect(steepest).toBeLessThan(Math.tan((25 * Math.PI) / 180));
     expect(far).toBeGreaterThan(1); // more than 45°
   });
-  test("the edge is higher than the middle, all round", () => {
-    for (let a = 0; a < Math.PI * 2; a += Math.PI / 16)
-      expect(heightAt(Math.cos(a) * (RIM + 7), Math.sin(a) * (RIM + 7))).toBeGreaterThan(heightAt(0, 0) + 2.5);
+  test("the edge is higher than the middle, all round; lower where the evening sun goes down", () => {
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 16) {
+      const x = Math.cos(a) * (RIM + 7), z = Math.sin(a) * (RIM + 7);
+      expect(heightAt(x, z)).toBeGreaterThan(heightAt(0, 0) + (sunsetGap(x, z) > 0 ? 0.8 : 2.5));
+    }
+  });
+  test("the evening sun, 6° to 17° high, reaches the middle of the clearing over the bank", () => {
+    for (const hour of [18.5, 19, 19.5]) {
+      const sun = dayAt(hour).sun, from = heightAt(0, 0) + 0.1;
+      for (let s = 1; s < 70; s += 0.5) expect(heightAt(sun.x * s, sun.z * s)).toBeLessThan(from + sun.y * s);
+    }
   });
 });
 

@@ -26,6 +26,15 @@ export const SIZE = 90, CELL = 0.5; // the ground mesh: SIZE m square, one sampl
 
 const gentleDir = new Vector2(-HILL.x, -HILL.z).normalize(); // the hill's walkable side faces the clearing
 
+/** Where the evening sun goes down (src/features/sky/clock.ts: from 30° high at 17:30 to the horizon at 20:20 it
+ *  moves from about 29° to 2° of atan2(z, x)): the bank is low there and no far trees stand in it. */
+export const SUNSET = { angle: 0.28, width: 0.46 };
+/** 1 in the middle of the gap the evening sun shines through, 0 outside it. */
+export function sunsetGap(x: number, z: number) {
+  const off = Math.atan2(z, x) - SUNSET.angle;
+  return smoothstep(SUNSET.width, SUNSET.width * 0.5, Math.abs(Math.atan2(Math.sin(off), Math.cos(off))));
+}
+
 /** Distance from the middle with a wobble, so the bank is not a circle. */
 const rimDistance = (x: number, z: number) => Math.hypot(x, z) + fbm(x * 0.08 + 3, z * 0.08 - 2, 3) * 3;
 
@@ -48,9 +57,10 @@ export function heightAt(x: number, z: number): number {
   let h = 0.16 + fbm(x * 0.11, z * 0.11, 3) * 0.24;
   h = Math.max(h, h * 0.3 + hillHeight(x, z));
   // The bank at the edge, then land that keeps rising into far hills.
-  const r = rimDistance(x, z);
-  h += 4 * smoothstep(RIM, RIM + 6, r);
-  h += Math.max(0, r - RIM - 6) * 0.18 + 5 * smoothstep(RIM + 6, RIM + 25, r) * (0.6 + fbm(x * 0.04, z * 0.04, 2));
+  // Low where the evening sun goes down; inside the clearing (r < RIM) nothing changes.
+  const r = rimDistance(x, z), gap = sunsetGap(x, z);
+  h += 4 * smoothstep(RIM, RIM + 6, r) * (1 - 0.7 * gap);
+  h += (Math.max(0, r - RIM - 6) * 0.18 + 5 * smoothstep(RIM + 6, RIM + 25, r) * (0.6 + fbm(x * 0.04, z * 0.04, 2))) * (1 - 0.85 * gap);
   // The building site: levelled.
   const ds = Math.hypot(x - SITE.x, z - SITE.z);
   h = mix(SITE.height, h, smoothstep(SITE.radius, SITE.radius + 1.4, ds));
@@ -138,6 +148,27 @@ export function buildTerrain({ scene, physics }: Stage) {
   grain.wrapU = grain.wrapV = DynamicTexture.WRAP_ADDRESSMODE;
   grain.update();
   soil.diffuseTexture = grain;
+  // A finer grain for close up: specks and short strokes on mid grey (grey leaves the colour as it is), every
+  // 0.6 m, turned against the coarse layer so the two never line up; from afar its mipmaps fade to plain grey.
+  const fine = new DynamicTexture("soil detail", 256, scene, true), pen = fine.getContext();
+  pen.fillStyle = "rgb(128,128,128)";
+  pen.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 12000; i++) {
+    const shade = random() < 0.55 ? 20 + random() * 60 : 190 + random() * 65, x = random() * 256, y = random() * 256;
+    const turn = random() * Math.PI, long = 1 + random() * 4, wide = 0.7 + random() * 0.8;
+    pen.fillStyle = `rgb(${shade},${shade},${shade},${0.4 + random() * 0.5})`;
+    for (const [dx, dy] of [[0, 0], [-256, 0], [0, -256], [-256, -256]] as const) { // drawn again across the edges, so it tiles
+      pen.setTransform(Math.cos(turn), Math.sin(turn), -Math.sin(turn), Math.cos(turn), x + dx, y + dy);
+      pen.fillRect(-long / 2, -wide / 2, long, wide);
+    }
+  }
+  pen.setTransform(1, 0, 0, 1, 0, 0);
+  fine.wrapU = fine.wrapV = DynamicTexture.WRAP_ADDRESSMODE;
+  fine.uScale = fine.vScale = 4.3;
+  fine.wAng = 0.61;
+  fine.level = 2; // the ambient texture multiplies the lit colour: mid grey times 2 is 1
+  fine.update();
+  soil.ambientTexture = fine;
   mesh.material = soil;
   // Rapier's heightfield: rows run along z, columns along x, stored column by column, centred on the collider
   // (checked with ray casts, see world.test.ts). Smoother contacts than a trimesh: thin sticks come to rest on it.
