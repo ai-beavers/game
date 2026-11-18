@@ -39,11 +39,15 @@ test("stick speed: walk grows to full at WALK_PUSH, then run grows to 1, directi
   expect(stickSpeed(0, -1).run).toBeCloseTo(1);
 });
 
-test("buttons: A jumps, X or B uses, shoulders and triggers run, d-pad moves", () => {
+test("buttons: A jumps, X or B uses, RB slaps, LB and triggers run, d-pad moves", () => {
   expect(padInput(pad([0, 0], [BUTTON.a]), newInput()).jump).toBe(true);
   expect(padInput(pad([0, 0], [BUTTON.x]), newInput()).act).toBe(true);
   expect(padInput(pad([0, 0], [BUTTON.b]), newInput()).act).toBe(true);
-  expect(padInput(pad([0, 0], [BUTTON.rb]), newInput()).run).toBe(1);
+  expect(padInput(pad([0, 0], [BUTTON.lb]), newInput()).run).toBe(1);
+  const slap = padInput(pad([0, 0], [BUTTON.rb]), newInput());
+  expect(slap.slap).toBe(true);
+  expect(slap.run).toBe(0); // RB no longer runs: it is the tail's
+  expect(padInput(pad([0, 0], [BUTTON.x]), newInput()).slap).toBe(false);
   expect(padInput(pad([0, 0], [], { [BUTTON.rt]: 0.2 }), newInput()).run).toBe(0);
   expect(padInput(pad([0, 0], [], { [BUTTON.rt]: 0.5 }), newInput()).run).toBe(1);
   expect(padInput(pad([0, 0], [BUTTON.up]), newInput()).run).toBe(0); // the d-pad walks

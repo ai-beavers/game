@@ -1,7 +1,9 @@
 // Touch controls: a stick that appears under the left thumb, dragging on the right half turns the camera, two
-// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run) plus a small pause button.
+// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run, slap the tail) plus small pause and
+// photo buttons at the top right.
 //
-//   const pad = touchControls(game, pause);   builds the overlay and listens on the canvas; pause() opens the menu
+//   const pad = touchControls(game, pause, photo);   builds the overlay and listens on the canvas; pause() opens the
+//                                                    menu, photo() the photo mode
 //   game.player.keys.add(pad);                pad.read(input) fills the player's Input once per step
 //   pad.show(visible);                        once per frame: hidden for the photo mode and the pause menu
 //
@@ -14,10 +16,11 @@ import { deadZone, stickSpeed } from "./pad.ts";
 const REACH = 56; // px the knob can go from the stick's centre
 const TURN_X = 0.006, TURN_Y = 0.005; // rad per px of drag, as the mouse
 
-export function touchControls(game: Game, pause: () => void) {
+export function touchControls(game: Game, pause: () => void, photo: () => void) {
   const canvas = game.stage.canvas, camera = game.player.camera;
   const overlay = new Overlay(game.stage,"touch-controls",false,8);
-  const held = { jump: false, act: false }, tapped = { jump: false, act: false };
+  const held = { jump: false, act: false, slap: false }, tapped = { jump: false, act: false, slap: false };
+  const release = () => { for (const k of ["jump","act","slap"] as const) held[k] = tapped[k] = false; };
   let stickId = -1, ox = 0, oy = 0, move = { x: 0, y: 0, run: 0 }, running = false;
   let base: ReturnType<Overlay["rect"]>, knob: typeof base, run: ReturnType<Overlay["button"]>;
   function place(x: number, y: number, kx = 0, ky = 0) {
@@ -38,14 +41,16 @@ export function touchControls(game: Game, pause: () => void) {
     // Buttons under the right thumb, clear of the notch, the rounded corners and the home bar.
     const w = width-inset.right, h = height-inset.bottom;
     overlay.clear();
-    held.jump = held.act = tapped.jump = tapped.act = false;
+    release();
     base = overlay.rect("thumbstick",box(0,0,112,112),"rgba(20,42,35,.45)",56);
     base.color = "#d2d2b8"; base.thickness = 2;
     knob = overlay.rect("thumb",box(0,0,40,40),"rgba(235,235,210,.55)",20);
     rest();
     const jump = overlay.button("jump","Jump",box(w-86,h-87,70,70),() => {});
     const act = overlay.button("use","Use",box(w-150,h-71,56,56),() => {});
-    for (const [key,button] of [["jump",jump],["act",act]] as const) {
+    // Up and left of Jump, past Use and Run, so a thumb resting on Jump reaches it without crossing them.
+    const slap = overlay.button("slap","Slap",box(w-148,h-142,50,50),() => {});
+    for (const [key,button] of [["jump",jump],["act",act],["slap",slap]] as const) {
       button.panel.cornerRadius = 40;
       button.element.onpointerdown = e => {
         e.preventDefault();
@@ -60,6 +65,7 @@ export function touchControls(game: Game, pause: () => void) {
     run.panel.cornerRadius = 27;
     setRun(false);
     overlay.button("pause","Pause",box(w-59,inset.top+10,50,44),pause);
+    overlay.button("photo","Photo",box(w-59,inset.top+60,50,44),photo);
   });
   // Looking: one finger turns, two pinch.
   const looks = new Map<number, { x: number; y: number }>();
@@ -122,7 +128,8 @@ export function touchControls(game: Game, pause: () => void) {
       into.run = running ? 1 : move.run;
       into.jump = held.jump || tapped.jump;
       into.act = held.act || tapped.act;
-      tapped.jump = tapped.act = false;
+      into.slap = held.slap || tapped.slap;
+      tapped.jump = tapped.act = tapped.slap = false;
       return into;
     },
     show(on: boolean) {
@@ -131,8 +138,7 @@ export function touchControls(game: Game, pause: () => void) {
       overlay.show(on);
       if (!on) { // nothing stays pressed behind a menu
         releaseStick();
-        held.jump = held.act = false;
-        tapped.jump = tapped.act = false; looks.clear();
+        release(); looks.clear();
       }
     },
   };
