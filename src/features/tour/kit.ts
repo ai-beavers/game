@@ -36,7 +36,7 @@ export class Skip extends Error {}
 export function skip(why: string): never { throw new Skip(why); }
 const fmt = (v: Vector3) => `${v.x.toFixed(1)}, ${v.z.toFixed(1)}`;
 
-const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "damFinished", "tailSlap", "startled"] as const;
+const NAMES = ["footstep", "jump", "land", "enterWater", "leaveWater", "pickup", "treeFalls", "treeLands", "treeSplits", "stickPlaced", "damFinished", "tailSlap", "startled", "goodTraded"] as const;
 export type EventName = (typeof NAMES)[number];
 
 /** The tour's helpers: everything a station needs besides the game's own modules. */

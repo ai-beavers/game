@@ -5,6 +5,7 @@
 //
 //   const state = newState();
 //   apply(state, { type: "bite", tree: 4 });          true when it changed something; the only way to change state
+//   used(state, "w3")                                 the stick left the world: in the dam, lodge, cache, or traded
 //   live(state.trees[4])                              the tree standing or lying there now (undefined: only a stump)
 //   bitesToFell(radius) · woodFrom(tree, trunk) · damPlan() · moundHeight(placed) · goals(state) · pondRise(placed)
 //   pondLevel(full, placed): where the pond's surface stands with this many sticks in the dam
@@ -74,6 +75,10 @@ export interface BuildState {
   dam: string[];
   /** Has picked up a stick once. */
   found: boolean;
+  /** The sticks paid in at the trading post (src/features/trade), by name: gone from the world, like those in the dam.
+   *  Those of a tree's wood come back when the tree grows back ("grow" clears them); the world's own ("w3") never do.
+   *  Saved games from before the trading post have none. */
+  traded: string[];
 }
 
 export type BuildChange =
@@ -84,9 +89,14 @@ export type BuildChange =
   /** at: the server's clock (ms) when it took the split; only the server stamps it (protocol.ts admit). */
   | { type: "split"; tree: number; at?: number }
   | { type: "grow"; tree: number }
-  | { type: "place"; slot: number; stick: string };
+  | { type: "place"; slot: number; stick: string }
+  /** A stick paid in at the trading post: it leaves the world for everyone (the goods it buys are the payer's own). */
+  | { type: "trade"; stick: string };
 
-export const newState = (): BuildState => ({ version: 1, trees: {}, dam: [], found: false });
+export const newState = (): BuildState => ({ version: 1, trees: {}, dam: [], found: false, traded: [] });
+
+/** The stick of this name has left the world: built into the dam, lodge or cache, or traded. */
+export const used = (s: BuildState, stick: string) => s.dam.includes(stick) || s.traded.includes(stick);
 
 const tree = (s: BuildState, i: number) => (s.trees[i] ??= { bites: 0, splitBites: 0 });
 
@@ -134,10 +144,15 @@ export function apply(s: BuildState, c: BuildChange, now = Date.now()): boolean 
       const t = tree(s, c.tree);
       if (!t.split || t.grown) return false;
       t.grown = { bites: 0, splitBites: 0 };
+      s.traded = s.traded.filter((stick) => !stick.startsWith(`t${c.tree}:`)); // its wood comes back with it
       return true;
     }
+    case "trade":
+      if (used(s, c.stick)) return false;
+      s.traded.push(c.stick);
+      return true;
     case "place":
-      if (s.dam.length >= STICKS || s.dam.includes(c.stick)) return false;
+      if (s.dam.length >= STICKS || used(s, c.stick)) return false;
       s.dam.push(c.stick); // the next free slot, whatever slot the sender saw: two players placing at once both fit
       return true;
   }
@@ -147,7 +162,7 @@ export function apply(s: BuildState, c: BuildChange, now = Date.now()): boolean 
 export function load(text: string | null): BuildState {
   try {
     const s = JSON.parse(text ?? "") as BuildState;
-    if (s?.version === 1 && Array.isArray(s.dam) && typeof s.trees === "object") {
+    if (s?.version === 1 && Array.isArray(s.dam) && typeof s.trees === "object" && (s.traded === undefined || Array.isArray(s.traded))) {
       // Saved before trees grew back: their count starts now.
       for (const t of Object.values(s.trees)) if (t?.split && typeof t.gone !== "number") t.gone = Date.now();
       return { ...newState(), ...s };

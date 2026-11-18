@@ -47,6 +47,8 @@ export interface GameEvents {
   pondLevel: { level: number; rise: number };
   /** A goal of the build feature is reached. */
   goalDone: { goal: string; text: string };
+  /** From the trade feature (src/features/trade): a good went into the backpack; count: how many of it are in it now. */
+  goodTraded: { good: string; count: number };
   /** A change to the build feature's world state. remote false: made here, after it was applied (send it to others);
    *  emit it with remote true to apply a change that came from another player. */
   buildChange: { change: BuildChange; remote: boolean };

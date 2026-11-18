@@ -34,6 +34,14 @@ _Avoid_: lamp, torch, light
 The small pack the beaver always wears on its back. The lantern is kept in it by day; at dusk the beaver reaches over its shoulder to take the lantern out, and at dawn puts it back.
 _Avoid_: bag, rucksack, satchel
 
+**Trading post**:
+The stall in the clearing where the beaver pays sticks for goods. Each good lies on its own spot with its price in sticks.
+_Avoid_: shop, store, market
+
+**Good**:
+A thing the beaver gets at the trading post for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell.
+_Avoid_: item, loot, product
+
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
 _Avoid_: base, house, storage

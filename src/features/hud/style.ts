@@ -5,7 +5,7 @@
 //
 // The screen's regions, each element with one home in one of them:
 //   top left       pause (play, desktop), goals              top centre    the tour's caption, toasts under it
-//   top right      map, hour and weather, fps                bottom left   chat log, connection, chat row
+//   top right      map, hour and weather, fps, backpack      bottom left   chat log, connection, chat row
 //   bottom centre  breath, hints and advice, prompt          bottom right  the thumbs' buttons (controls/touch.ts)
 // Regions never overlap: when the top centre has no room between the sides, live its caption goes above them and the
 // toasts under them, in play both under them; when the bottom centre has none, it goes beside the chat, or above the
@@ -32,6 +32,8 @@ export interface Layout {
   pause?: Box; goals: Box;
   caption: Box; toast: Box;
   map?: Box; status: Box; fps: Box;
+  /** The goods in the backpack (src/features/trade), one row under the fps. */
+  backpack: Box;
   chat: Box; chatRow: Box; log: Box;
   breath: Box; hints: Box; prompt: Box;
   touch?: Box;
@@ -61,9 +63,10 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const map = mapSize ? box(right - rightW + (rightW - mapSize) / 2, top, mapSize, mapSize) : undefined;
   const status = box(right - rightW, top + (mapSize ? mapSize + gap : 0), rightW, row);
   const fps = box(right - rightW, status.y + row + gap, rightW, small * 2);
+  const backpack = box(right - rightW, fps.y + fps.h + gap, rightW, row);
   const pause = !touch && !live ? box(L, top, 68, 36) : undefined;
   const goalsY = pause ? pause.y + pause.h + gap : top;
-  const under = Math.max(fps.y + fps.h, goalsY + u * 6.5) + gap; // a short goals list: the goal at hand, how, one done
+  const under = Math.max(backpack.y + backpack.h, goalsY + u * 6.5) + gap; // a short goals list: the goal at hand, how, one done
   const caption = box((w - centreW) / 2, stacked && !live ? under : T, centreW, row);
   const toast = box(caption.x, stacked && live ? under : caption.y + row + gap, centreW, toastH);
   const goals = box(L, goalsY, leftW, Math.max(row, (stacked ? caption.y - gap : B - u * 10) - goalsY));
@@ -89,7 +92,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const log = box(L, logBottom - logH, chatW, logH);
   const chat = box(L, Math.min(log.y, chatRow.y), chatW, live ? 0 : chatBottom - Math.min(log.y, chatRow.y));
   return {
-    u, small, gap, pad, compact, pause, goals, caption, toast, map, status, fps, chat, chatRow, log, breath, hints, prompt, touch: thumbs,
+    u, small, gap, pad, compact, pause, goals, caption, toast, map, status, fps, backpack, chat, chatRow, log, breath, hints, prompt, touch: thumbs,
     middle: { top: Math.max(fps.y, goalsY + u * 4, stacked ? toast.y + toast.h : 0) + gap, bottom: breath.y - gap },
   };
 }
@@ -98,7 +101,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
  *  grow into, the map's and the caption's what they take. */
 export function homes(l: Layout): [string, Box][] {
   const all: [string, Box | undefined][] = [["pause", l.pause], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * 6.5) }], ["caption", l.caption], ["toast", l.toast],
-    ["map", l.map], ["status", l.status], ["fps", l.fps], ["chat row", l.chatRow], ["log", l.log], ["breath", l.breath], ["hints", l.hints],
+    ["map", l.map], ["status", l.status], ["fps", l.fps], ["backpack", l.backpack], ["chat row", l.chatRow], ["log", l.log], ["breath", l.breath], ["hints", l.hints],
     ["prompt", l.prompt], ["touch", l.touch]];
   return all.filter((e): e is [string, Box] => !!e[1] && e[1].w > 0 && e[1].h > 0);
 }

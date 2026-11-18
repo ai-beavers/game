@@ -201,3 +201,40 @@ test("the lodge rises only once the dam holds, and is fully up with its last sti
   expect(lodgeGrow(SLOTS + LODGE)).toBe(1);
   expect(lodgeGrow(SLOTS + LODGE + 3)).toBe(1);
 });
+
+describe("trading sticks away", () => {
+  const felledAndSplit = (s: ReturnType<typeof newState>, tree: number) => {
+    apply(s, { type: "bite", tree });
+    apply(s, { type: "fell", tree, direction: 0 });
+    apply(s, { type: "rest", tree, at: [0, 0, 0], turn: [0, 0, 0, 1] });
+    for (let k = 0; k < BITES_TO_SPLIT; k++) apply(s, { type: "bite", tree });
+    expect(apply(s, { type: "split", tree })).toBe(true);
+  };
+  test("a stick is traded once, and never one in the dam; one traded is never built in", () => {
+    const s = newState();
+    expect(apply(s, { type: "trade", stick: "w3" })).toBe(true);
+    expect(s.traded).toEqual(["w3"]);
+    expect(apply(s, { type: "trade", stick: "w3" })).toBe(false);
+    expect(apply(s, { type: "place", slot: 0, stick: "w3" })).toBe(false);
+    expect(apply(s, { type: "place", slot: 0, stick: "w4" })).toBe(true);
+    expect(apply(s, { type: "trade", stick: "w4" })).toBe(false);
+    expect(s.traded).toEqual(["w3"]);
+  });
+  test("an old saved game without traded sticks loads, and stays a version 1 game", () => {
+    const old = JSON.stringify({ version: 1, trees: { 2: { bites: 3, splitBites: 0 } }, dam: ["w1"], found: true });
+    const s = load(old);
+    expect(s.traded).toEqual([]);
+    expect(s.dam).toEqual(["w1"]);
+    expect(apply(s, { type: "trade", stick: "w2" })).toBe(true);
+    expect(load(JSON.stringify(s)).traded).toEqual(["w2"]);
+  });
+  test("a tree grown back brings its traded sticks back with it, never the world's own", () => {
+    const s = newState();
+    felledAndSplit(s, 2);
+    felledAndSplit(s, 5);
+    for (const stick of ["t2:3", "t2:4", "t5:3", "w7"]) expect(apply(s, { type: "trade", stick })).toBe(true);
+    expect(apply(s, { type: "grow", tree: 2 })).toBe(true);
+    expect(s.traded).toEqual(["t5:3", "w7"]);
+    expect(apply(s, { type: "trade", stick: "t2:3" })).toBe(true); // back in the world: tradeable again
+  });
+});

@@ -157,7 +157,7 @@ export const create: CreateFeature = (game) => {
   };
   /** A change from another player: a stick going into the dam leaves that player's hand first, into the dam. */
   const fromOthers = (c: BuildChange) => {
-    if (c.type === "place") { const id = stickId(c.stick); if (id !== undefined) things.letGo(id); }
+    if (c.type === "place" || c.type === "trade") { const id = stickId(c.stick); if (id !== undefined) things.letGo(id); }
     events.emit("buildChange", { change: c, remote: true });
     sync();
   };

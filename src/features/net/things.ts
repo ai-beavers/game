@@ -9,7 +9,7 @@ import { holdInHand } from "../../player/grip.ts";
 //   guest: things.receive(places) on each update; things.update() once a frame moves the copies
 //   things.hold(id, holder) / things.release(place, velocity)   a stick in another player's hand, and where it went
 //   things.split(tree, state)   after a tree broke into wood (event treeSplits): the new things get their ids
-//   things.sync()               after anything may have taken a stick out of the world (into the dam)
+//   things.sync()               after anything may have taken a stick out of the world (into the dam, or traded)
 //
 // Things come and go while playing: the build feature adds wood (world.addLoose) and takes sticks into the dam
 // (world.removeLoose). Each has the same id in every browser (protocol.ts: the world's sticks, crates, then each
@@ -21,7 +21,7 @@ import type { Stick } from "../../contracts.ts";
 import { RAPIER } from "../../engine.ts";
 import type { Game } from "../../game.ts";
 import type { BuildState } from "../build/rules.ts";
-import { woodFrom } from "../build/rules.ts";
+import { used, woodFrom } from "../build/rules.ts";
 import { measure } from "../build/tree.ts";
 import { CRATES, woodId, type Place } from "./protocol.ts";
 import { DELAY, Track } from "./track.ts";
@@ -42,14 +42,15 @@ const box = (body: RAPIER.RigidBody) => {
 /** Crates are not in World: they are the bound boxes of 0.5 m. */
 const isCrate = (h: RAPIER.Vector) => [h.x, h.y, h.z].every((v) => Math.abs(v - 0.25) < 0.01);
 
-/** The wood a split tree gives, as ids in the order the build feature adds it: sticks (those not in the dam), logs. */
-function woodOf(game: Game, tree: number, dam: string[]) {
+/** The wood a split tree gives, as ids in the order the build feature adds it: sticks (those not in the dam nor
+ *  traded), logs. */
+function woodOf(game: Game, tree: number, state: BuildState) {
   const sticks: number[] = [], logs: number[] = [], t = game.world.trees?.[tree];
   if (!t) return { sticks, logs };
   const m = measure(t);
   woodFrom(tree, m.trunk, m.radius).forEach((piece, k) => {
     if (piece.kind === "log") logs.push(woodId(tree, k));
-    else if (!dam.includes(`t${tree}:${k}`)) sticks.push(woodId(tree, k));
+    else if (!used(state, `t${tree}:${k}`)) sticks.push(woodId(tree, k));
   });
   return { sticks, logs };
 }
@@ -83,12 +84,12 @@ export function createThings(game: Game, state?: BuildState) {
   {
     const wood = { sticks: [] as number[], logs: [] as number[] };
     if (state) for (const [key, t] of Object.entries(state.trees)) if (t.split) {
-      const w = woodOf(game, +key, state.dam);
+      const w = woodOf(game, +key, state);
       wood.sticks.push(...w.sticks); wood.logs.push(...w.logs);
     }
     const own = world.sticks.length - wood.sticks.length;
     if (own < 0) console.warn("net: the sticks do not match the build state; wood is not shared");
-    const inDam = new Set((state?.dam ?? []).map((n) => /^w(\d+)$/.exec(n)?.[1]).filter((n) => n !== undefined).map(Number));
+    const inDam = new Set([...state?.dam ?? [], ...state?.traded ?? []].map((n) => /^w(\d+)$/.exec(n)?.[1]).filter((n) => n !== undefined).map(Number));
     const order: number[] = [];
     for (let i = 0; order.length < Math.max(0, own); i++) if (!inDam.has(i)) order.push(i);
     if (own >= 0) order.push(...wood.sticks);
@@ -135,13 +136,14 @@ export function createThings(game: Game, state?: BuildState) {
     /** A tree just broke into wood: the things it gave get their ids (state: the build state after the split). */
     split(tree: number, state: BuildState) {
       // A tree grown back breaks into its first one's pieces, moved, not new (build/index.ts): those keep their ids.
-      const all = woodOf(game, tree, state.dam), wood = { sticks: all.sticks.filter((id) => !things.has(id)), logs: all.logs.filter((id) => !things.has(id)) };
+      const all = woodOf(game, tree, state), wood = { sticks: all.sticks.filter((id) => !things.has(id)), logs: all.logs.filter((id) => !things.has(id)) };
       const fresh = world.sticks.filter((s) => !sticks.has(s)), logs = newLogs();
       if (fresh.length !== wood.sticks.length || logs.length !== wood.logs.length) console.warn("net: the wood of tree", tree, "does not match; partly shared");
       fresh.forEach((thing, k) => { if (wood.sticks[k] !== undefined) add(wood.sticks[k]!, thing, true); });
       logs.forEach((body, k) => { if (wood.logs[k] !== undefined) add(wood.logs[k]!, { mesh: meshOf(body)!, body }, false); });
     },
-    /** Forgets every stick that is no longer in the world (built into the dam): its body is gone. Returns their ids. */
+    /** Forgets every stick that is no longer in the world (built into the dam, or traded): its body is gone. Returns
+     *  their ids. */
     sync() {
       const here = new Set(world.sticks), gone: number[] = [];
       for (const [thing, id] of sticks) if (!here.has(thing)) {

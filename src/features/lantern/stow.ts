@@ -9,7 +9,8 @@ import { smoothstep } from "../../world/noise.ts";
 /** Out above OUT, back in below IN: between the two it keeps what it did, so a slow dusk never flips it to and fro.
  *  The sky's dark follows the sun only, so rain and fog never bring the lantern out. */
 const OUT = 0.15, IN = 0.05;
-const RISE = 0.5, HOLD = 0.1, FALL = 0.6; // s: the paw up to the backpack, there, and back down: 1.2 s in all
+/** s: the paw up to the backpack, there, and back down: 1.2 s in all. The trade feature reaches the same way. */
+export const RISE = 0.5, HOLD = 0.1, FALL = 0.6;
 
 export interface Stow {
   /** The lantern is out of the backpack: drawn, hanging from the left paw, giving light. */
@@ -24,6 +25,8 @@ export interface Stow {
 export const newStow = (dark: number): Stow => ({ drawn: dark > OUT, reach: 0 });
 
 const ease = (x: number) => smoothstep(0, 1, x);
+/** How far the paw is on its way to the backpack (Motion.reachBack), t s into a reach: up, there, back down. */
+export const reachAt = (t: number) => t < RISE ? ease(t / RISE) : t < RISE + HOLD ? 1 : t < RISE + HOLD + FALL ? 1 - ease((t - RISE - HOLD) / FALL) : 0;
 
 /** Busy, so a switch waits: an action under way (the tail slap too), in the air, swimming or diving. */
 export const busy = (m: Motion, diving: boolean) =>
@@ -43,5 +46,5 @@ export function stepStow(s: Stow, dt: number, dark: number, busy: boolean): void
   const before = s.at, t = (s.at += dt);
   if (before < RISE && t >= RISE) s.drawn = !s.drawn; // at the backpack: the lantern changes hands
   if (t >= RISE + HOLD + FALL) { s.at = undefined; s.reach = 0; return; }
-  s.reach = t < RISE ? ease(t / RISE) : t < RISE + HOLD ? 1 : 1 - ease((t - RISE - HOLD) / FALL);
+  s.reach = reachAt(t);
 }
