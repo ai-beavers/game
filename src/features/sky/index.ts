@@ -1,9 +1,10 @@
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector2 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
-import { daylightOf, SKY_FILL, SUN_INTENSITY } from "../../light.ts";
+import { daylightOf, EXPOSURE, SKY_FILL, SUN_INTENSITY } from "../../light.ts";
 import { waterOf } from "../../world/water.ts";
 import { DAY_SECONDS, dayAt, START } from "./clock.ts";
 import { createDome } from "./dome.ts";
@@ -20,7 +21,7 @@ export interface SkyState {
 
 const WHITE = Color3.White();
 const DAY_HORIZON = new Color3(0.76, 0.86, 0.92), DUSK = new Color3(0.99, 0.61, 0.41);
-const NIGHT = new Color3(0.054, 0.079, 0.155), GREY = new Color3(0.53, 0.59, 0.65);
+const NIGHT = new Color3(0.054, 0.079, 0.155), GREY = new Color3(0.53, 0.59, 0.65), MOONLIT = new Color3(0.46, 0.58, 0.95);
 
 export const create: CreateFeature = game => {
   const { scene } = game.stage;
@@ -47,6 +48,10 @@ export const create: CreateFeature = game => {
   const dry = ground instanceof StandardMaterial ? ground.diffuseColor.clone() : null;
   const horizon = new Color3(), wind = new Vector2();
   scene.fogMode = Scene.FOGMODE_EXP2;
+  const grade = scene.imageProcessingConfiguration, curves = new ColorCurves();
+  curves.shadowsHue = curves.midtonesHue = 228;
+  grade.colorCurves = curves;
+  grade.colorCurvesEnabled = true; // on all day (neutral by day), so the shader never recompiles at dusk
   let time = 0;
   function update() {
     const day = dayAt(state.hour), { clouds, fog, wet } = weather;
@@ -59,8 +64,13 @@ export const create: CreateFeature = game => {
     sun.direction.copyFrom(day.light);
     sun.diffuse.copyFrom(day.color);
     sun.intensity = day.intensity / SUN_INTENSITY * 1.6 * (1 - clouds * 0.77) * (1 - fog * 0.35);
-    sky.intensity = (1.15 - day.night * 0.94) * (1 - clouds * 0.23);
-    Color3.LerpToRef(WHITE, NIGHT, day.night * 0.6, sky.diffuse);
+    sky.intensity = (1.15 - day.night * 0.75) * (1 - clouds * 0.23);
+    Color3.LerpToRef(WHITE, MOONLIT, day.night, sky.diffuse); // a cool floor: at night nothing sinks into black
+    grade.exposure = day.exposure / EXPOSURE; // the eye opens up as it gets dark
+    // and sees less colour, more blue, under the moon; the highlights keep theirs, so warm points stay warm.
+    curves.shadowsSaturation = curves.midtonesSaturation = -30 * day.night;
+    curves.shadowsDensity = 100 * day.night;
+    curves.midtonesDensity = 90 * day.night;
     sky.diffuse.scaleInPlace(1 - (1 - SKY_FILL) * (1 - day.night) * (1 - clouds)); // room for the sun's shadows by day
     if (water) water.rain.value = weather.rain;
     if (dry && ground instanceof StandardMaterial) {

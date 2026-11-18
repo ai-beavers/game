@@ -16,7 +16,7 @@ import { ENVIRONMENT, EXPOSURE, SUN_COLOR, SUN_DIRECTION, SUN_INTENSITY } from "
 export const START = 16; // the hour the game was tuned for
 export const DAY_SECONDS = 720; // one day in seconds of play
 const DEG = Math.PI / 180, LATITUDE = 45 * DEG, NOON = 13;
-const MOON_DECLINATION = 12 * DEG, MOON_NOON = 1.5; // highest at half past one at night, about 52° up
+const MOON_DECLINATION = 12 * DEG, MOON_NOON = 23.5; // highest at half past eleven, about 57° up: high over the evening, low by dawn
 
 /** Unit vector to a body at this hour: x east, y up, z north, before the path is turned. */
 function local(hour: number, declination: number, noon: number, out = new Vector3()) {
@@ -60,13 +60,14 @@ const START_HEIGHT = Math.asin(towardsSun.y) / DEG; // 42.7°
 // Over the sun's height in degrees. The column at START_HEIGHT holds daylight()'s own values.
 const H = [-18, -10, -5, -1, 0, 3, 8, 15, 25, START_HEIGHT, 90];
 const sunIntensity = table(H, [0, 0, 0, 0, 0.35, 1.4, 2.5, 3.3, 3.85, SUN_INTENSITY, 4.5]);
-const exposure = table(H, [1.15, 1.12, 1.05, 0.95, 0.86, 0.74, 0.6, 0.54, 0.5, EXPOSURE, 0.48]);
+// The eye opens up fully by the end of the blue hour, so the hand-over from sun to moon has no dark gap.
+const exposure = table(H, [1.4, 1.36, 1.2, 0.94, 0.86, 0.72, 0.66, 0.58, 0.52, EXPOSURE, 0.48]);
 const environment = table(H, [2.4, 2.4, 2.0, 1.45, 1.15, 0.8, 0.52, 0.4, 0.36, ENVIRONMENT, 0.35]);
 const SUN_COLORS: [number, Color3][] = [
   [0, hex(0xff7034)], [3, hex(0xff9455)], [8, hex(0xffb47a)], [15, hex(0xffcc96)],
   [25, hex(0xffe2b8)], [START_HEIGHT, hex(SUN_COLOR)], [90, hex(0xfff6e6)],
 ];
-const MOON_LIGHT = new Color3(0.55, 0.68, 1.0), MOON_INTENSITY = 0.85;
+const MOON_LIGHT = new Color3(0.55, 0.68, 1.0), MOON_INTENSITY = 1.1;
 
 function sunColor(height: number, out: Color3) {
   if (height <= SUN_COLORS[0]![0]) return out.copyFrom(SUN_COLORS[0]![1]);
