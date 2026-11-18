@@ -21,9 +21,11 @@
 # show, fine grey-brown whiskers, nearly black hands and feet, the flat scaly tail. Not from them: it walks
 # upright (beavers do stand and carry things on their hind legs, but do not stride), its arms are long enough to
 # pose, and anger turns it red and muscular.
-# The look (sleek grey-brown coat, grey-white muzzle, slate tail, grey feet, a large head that runs into the back
-# without a step) follows a beaver model the user chose as a reference: sketchfab.com/3d-models/beaver-6fd1d674…
-# by Ramhat. It is not downloadable and not licensed for reuse, so nothing of it is in here: no mesh, no texture.
+# The build (a large head that runs into the back without a step) follows a beaver model the user chose as a
+# reference: sketchfab.com/3d-models/beaver-6fd1d674… by Ramhat. It is not downloadable and not licensed for reuse,
+# so nothing of it is in here: no mesh, no texture. The look is painterly-warm and made to read at 60 px on a stream:
+# a chestnut coat with a cream belly and muzzle, umber hands and feet, a broad charcoal paddle with diamond scales,
+# larger eyes with a catchlight, bright orange incisors, and a short shirt that leaves rump and tail free.
 import bpy, bmesh, math, subprocess, sys, tempfile
 import numpy as np
 from mathutils import Quaternion, Vector
@@ -85,30 +87,33 @@ SHOULDER, ARM = Vector((0.15, 0, 0.64)), Vector((math.sin(math.radians(50)), 0, 
 ELBOW, WRIST = SHOULDER + ARM * 0.19, SHOULDER + ARM * 0.36
 EAR, EAR_INSIDE = Vector((0.136, 0.07, 0.915)), Vector((0.136, 0.054, 0.912))
 # Placed against photographs of beavers: small eyes high and far back, a small matt nose, incisors that just show.
-EYE, NOSE, TOOTH = Vector((0.102, -0.125, 0.9)), Vector((0, -0.3, 0.822)), Vector((0.0155, -0.28, 0.756))
+# Painterly: the eyes sit a little further forward and are as large as a real beaver's get, so the face reads on a
+# phone; the orange incisors are long enough to show from across the clearing.
+EYE, EYE_R, NOSE, TOOTH = Vector((0.094, -0.15, 0.897)), 0.025, Vector((0, -0.3, 0.822)), Vector((0.0175, -0.282, 0.748))
 tilt = lambda sign: (0, -sign * math.radians(50), 0)  # along the arm
 # The head is modelled large, where its parts are easy to place: every head coordinate in this file is "as
 # modelled". head_size brings a point down to a beaver's proportions, about the top of the neck (measure.py
 # checks the result against published measurements); head_model goes back.
-NECK, HEAD_SCALE = Vector((0, -0.06, 0.745)), 0.6
+NECK, HEAD_SCALE = Vector((0, -0.06, 0.745)), 0.66  # a little larger than life: the face carries the character
 head_size = lambda p: NECK + (Vector(p) - NECK) * HEAD_SCALE
 head_model = lambda p: NECK + (p - NECK) / HEAD_SCALE
 head_part = lambda centre, radii: (head_size(centre), tuple(r * HEAD_SCALE for r in radii))
 parts = [
     ((0, 0.04, 0.24), (0.175, 0.2, 0.21)),  # hips: the heavy end of the pear
     ((0, 0, 0.4), (0.178, 0.185, 0.29)),  # belly
+    ((0, -0.05, 0.37), (0.16, 0.16, 0.2)),  # … round in front: the shirt shows it
     ((0, -0.01, 0.6), (0.155, 0.15, 0.19)),  # chest
     ((0, -0.045, 0.685), (0.12, 0.12, 0.085)),  # thick neck, ending below the head
     ((0, 0.03, 0.725), (0.105, 0.12, 0.1)),  # nape: the back runs up into the head without a step
     head_part((0, -0.03, 0.845), (0.145, 0.2, 0.128)),  # skull: broad, long and flat on top
-    head_part((0, -0.2, 0.805), (0.098, 0.135, 0.082)),  # the muzzle carries the line on: in profile the head is a blunt wedge
+    head_part((0, -0.2, 0.805), (0.105, 0.135, 0.09)),  # the muzzle carries the line on: in profile the head is a blunt wedge
     ((0, 0.17, 0.2), (0.085, 0.1, 0.08)),  # tail root
     ((0, 0.08, 0.46), (0.14, 0.115, 0.26)),  # the rounded back
 ]
 for sign in (1, -1):
     parts += [
-        head_part(side((0.078, -0.12, 0.785), sign), (0.072, 0.1, 0.07)),  # cheek
-        head_part(side(EAR, sign), (0.036, 0.018, 0.036)),  # ear: small, round, far back
+        head_part(side((0.074, -0.13, 0.785), sign), (0.076, 0.1, 0.08)),  # cheek: full and round, it frames the teeth
+        head_part(side(EAR, sign), (0.042, 0.02, 0.042)),  # ear: small, round, far back
         (side(SHOULDER + ARM * 0.095, sign), (0.055, 0.055, 0.125), tilt(sign)),  # upper arm
         (side(ELBOW + ARM * 0.085, sign), (0.045, 0.045, 0.105), tilt(sign)),  # forearm
         (side((0.105, 0.06, 0.21), sign), (0.07, 0.12, 0.12)),  # haunch: a beaver carries its weight behind
@@ -119,7 +124,10 @@ body = blob(parts, "body", 0.011, 18)  # smoothed well: a beaver is one round lu
 body.data.materials.append(material("fur", (0.09, 0.045, 0.022), 0.9))  # beaver.js lays the fur over this
 
 
-HEM, COLLAR, SLEEVE = 0.27, 0.7, 0.12  # heights of the shirt's edges, and how far down the arm the sleeves reach
+HEM, COLLAR, SLEEVE = 0.36, 0.7, 0.085  # heights of the shirt's edges, and how far down the arm the sleeves reach
+# A short cut, its hem rising towards the back: in front it covers the belly, behind the rump and the tail show.
+HEM_RISE = 0.38
+HEM_NORMAL = Vector((0, -HEM_RISE, 1)).normalized()
 
 
 def in_shirt(p, arm, slack=0.0):
@@ -127,7 +135,7 @@ def in_shirt(p, arm, slack=0.0):
     arm: how much of the vertex belongs to the arm bones; where arm and flank meet, position alone cannot tell."""
     if arm > 0.5:
         return (mirrored(p) - SHOULDER).dot(ARM) < SLEEVE + slack
-    return HEM - slack < p.z < COLLAR + slack
+    return HEM - slack < p.z - HEM_RISE * p.y and p.z < COLLAR + slack
 
 
 # The fur shader's masks: short fur around eyes, nose, teeth and on the ears (none inside them); pale cheeks, chin
@@ -144,7 +152,7 @@ for v in body.data.vertices:
     on_head = smooth(0.75, 0.775, p.z)
     h = head_model(p) if on_head > 0.5 else p  # the rules about the face are written for the head as modelled
     length = max(0.1, smooth(0.02, 0.17, min((h - c).length for c in clear))) * (0.4 if h.z > 0.89 and abs(h.x) > 0.105 and h.y > 0.03 else 1) * (0.12 if (mirrored(h) - EAR_INSIDE).length < 0.032 else 1) * (1 - 0.62 * on_head) * smooth(0.035, 0.11, (h - LIP).length)  # short on the head, none on the lip: it would hang over the teeth
-    belly = smooth(0.02, -0.11, p.y) * smooth(0.72, 0.5, p.z) * smooth(0.1, 0.25, p.z) * smooth(0.16, 0.07, abs(p.x))
+    belly = smooth(0.02, -0.11, p.y) * smooth(0.72, 0.5, p.z) * smooth(0.1, 0.25, p.z) * smooth(0.17, 0.08, abs(p.x))
     chin = smooth(-0.06, -0.16, h.y) * smooth(0.86, 0.79, h.z) * smooth(0.64, 0.72, h.z)
     muzzle = on_head * smooth(0.19, 0.07, (h - Vector((0, -0.29, 0.775))).length)  # grey-white around mouth and nose
     blocked = 0
@@ -153,12 +161,12 @@ for v in body.data.vertices:
             hit = tree.ray_cast(p + n * 0.004, ray, 0.25)
             blocked += (1 - hit[3] / 0.25) if hit[0] else 0
     open_ = 1 - min(1, blocked / (len(rays) * 0.4 * 0.5))
-    mask.data[v.index].color = (length, min(1, belly * 0.3 + chin * 0.7 + muzzle), open_, 1)
+    mask.data[v.index].color = (length, min(1, belly * 0.9 + chin * 0.8 + muzzle), open_, 1)
 body.data.color_attributes.active_color = mask
 
 
 # ---- parts without fur ---------------------------------------------------------------------------------------
-skin = material("skin", (0.026, 0.023, 0.022), 0.62)  # hands and feet are dark grey
+skin = material("skin", (0.045, 0.026, 0.018), 0.62)  # hands and feet: a warm umber, darker than the coat
 horn = material("claw", (0.1, 0.075, 0.05), 0.3)
 hands, feet, claws = {}, {}, {}
 for sign, lr in ((1, "L"), (-1, "R")):
@@ -178,11 +186,12 @@ for sign, lr in ((1, "L"), (-1, "R")):
         claws[kind, lr].data.materials.append(horn)
     for o in (hands[lr], claws["hand", lr]):  # a beaver's hands are small: brought down to size about the wrist
         for v in o.data.vertices:
-            v.co = side(WRIST, sign) + (v.co - side(WRIST, sign)) * 0.7
+            v.co = side(WRIST, sign) + (v.co - side(WRIST, sign)) * 0.82
 
 
-def scales(name, cells, depth, size=512):
-    """Scaly or pebbled skin as a colour and a normal texture: jittered cells, plates raised between dark grooves."""
+def scales(name, cells, depth, size=512, hatch=False, dark=0.025, light=0.05):
+    """Scaly or pebbled skin as a colour and a normal texture: jittered cells, plates raised between dark grooves.
+    hatch: diamond plates between two crossing sets of grooves instead, as on a beaver's tail."""
     rng = np.random.default_rng(7)
     points = np.stack(np.meshgrid(np.arange(cells), np.arange(cells), indexing="ij"), -1) + rng.uniform(0.2, 0.8, (cells, cells, 2))
     shade = rng.uniform(0.75, 1.15, (cells, cells))
@@ -198,10 +207,15 @@ def scales(name, cells, depth, size=512):
             f2 = np.where(d < f1, f1, np.minimum(f2, d))
             f1 = np.minimum(f1, d)
     height = np.clip((f2 - f1) / 0.3, 0, 1) ** 0.6
+    if hatch:  # u + v and u - v run along the diagonals; with whole cells the lines wrap, so it still tiles
+        a, b = u + v, u - v
+        groove = np.minimum(np.minimum(a % 1, 1 - a % 1), np.minimum(b % 1, 1 - b % 1))
+        height = np.clip(groove / 0.14, 0, 1) ** 0.6
+        tone = shade[np.floor(a).astype(int) % cells, np.floor(b).astype(int) % cells]
     gv, gu = np.gradient(height, cells / size)
     normal = np.stack((-gu * depth, -gv * depth, np.ones_like(gu)), -1)
     normal = normal / np.linalg.norm(normal, axis=-1, keepdims=True) * 0.5 + 0.5
-    colour = ((0.025 + 0.05 * height * tone)[..., None] * np.array((0.86, 0.87, 1.0))) ** (1 / 2.2)  # slate grey; linear albedo, stored as sRGB
+    colour = ((dark + light * height * tone)[..., None] * np.array((1.0, 0.78, 0.66))) ** (1 / 2.2)  # warm charcoal; linear albedo, stored as sRGB
     images = []
     for kind, rgb, space in (("colour", colour, "sRGB"), ("normal", normal, "Non-Color")):
         image = bpy.data.images.new(f"{name}_{kind}", size, size, alpha=False)
@@ -221,12 +235,13 @@ def set_uv(obj, at):
         layer.data[loop.index].uv = at(obj.data.vertices[loop.vertex_index])
 
 
-tail = blob([((0, 0.33, 0.105), (0.075, 0.175, 0.02), (math.radians(-17), 0, 0))], "tail", 0.005, 2)
-set_uv(tail, lambda v: (v.co.x / 0.17 + 0.5, (v.co.y - 0.15) / 0.17))  # seen from above; top and bottom share the texture
-tail_mat = material("tail", (0.03, 0.025, 0.022), 0.9, Specular_IOR_Level=0.15)  # matt leather: a flat paddle mirrors the room at a low angle otherwise
+# The paddle: broad and flat, wide behind the middle, narrowing into a short stalk at the rump; it reads from behind.
+tail = blob([((0, 0.35, 0.13), (0.105, 0.165, 0.022), (math.radians(-10), 0, 0)), ((0, 0.2, 0.17), (0.05, 0.07, 0.03), (math.radians(-10), 0, 0))], "tail", 0.005, 2)  # carried above the grass
+set_uv(tail, lambda v: (v.co.x / 0.2 + 0.5, (v.co.y - 0.15) / 0.2))  # seen from above; top and bottom share the texture
+tail_mat = material("tail", (0.03, 0.025, 0.022), 0.75, Specular_IOR_Level=0.25)  # matt leather: a flat paddle mirrors the room at a low angle otherwise
 nodes, links = tail_mat.node_tree.nodes, tail_mat.node_tree.links
 bsdf = next(n for n in nodes if n.type == "BSDF_PRINCIPLED")
-colour_image, normal_image = scales("tail", 34, 0.1)
+colour_image, normal_image = scales("tail", 9, 0.14, hatch=True, dark=0.012, light=0.075)  # large diamonds: they read at a distance
 colour_node = nodes.new("ShaderNodeTexImage")
 colour_node.image = colour_image
 links.new(colour_node.outputs["Color"], bsdf.inputs["Base Color"])
@@ -260,15 +275,22 @@ for o in (*hands.values(), *feet.values()):
     unwrap(o)
 
 face = []  # rigid on the head bone
-eye_mat = material("eye", (0.02, 0.009, 0.005), 0.03)  # dark brown
+eye_mat = material("eye", (0.012, 0.006, 0.004), 0.03)  # dark brown, nearly black
+glint = material("glint", (1, 1, 1), 0.5, Emission_Color=(1, 0.97, 0.9, 1), Emission_Strength=1.0)
 for sign, lr in ((1, "L"), (-1, "R")):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=0.018, location=side(EYE, sign))
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=EYE_R, location=side(EYE, sign))
     face.append(bpy.context.object)
     face[-1].name = f"eye_{lr}"
     face[-1].data.materials.append(eye_mat)
+    # A painted catchlight, up and to the front: the eye stays alive in shade and at stream size.
+    out = (side(EYE, sign) - Vector((0, -0.02, 0.85))).normalized()
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=EYE_R * 0.3, location=side(EYE, sign) + (out + Vector((0, -0.9, 0.7))).normalized() * EYE_R * 0.86)
+    face.append(bpy.context.object)
+    face[-1].name = f"glint_{lr}"
+    face[-1].data.materials.append(glint)
 # The nose pad with its two wings; the nostrils are dull black pits in it.
-face.append(blob([(NOSE, (0.04, 0.03, 0.026)), *((side(Vector((0.02, -0.008, -0.005)), sign) + NOSE, (0.018, 0.016, 0.013)) for sign in (1, -1))], "nose", 0.004, 2))  # set into the muzzle's tip, not in front of it
-nose_mat = material("nose", (0.03, 0.018, 0.014), 0.42)
+face.append(blob([(NOSE, (0.048, 0.034, 0.03)), *((side(Vector((0.024, -0.008, -0.006)), sign) + NOSE, (0.021, 0.018, 0.015)) for sign in (1, -1))], "nose", 0.004, 2))  # set into the muzzle's tip, not in front of it
+nose_mat = material("nose", (0.012, 0.008, 0.007), 0.3)  # dark and a little wet
 emboss(nose_mat, leather)
 face[-1].data.materials.append(nose_mat)
 unwrap(face[-1])
@@ -278,15 +300,15 @@ face[-1].data.materials.append(pit)
 for sign, lr in ((1, "L"), (-1, "R")):
     # A lid of bare skin around each eye, and the dark inside of each ear.
     out = (side(EYE, sign) - Vector((0, -0.02, 0.85))).normalized()
-    bpy.ops.mesh.primitive_torus_add(major_radius=0.018, minor_radius=0.006, major_segments=32, minor_segments=10, location=side(EYE, sign) - out * 0.003, rotation=out.to_track_quat("Z", "Y").to_euler())
+    bpy.ops.mesh.primitive_torus_add(major_radius=EYE_R, minor_radius=0.006, major_segments=24, minor_segments=8, location=side(EYE, sign) - out * 0.003, rotation=out.to_track_quat("Z", "Y").to_euler())
     face.append(bpy.context.object)
     face[-1].name = f"lid_{lr}"
     face[-1].data.materials.append(skin)
-    face.append(blob([(side(EAR_INSIDE, sign), (0.024, 0.008, 0.024))], f"ear_{lr}", 0.003, 2))
+    face.append(blob([(side(EAR_INSIDE, sign), (0.0245, 0.008, 0.0245))], f"ear_{lr}", 0.003, 2))
     face[-1].data.materials.append(skin)
-teeth = material("teeth", (0.62, 0.2, 0.02), 0.25)  # beavers' incisors are orange: iron in the enamel
+teeth = material("teeth", (0.95, 0.36, 0.035), 0.25)  # beavers' incisors are orange: iron in the enamel
 for sign, lr in ((1, "L"), (-1, "R")):  # long chisels, rounded in front, a hair apart
-    face.append(blob([(side(TOOTH, sign), (0.014, 0.009, 0.03)), (side(TOOTH, sign) + Vector((0, 0.003, -0.014)), (0.013, 0.0065, 0.016))], f"tooth_{lr}", 0.003, 2))
+    face.append(blob([(side(TOOTH, sign), (0.0175, 0.01, 0.038)), (side(TOOTH, sign) + Vector((0, 0.003, -0.018)), (0.016, 0.0075, 0.02))], f"tooth_{lr}", 0.003, 2))
     face[-1].data.materials.append(teeth)
 whisker_mat = material("whisker", (0.34, 0.29, 0.24), 0.45)  # many, fine, grey-brown
 curve = bpy.data.curves.new("whiskers", "CURVE")
@@ -308,7 +330,7 @@ whiskers = bpy.context.object
 whiskers.data.materials.append(whisker_mat)
 face.append(whiskers)
 brow_mat = material("brow", (0.018, 0.011, 0.008), 0.75)
-BROW = Vector((0.102, -0.138, 0.925))
+BROW = EYE + Vector((0, -0.012, 0.034))
 brows = {}
 for sign, lr in ((1, "L"), (-1, "R")):
     brows[lr] = blob([(side(BROW, sign), (0.055, 0.024, 0.018))], f"brow_{lr}_mesh", 0.005, 2)
@@ -425,7 +447,7 @@ shirt.name = "shirt"
 bm = bmesh.new()
 bm.from_mesh(shirt.data)
 weights = bm.verts.layers.deform.verify()
-for co, no in (((0, 0, HEM), Z_UP), ((0, 0, COLLAR), Z_UP), *((side(SHOULDER + ARM * SLEEVE, sign), side(ARM, sign)) for sign in (1, -1))):
+for co, no in (((0, 0, HEM), HEM_NORMAL), ((0, 0, COLLAR), Z_UP), *((side(SHOULDER + ARM * SLEEVE, sign), side(ARM, sign)) for sign in (1, -1))):
     bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=co, plane_no=no)
 bmesh.ops.delete(bm, geom=[v for v in bm.verts if not in_shirt(v.co, arm_share(v[weights].items()), 1e-4)], context="VERTS")
 for _ in range(6):  # a hem is a line, not the outline of triangles: relax the cut where arm and flank meet
@@ -445,7 +467,7 @@ for v in body.data.vertices:
 under.balance()
 nearest = [under.find(v.co)[1] for v in shirt.data.vertices]
 for v, n in zip(shirt.data.vertices, nearest):
-    v.co += body.data.vertices[n].normal * 0.022
+    v.co += body.data.vertices[n].normal * 0.015  # close fitting: it follows the belly
 swells = bulge(body)
 for obj, moves in ((body, swells), (shirt, [swells[n] for n in nearest])):
     obj.shape_key_add(name="Basis")
@@ -454,7 +476,14 @@ for obj, moves in ((body, swells), (shirt, [swells[n] for n in nearest])):
         muscle.data[v.index].co = v.co + by
 shirt.data.color_attributes.remove(shirt.data.color_attributes[0])
 # The print goes on the chest: the front seen flat; the back takes the blank margins of the texture.
-set_uv(shirt, lambda v: ((v.co.x / 0.46 + 0.5) if body.data.vertices[nearest[v.index]].normal.y < 0.2 else (0.98 if v.co.x > 0 else 0.02), (v.co.z - HEM) / 0.45))
+# The back's side is chosen per face, not per vertex: a face across the middle of the back would otherwise squeeze the
+# whole print into a dark seam.
+set_uv(shirt, lambda v: (0, 0))
+for f in shirt.data.polygons:
+    for loop in f.loop_indices:
+        v = shirt.data.vertices[shirt.data.loops[loop].vertex_index]
+        front = body.data.vertices[nearest[v.index]].normal.y < 0.2
+        shirt.data.uv_layers[0].data[loop].uv = ((v.co.x / 0.46 + 0.5) if front else (0.98 if f.center.x > 0 else 0.02), (v.co.z - 0.27) / 0.45)  # the print stays where it was on the chest
 shirt.data.materials.clear()
 shirt.data.materials.append(material("shirt", (0.85, 0.85, 0.83), 0.8))
 
