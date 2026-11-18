@@ -20,7 +20,7 @@ export interface SkyState {
 }
 
 const WHITE = Color3.White();
-const DAY_HORIZON = new Color3(0.76, 0.86, 0.92), DUSK = new Color3(0.99, 0.61, 0.41);
+const DAY_HORIZON = new Color3(0.76, 0.86, 0.92), DUSK = new Color3(0.86, 0.46, 0.26);
 const NIGHT = new Color3(0.054, 0.079, 0.155), GREY = new Color3(0.53, 0.59, 0.65), MOONLIT = new Color3(0.46, 0.58, 0.95);
 
 export const create: CreateFeature = game => {
@@ -46,7 +46,8 @@ export const create: CreateFeature = game => {
   const water = waterOf(scene), rain = makeRain(scene), mist = makeMist(scene), fireflies = makeFireflies(scene), dome = createDome(scene);
   const ground = scene.getMeshByName("ground")?.material;
   const dry = ground instanceof StandardMaterial ? ground.diffuseColor.clone() : null;
-  const horizon = new Color3(), wind = new Vector2();
+  const horizon = new Color3(), wind = new Vector2(), drift = new Vector2();
+  scene.onDisposeObservable.add(game.settings.on(({quality}) => dome.quality(quality)));
   scene.fogMode = Scene.FOGMODE_EXP2;
   const grade = scene.imageProcessingConfiguration, curves = new ColorCurves();
   curves.shadowsHue = curves.midtonesHue = 228;
@@ -58,7 +59,7 @@ export const create: CreateFeature = game => {
     Color3.LerpToRef(DAY_HORIZON, DUSK, day.golden, horizon);
     Color3.LerpToRef(horizon, GREY, Math.min(1, clouds * 0.8 + fog * 0.45), horizon);
     Color3.LerpToRef(horizon, NIGHT, day.night, horizon);
-    dome(day, horizon, clouds, time);
+    dome.update(day, horizon, clouds, fog, Math.min(1, day.mist + fog * 0.45), drift, time);
     scene.fogColor.copyFrom(horizon);
     scene.fogDensity = 0.012 + fog * 0.058 + weather.rain * 0.012 + day.mist * 0.006;
     sun.direction.copyFrom(day.light);
@@ -87,6 +88,8 @@ export const create: CreateFeature = game => {
   return {
     step(dt) {
       time += dt;
+      drift.x += dt * 0.004 * (0.4 + 3 * weather.wind); // the clouds go the way the rain is blown (wind below), slower
+      drift.y += dt * 0.0022 * (0.4 + 3 * weather.wind);
       if (state.running) state.hour = (state.hour + dt * 24 * state.speed / DAY_SECONDS) % 24;
       stepWeather(weather, dt, Math.random);
     },
