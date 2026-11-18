@@ -7,6 +7,7 @@ import { createPhotoStrip } from "../hud/photo-strip.ts";
 import type { Chain } from "./chain.ts";
 
 const ORBIT = 1.8, ZOOM = 1.4; // rad/s, and e-folds of distance per s, with a stick fully pushed
+const UPPER_BETA = Math.PI * 0.62; // rad from straight up: how far below its look point the photo camera may go
 
 export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
   const { scene, canvas, camera, hud } = stage;
@@ -16,7 +17,7 @@ export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
   eye.maxZ = camera.maxZ;
   eye.lowerRadiusLimit = 0.4;
   eye.upperRadiusLimit = 14;
-  eye.upperBetaLimit = Math.PI * 0.62;
+  eye.upperBetaLimit = UPPER_BETA;
   eye.wheelDeltaPercentage = 0.02;
   eye.inputs.removeByType("ArcRotateCameraKeyboardMoveInput");
   let on = false, strength = 0.35;
@@ -42,7 +43,11 @@ export function photoMode({ stage, player, beaver }: Game, chain: Chain) {
     // the beaver left out), round the point a metre ahead of the eyes, which never coincides with them.
     const first = player.camera.view === "first-person";
     eye.layerMask = camera.layerMask;
-    eye.setTarget(first ? camera.getTarget().clone() : beaver.root.getAbsolutePosition().add(new Vector3(0, 0.6, 0)));
+    const target = first ? camera.getTarget().clone() : beaver.root.getAbsolutePosition().add(new Vector3(0, 0.6, 0));
+    // Looking up from the eyes stands the camera below that point: let it start there rather than be clamped.
+    const from = camera.position.subtract(target), below = Math.acos(Math.max(-1, Math.min(1, from.y / (from.length() || 1))));
+    eye.upperBetaLimit = Math.max(UPPER_BETA, below);
+    eye.setTarget(target);
     eye.setPosition(camera.position.clone());
     scene.activeCamera = eye;
     chain.camera(eye);
