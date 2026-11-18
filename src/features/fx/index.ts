@@ -308,8 +308,14 @@ export const create: CreateFeature = (game) => {
     puff(at, dustColor(surface(at.x, at.z).color), 8, 0.9, 0.3, 1.2);
   });
 
-  // A stick into the dam: a splash where it meets the water, a pat of mud where it lies on the bank.
+  // A stick into the dam: a splash where it meets the water, a pat of mud where it lies on the bank. Into the food cache
+  // on the pond's bed: a cloud of silt stirred up and bubbles rising from the pile.
   events.on("stickPlaced", ({ place }) => {
+    if (place.y < world.waterLevel - 0.5) {
+      puff(new Vector3(place.x, world.heightAt(place.x, place.z), place.z), MUD, 8, 0.5, 0.3, 1.6);
+      for (let i = 0; i < many(18); i++) bubble(place.x, place.y + 0.1, place.z, 0.3, random(0.02, 0.05));
+      return;
+    }
     if (inWater(place) || place.y < world.waterLevel + 0.05) { splash(place, 0.35); return; }
     const at = new Vector3(place.x, world.heightAt(place.x, place.z), place.z);
     puff(at, MUD, 4, 0.4, 0.2, 0.8);

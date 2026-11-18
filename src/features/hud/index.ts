@@ -32,6 +32,7 @@ const HOW: Record<Goal["id"], (p: { press: string; hold: string }) => string> = 
   wood: p => `At the fallen tree, ${p.hold}`,
   dam: p => `Carry sticks to the pond, ${p.press}`,
   lodge: p => `Swim sticks out to the lodge, ${p.press}`,
+  cache: p => `Dive a stick down beside the lodge, ${p.press}`,
 };
 const TAUGHT = "beaver.taught"; // the steps this player has done once, kept between visits like the settings
 
