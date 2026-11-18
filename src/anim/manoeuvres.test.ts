@@ -1,5 +1,5 @@
 // How fluid the beaver is in what players do with it: walk and reverse, circle, turn at a run, start and stop,
-// change pace, jump while turning, swim, pick up while walking, steer with a stick half pushed. Each manoeuvre runs
+// change pace, jump while turning, swim, dive and come up, pick up while walking, steer with a stick half pushed. Each manoeuvre runs
 // the player's own steering and Motion bookkeeping (src/player/state.ts) at 60 steps a second into the animator,
 // puts the pose into the world (feet where the player went, turned by its facing) and measures, per frame:
 //   turn     the fastest any bone turns in the world, rad/s, and the hardest change of that, rad/s² (jerk shows as
@@ -10,7 +10,7 @@
 // `bun test src/anim/manoeuvres` prints the table.
 import { expect, test } from "bun:test";
 import { BONES, RUN_SPEED, WALK_SPEED, type Bone, type Motion, type Pose } from "../contracts.ts";
-import { newAction, newMotion, newSteering, steer, stepAction, trackMotion } from "../player/state.ts";
+import { newAction, newMotion, newSteering, steer, stepAction, trackMotion, type SwimMotion } from "../player/state.ts";
 import { createAnimator } from "./index.ts";
 import { add, axisAngle, inv, mul, rotate, type Quat, type Vec } from "./quat.ts";
 import { REST } from "./rest.ts";
@@ -21,7 +21,7 @@ const UP: Vec = [0, 1, 0];
 
 /** What the player does at time t: which way it wants to go (radians, as facing; undefined: let go), how far the
  *  stick is pushed, running, and presses. */
-interface Wish { want?: number; amount?: number; run?: number; jump?: boolean; act?: boolean; water?: boolean }
+interface Wish { want?: number; amount?: number; run?: number; jump?: boolean; act?: boolean; water?: boolean; dive?: boolean }
 export const MANOEUVRES: Record<string, { seconds: number; wish: (t: number) => Wish; reverseAt?: number }> = {
   walk: { seconds: 3, wish: () => ({ want: 0 }) },
   run: { seconds: 3, wish: () => ({ want: 0, run: 1 }) },
@@ -34,6 +34,8 @@ export const MANOEUVRES: Record<string, { seconds: number; wish: (t: number) => 
   "jump turning": { seconds: 3, wish: (t) => ({ want: t < 1 ? 0 : Math.PI / 2, run: 1, jump: t > 1 && t < 1.1 }) },
   land: { seconds: 3, wish: (t) => ({ want: 0, jump: t > 1 && t < 1.1 }) },
   water: { seconds: 5, wish: (t) => ({ want: t < 2.5 ? 0 : Math.PI, water: t > 1 && t < 3.5 }) },
+  // afloat from the start, swimming straight on; under at 1.5 s, up again at 4.5 s
+  dive: { seconds: 7, wish: (t) => ({ want: 0, water: true, dive: t > 1.5 && t < 4.5 }) },
   pickup: { seconds: 3, wish: (t) => ({ want: t < 1 || t > 2.2 ? 0 : undefined, act: t > 1 && t < 1.05 }) },
   "half stick": { seconds: 3, wish: (t) => ({ want: t < 1.5 ? 0 : 2.4, amount: 0.5 }) },
 };
@@ -66,9 +68,9 @@ export interface Measure { turn: number; turnBone: string; jerk: number; jerkBon
 
 export function measure(name: string): Measure {
   const { seconds, wish, reverseAt } = MANOEUVRES[name]!;
-  const animator = createAnimator(), m: Motion = newMotion(), act = newAction(), steering = newSteering();
+  const animator = createAnimator(), m: SwimMotion = newMotion(), act = newAction(), steering = newSteering();
   const at: Vec = [0, 0, 0];
-  let vy = 0, grounded = true, afloat = false, jumpHeld = false, actHeld = false, spin = 0;
+  let vy = 0, grounded = true, afloat = false, jumpHeld = false, actHeld = false, spin = 0, swimY = 0, swimV = 0;
   const r: Measure = { turn: 0, turnBone: "", jerk: 0, jerkBone: "", trunkTurn: 0, trunkJerk: 0, slip: 0, slipSpeed: 0, slipAt: "", heading: 0, headingJerk: 0, reverse: NaN };
   let last: ReturnType<typeof world> | undefined, lastSoles: Vec[] | undefined, lastSpin: Record<string, Vec> = {};
   for (let i = 0; i * dt < seconds; i++) {
@@ -86,9 +88,11 @@ export function measure(name: string): Measure {
     if (!grounded) vy -= GRAVITY * dt;
     const moved = steering.speed * dt;
     at[0] += Math.sin(steering.facing) * moved; at[2] += Math.cos(steering.facing) * moved;
-    at[1] = afloat ? 0 : Math.max(0, at[1] + vy * dt);
+    // afloat at 0; diving down to 0.7 m under, at 0.6 m/s, eased as the player eases it, and up again
+    if (afloat) { swimV += ((w.dive ? Math.min(-0.6, (-0.7 - swimY) * 4) : Math.min(0.9, -swimY * 4)) - swimV) * Math.min(1, 5 * dt); swimY = Math.max(-0.7, swimY + swimV * dt); }
+    at[1] = afloat ? swimY : Math.max(0, at[1] + vy * dt);
     if (!afloat && at[1] === 0 && vy <= 0) { grounded = true; vy = 0; } else if (afloat) grounded = false;
-    trackMotion(m, dt, { moved, vertical: grounded ? 0 : vy, turning: (steering.facing - before) / dt, grounded, afloat, act });
+    trackMotion(m, dt, { moved, vertical: afloat ? swimV : grounded ? 0 : vy, turning: (steering.facing - before) / dt, grounded, afloat, act, diving: !!w.dive });
     if (reverseAt !== undefined && t >= reverseAt && Number.isNaN(r.reverse) && steering.speed * Math.cos(steering.facing - w.want!) > 0.5 * WALK_SPEED) r.reverse = t - reverseAt;
 
     const now = world(animator.pose(m, dt), [...at], steering.facing), sole = soles(now);
@@ -151,6 +155,14 @@ test("turning while walking steps round instead of skating", () => {
   expect((results.circle ?? measure("circle")).slip).toBeLessThan(0.5); // 2.09 m
   expect((results["half stick"] ?? measure("half stick")).slip).toBeLessThan(0.15); // 0.68 m
   expect((results["strafe run"] ?? measure("strafe run")).trunkJerk).toBeLessThan(800); // 2184
+});
+// Going under and coming up blend over about half a second: the trunk turns no faster than in a reversal and without
+// a jolt, and nothing whips round faster than the tail does turning in the water.
+test("diving and surfacing: the body goes long and comes back without a snap", () => {
+  const r = results.dive ?? measure("dive");
+  expect(r.trunkTurn).toBeLessThan(4);
+  expect(r.trunkJerk).toBeLessThan(60);
+  expect(r.turn).toBeLessThan(30);
 });
 test("turning in the water, the tail swings round without a snap", () => {
   expect((results.water ?? measure("water")).turn).toBeLessThan(30); // 57.1 rad/s, tail2

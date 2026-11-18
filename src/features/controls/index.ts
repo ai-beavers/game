@@ -5,7 +5,7 @@
 // Gamepad (standard mapping): left stick or d-pad moves, as fast as it is pushed (half way walks, all the way runs;
 // a shoulder button, a trigger or a click on the stick runs too), right stick turns the camera (settings.invertY
 // flips up and down, for the mouse as well),
-// A jumps, X or B uses, RB slaps the tail, a click on the right stick zooms out a step (from the farthest back in),
+// A jumps (rises under water), X uses, B held dives, RB slaps the tail, a click on the right stick zooms out a step (from the farthest back in),
 // Back sends P for the photo mode, Start sends Escape to open the pause menu. Plugging in or pulling out works any time.
 // Touch: shown on a device with a touch screen, or with ?touch in the address; see touch.ts.
 // Each device fills its own Input, added to the player's keyboard (player.keys.add); the last one used steers.
@@ -31,7 +31,7 @@ export const create: CreateFeature = (game) => {
       if (pad) return padInput(pad, into);
       into.move.x = into.move.y = 0;
       into.run = 0;
-      into.jump = into.act = into.slap = false;
+      into.jump = into.act = into.slap = into.dive = false;
       return into;
     },
   });
