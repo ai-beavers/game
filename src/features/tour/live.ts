@@ -12,6 +12,7 @@ const SHOTS: Record<string, Shot> = {
   "Pond patrol": { distance: 5.5, pitch: 0.06, side: 0.4, lift: -0.1 }, // low over the water
   "Tail slap": { distance: 5, pitch: 0.08, side: 0.9, lift: -0.1 }, // from the side: the tail coming down
   "Sky watch": { distance: 7, pitch: 0.03, side: 0.9, lift: 0.05 }, // more sky
+  "Wears a hat": { distance: 1.6, pitch: 0.3, side: 2.3, lift: 0.12 }, // close, from in front and above: the hat on the head
 };
 const SHOT: Shot = { distance: 6, pitch: 0.14, side: 0.6, lift: -0.05 };
 
