@@ -1,7 +1,8 @@
 // Another player's beaver: a real beaver (loadBeaver) with its own animator, moved smoothly between the updates
-// its player sends, so it walks, runs, jumps, swims, sits, crawls, carries, gnaws and slaps its tail as it does on its own screen.
+// its player sends, so it walks, runs, jumps, swims, sits, crawls, carries, gnaws and slaps its tail as it does on its own screen; at night
+// it carries a lantern, dark when its player switched it off (src/features/lantern/remote.ts).
 //
-//   const remote = createRemote(stage, id, name);    starts loading the beaver; updates before it is ready are kept
+//   const remote = createRemote(stage, id, name, lanterns);    starts loading the beaver; updates before it is ready are kept
 //   remote.receive(state, now);                      on every "state" message
 //   remote.update(dt);                               once a frame
 //   remote.dispose();
@@ -17,31 +18,34 @@ import { RAPIER, type Stage } from "../../engine.ts";
 import { HEIGHT, RADIUS } from "../../player/index.ts";
 import { newMotion, slapHits } from "../../player/state.ts";
 import type { Game } from "../../game.ts";
+import type { RemoteLanterns } from "../lantern/remote.ts";
 import { unpackMotion } from "./protocol.ts";
 import { doing as doingOf } from "./tags.ts";
 import { DELAY, Track } from "./track.ts";
 
-// The sample is feet x y z, facing, then the 15 packed Motion numbers (protocol.ts): grounded, action, carrying and
-// low (sitting, crawling) jump from one value to the next instead of blending; actionProgress blends only within one action (the tail slap's
+// The sample is feet x y z, facing, then the 16 packed Motion numbers (protocol.ts): grounded, action, carrying,
+// low (sitting, crawling) and the lantern switched off jump from one value to the next instead of blending; actionProgress blends only within one action (the tail slap's
 // is action "none"'s, and must not run up from a gnaw's).
 const FACING = 3, MOTION_AT = 4;
-const STEPS = [3, 9, 11, 14].map((i) => i + MOTION_AT), FOLLOWS = { [10 + MOTION_AT]: 9 + MOTION_AT };
+const STEPS = [3, 9, 11, 14, 15].map((i) => i + MOTION_AT), FOLLOWS = { [10 + MOTION_AT]: 9 + MOTION_AT };
 const LIFT = HEIGHT / 2 + 0.02; // feet to the capsule's middle, with the player's gap to the ground
 const NO_CONTACTS = 0x0002_0000; // member of group 1, takes contacts with no group
 const CLOCK = 13, HOLD = 1500; // the Motion's time in the packed list; ms a short action (a build) stays on its tag
 
-export function createRemote(stage: Stage, id: number, name: string) {
+export function createRemote(stage: Stage, id: number, name: string, lanterns: RemoteLanterns) {
   const node = new TransformNode("net-remote", stage.scene);
   node.setEnabled(false);
   const track = new Track({ angles: [FACING], steps: STEPS, follows: FOLLOWS }), animator = createAnimator(), motion = newMotion();
   const sample: number[] = [], motionValues: number[] = [];
   let before = { ...motion };
+  let lantern: ReturnType<RemoteLanterns["carry"]> | undefined;
   let beaver: Beaver | undefined, disposed = false, carry = -1, body: RAPIER.RigidBody | undefined;
   let clock = -1, ticked = performance.now(), doing = "", since = 0;
   const ready = loadBeaver(stage.scene).then((b) => {
     if (disposed) { b.root.dispose(false, true); return undefined; }
     beaver = b;
     b.root.parent = node;
+    lantern = lanterns.carry(b);
     return b;
   });
 
@@ -84,6 +88,7 @@ export function createRemote(stage: Stage, id: number, name: string) {
       beaver.anger = motion.anger;
       beaver.pose(pose);
       beaver.update(dt);
+      lantern?.update(motion, node.position); // below the paw as just posed
     },
 
     /** Its capsule, once it has been seen. */
@@ -91,6 +96,7 @@ export function createRemote(stage: Stage, id: number, name: string) {
 
     dispose() {
       disposed = true;
+      lantern?.dispose();
       if (body) stage.physics.removeRigidBody(body);
       body = undefined;
       node.dispose(false, true);

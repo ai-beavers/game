@@ -3,6 +3,7 @@
 // it the sky's dark and whether the beaver is busy, and draws what it says.
 //
 //   const s = newStow(sky.dark);   each frame: stepStow(s, dt, sky.dark, busy(motion, diving));  s.drawn, s.reach (→ Motion.reachBack)
+//   flash(s);                       the flash button went down: the lantern off or on again (s.off), only while drawn
 import type { Motion } from "../../contracts.ts";
 import { smoothstep } from "../../world/noise.ts";
 
@@ -17,12 +18,22 @@ export interface Stow {
   drawn: boolean;
   /** 0 … 1, how far the paw is on its way to the backpack (Motion.reachBack). */
   reach: number;
+  /** The player switched it off (a flash): no glow, no light. Back on when it goes into the backpack. */
+  off: boolean;
   /** Seconds into the switch now under way; undefined: none. */
   at?: number;
 }
 
 /** At the start of a game: out at night, in by day, no motion. */
-export const newStow = (dark: number): Stow => ({ drawn: dark > OUT, reach: 0 });
+export const newStow = (dark: number): Stow => ({ drawn: dark > OUT, reach: 0, off: false });
+
+/** Whether the lantern should be out with this dark, given whether it is: between IN and OUT it keeps what it did. */
+export const wantsOut = (drawn: boolean, dark: number) => drawn ? dark >= IN : dark > OUT;
+
+/** The flash button went down: switches the lantern off, or on again. In the backpack it does nothing. */
+export function flash(s: Stow): void {
+  if (s.drawn) s.off = !s.off;
+}
 
 const ease = (x: number) => smoothstep(0, 1, x);
 /** How far the paw is on its way to the backpack (Motion.reachBack), t s into a reach: up, there, back down. */
@@ -35,17 +46,23 @@ export const busy = (m: Motion, diving: boolean) =>
 
 export function stepStow(s: Stow, dt: number, dark: number, busy: boolean): void {
   if (s.at === undefined) {
-    const wanted = s.drawn ? dark >= IN : dark > OUT;
+    const wanted = wantsOut(s.drawn, dark);
     if (wanted === s.drawn || busy) return;
     s.at = 0;
   } else if (busy) { // the rest of the motion would fight another one: done at once
-    if (s.at < RISE) s.drawn = !s.drawn; // past the backpack, the lantern has already changed hands
+    if (s.at < RISE) hand(s); // past the backpack, the lantern has already changed hands
     s.at = undefined;
     s.reach = 0;
     return;
   }
   const before = s.at, t = (s.at += dt);
-  if (before < RISE && t >= RISE) s.drawn = !s.drawn; // at the backpack: the lantern changes hands
+  if (before < RISE && t >= RISE) hand(s); // at the backpack: the lantern changes hands
   if (t >= RISE + HOLD + FALL) { s.at = undefined; s.reach = 0; return; }
   s.reach = reachAt(t);
+}
+
+/** The lantern changes hands: out of the backpack, or into it, where it is switched on again for the next dusk. */
+function hand(s: Stow) {
+  s.drawn = !s.drawn;
+  if (!s.drawn) s.off = false;
 }
