@@ -68,3 +68,21 @@ test("a stick stays in the right paw sitting and crawling", () => {
     expect(hand[2]).toBeGreaterThan(chest[2]);
   }
 });
+
+test("paddling a canoe, the right paw sweeps back and forth out to its right side as the canoe goes, the left stays", () => {
+  const a = createAnimator(), dt = 1 / 60, speed = 1;
+  let back = Infinity, ahead = -Infinity, side = 0, left = new Set<number>();
+  for (let i = 0; i < 240; i++) {
+    const at = placed(a.pose(still({ low: "sit", paddle: true, speed, time: 1 + i * dt }), dt));
+    if (i < 60) continue;
+    const paw = tips(at, "R");
+    back = Math.min(back, paw[2]); ahead = Math.max(ahead, paw[2]); side = Math.min(side, paw[0]);
+    left.add(Math.round(tips(at, "L")[2] * 100));
+  }
+  expect(ahead - back).toBeGreaterThan(0.2); // a stroke
+  expect(side).toBeLessThan(-0.12); // out to its right (-x), over the side of the hull
+  expect(left.size).toBeLessThanOrEqual(2); // the left paw (the lantern's) does not stroke
+  const resting = placed(settled(still({ low: "sit", paddle: true })));
+  const sitting = placed(settled(still({ low: "sit" })));
+  expect(Math.abs(tips(resting, "R")[2] - tips(sitting, "R")[2])).toBeLessThan(0.03); // still: no stroke
+});
