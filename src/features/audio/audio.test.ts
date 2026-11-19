@@ -89,7 +89,7 @@ const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap", "underwater"];
 const chrome = existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 /** How long a measured render may take: about 20 s on an idle machine, over a minute on a busy one (builders and
  *  their tours side by side). The limit ends a render that hangs; it says nothing about speed. */
-const LIMIT = 300_000;
+const LIMIT = 300_000; // ms
 
 test.skipIf(!chrome)("every one-shot sits in its loudness band, ends in time, has no DC and never clips", async () => {
   const names = BANDS.flatMap(([, , n]) => n);

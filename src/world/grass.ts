@@ -107,7 +107,8 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
   mesh.thinInstanceSetBuffer("ground", new Float32Array(weeds.grounds), 4, true);
   const sky = new Color3(), sun = new Color3(), toSun = new Vector3();
   return { update(time: number) {
-    // A tile all of whose blades stand farther than they reach (the shader's 27 m) is not drawn at all.
+    // A tile all of whose blades stand farther than they reach (the shader's REACH) is not drawn at all. Cost per
+    // frame: one distance to each tile's box, at most 36 tiles (66 m square in 11 m tiles); the blades out of reach are not drawn.
     const eye = (scene.activeCamera ?? camera).globalPosition;
     for (const part of parts) {
       const { minimumWorld: lo, maximumWorld: hi } = part.getBoundingInfo().boundingBox;

@@ -3,6 +3,8 @@ import { material } from "./models.ts";
 // The ground: one height function for the whole place, and the mesh and Rapier collider made from the same samples.
 //
 //   heightAt(x, z)                 ground height; pure, also used by the tests and the placement rules
+//   shape(rim)                     heightAt and slopeAt for a bank starting rim m out: shape(FIRST_RIM) is the ground
+//                                  the first, smaller clearing's things were placed on (place.ts)
 //   groundAt(x, z)                 the ground as drawn and collided: over samples of heightAt, within 0.1 m of it in the pond
 //   buildTerrain(stage)            adds the ground mesh and its fixed colliders (groundColliders), returns the mesh
 //

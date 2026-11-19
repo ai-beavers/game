@@ -95,7 +95,7 @@ describe("meeting others", () => {
     expect(yields(me, [{ ...coming, z: 3 }])).toBe(false);
     expect(yields(me, [{ ...coming, y: -2 }])).toBe(false); // diving under me
   });
-  test("the watchdog: a job that takes over a minute is stuck", () => {
+  test("the watchdog: a job that takes over two minutes is stuck", () => {
     expect(overdue(20)).toBe(false);
     expect(overdue(90)).toBe(false); // a calm walk out to the far meadow and back with a stick
     expect(overdue(121)).toBe(true);
