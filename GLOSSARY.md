@@ -63,7 +63,7 @@ The female beaver behind the shop's counter who sells outfits. No player steers 
 _Avoid_: NPC, vendor, merchant
 
 **Mrs. Beaver**:
-The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places at the edge of the clearing, and her flower lies dropped on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
+The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places out in the meadow, where the clearing's first, smaller bank stood, and her flower lies dropped on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
 _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
 
 **Quest**:

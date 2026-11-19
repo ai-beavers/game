@@ -2,7 +2,7 @@
 // quest's steps in order, and the Use key's offers only close by with free paws, on land.
 import { expect, test } from "bun:test";
 import { placeAll, SPAWN } from "../../world/place.ts";
-import { heightAt, pondRatio, RIM, SITE, slopeAt, WATER_LEVEL } from "../../world/terrain.ts";
+import { FIRST_RIM, heightAt, pondRatio, SITE, slopeAt, WATER_LEVEL } from "../../world/terrain.ts";
 // Where the Shop stands (src/features/shop/index.ts SHOP; that file needs a browser), turned to face the Clearing.
 const SHOP = { x: -9.5, z: 8.5 }, FACING = Math.atan2(0 - SHOP.x, 2 - SHOP.z);
 /** A point in the Shop's frame (building.ts toWorld), in the world. */
@@ -28,11 +28,11 @@ test("each visit picks one of the three hiding places from the random number giv
   expect(pick(1).place).toBe(2); // a random number at its very top stays in the list
 });
 
-test("every hiding place is on dry land just inside the bank, clear of the pond, the site, the shop and the post", () => {
+test("every hiding place is on dry land just inside where the first clearing's bank stood, clear of the pond, the site, the shop and the post", () => {
   for (const p of HIDING) {
     const r = Math.hypot(p.x, p.z);
-    expect(r).toBeGreaterThan(RIM - 4);
-    expect(r).toBeLessThan(RIM - 1.5);
+    expect(r).toBeGreaterThan(FIRST_RIM - 4); // they stayed when the clearing grew, as the middle did
+    expect(r).toBeLessThan(FIRST_RIM - 1.5);
     expect(heightAt(p.x, p.z)).toBeGreaterThan(WATER_LEVEL + 0.1);
     expect(slopeAt(p.x, p.z)).toBeLessThan(0.25);
     expect(pondRatio(p.x, p.z)).toBeGreaterThan(2);
