@@ -33,12 +33,10 @@ export const shopping = (kit: Kit): Station[] => {
       if (shop.state.experience < pick.price) shop.give(pick.price - shop.state.experience);
       const had = shop.state.experience, lookBefore = beaver.look;
 
-      // Over land to the doorway (hopped over in the fast tour); live, a look at the sign on the way in.
+      // Over land to the doorway (hopped over in the fast tour); live, a pause there before going in.
       const door = shop.door(1.6);
-      kit.subject = () => shop.sign();
       await walkTo(door.x, door.z, { near: 0.5, limit: 90, hop: true });
       if (live) await wait(3);
-      kit.subject = () => shop.counter();
       const inside = shop.door(-1.5);
       await walkTo(inside.x, inside.z, { near: 0.5, limit: 20 });
       await reach("use", () => shop.counter());
@@ -68,7 +66,6 @@ export const shopping = (kit: Kit): Station[] => {
       key("Escape");
       await until(() => !panel()?.open, 2, "Escape did not close the shop panel");
       expect(!kit.stage.paused, "Escape on the shop panel opened the pause menu as well");
-      kit.subject = undefined;
       if (live) {
         const out = shop.door(2.5);
         await walkTo(out.x, out.z, { near: 0.6, limit: 20 });

@@ -13,8 +13,8 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { ENVIRONMENT, EXPOSURE, SUN_COLOR, SUN_DIRECTION, SUN_INTENSITY } from "../../light.ts";
 
-export const START = 16; // the hour the game was tuned for
-export const DAY_SECONDS = 720; // one day in seconds of play
+import { START } from "./day.ts";
+export { DAY_SECONDS, START } from "./day.ts";
 const DEG = Math.PI / 180, LATITUDE = 45 * DEG, NOON = 13;
 const MOON_DECLINATION = 12 * DEG, MOON_NOON = 23.5; // highest at half past eleven, about 57° up: high over the evening, low by dawn
 

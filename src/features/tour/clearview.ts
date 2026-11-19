@@ -1,6 +1,6 @@
 // What can hide the beaver from the live camera, or swallow the camera, though the camera's cast does not see it:
 // crowns, bushes, reeds, crates, logs, rocks, the lodge; each mesh (or thin instance) as a turned box, leaves as the
-// ellipsoid in it (live.ts: Volume). And the fade for when no angle shows the beaver: what is in the way goes
+// ellipsoid in it (live.ts: Volume). And the fade for when the beaver is hidden: what is in the way goes
 // see-through, eased, for as long as it is in the way, and comes back after.
 //
 //   const near = occluders(scene, player.node);   at the start, before the first picture: the thin instances are all there
@@ -46,7 +46,7 @@ export function occluders(scene: Scene, mine: TransformNode) {
     const min = new Vector3(Infinity, Infinity, Infinity), max = min.negate();
     for (let i = 0; i < p.length; i += 3) { min.minimizeInPlaceFromFloats(p[i]!, p[i + 1]!, p[i + 2]!); max.maximizeInPlaceFromFloats(p[i]!, p[i + 1]!, p[i + 2]!); }
     // shortcut: a thin instance cannot be faded alone (the backdrop's cull rewrites its matrices), so its tag stays empty;
-    // the director moves the camera instead. A per-instance alpha in src/world if that ever falls short.
+    // the camera keeps out of it (room) but it may hide the beaver. A per-instance alpha in src/world if that falls short.
     for (const m of mesh.thinInstanceGetWorldMatrices()) { const v = volumeOf(mesh, { min, max }, m); if (v) still.push({ ...v, tag: undefined }); }
   }
   let near: Volume[] = [], age = Infinity;

@@ -6,9 +6,11 @@
 //   admit(world, change)                    the server's check of one build change against its world
 //   changesOf(state) · replay(changes)      a build state as the changes that make it, and back
 //   compact(work)                           the server's log shortened to the present world
+//   hourAt(START, started, now)             the shared day's hour: the server's since it started, the browser's since welcome
 //
 // Every message is JSON with a type `t`. The server never takes a player id from a client: it adds the sender's own.
 import type { Action, Motion } from "../../contracts.ts";
+export { DAY_SECONDS, hourAt, START } from "../sky/day.ts";
 import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
@@ -100,9 +102,9 @@ export interface PlayerInfo { id: number; name: string }
 
 export type ServerMessage =
   /** epoch: names the server's world (new at each reset); build: its changes from number `from` on. version: the
-   *  server's build (GIT_SHA), "" in development. */
+   *  server's build (GIT_SHA), "" in development. hour: the shared day's hour as this is sent, 0 to under 24. */
   | { t: "welcome"; id: number; host: number; players: PlayerInfo[]; addresses: string[]; carried: [player: number, stick: number][];
-      epoch: string; from: number; build: BuildChange[]; version: string }
+      epoch: string; from: number; build: BuildChange[]; version: string; hour: number }
   /** No room: the server closes the socket after this one; try again much later. */
   | { t: "full"; players: number; max: number }
   | { t: "join"; id: number; name: string }

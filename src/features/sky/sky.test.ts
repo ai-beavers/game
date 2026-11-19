@@ -3,6 +3,7 @@ import { hex } from "../../world/color.ts";
 import { describe, expect, test } from "bun:test";
 import { ENVIRONMENT, EXPOSURE, SUN_COLOR, SUN_DIRECTION, SUN_INTENSITY } from "../../light.ts";
 import { dayAt, START } from "./clock.ts";
+import { newClock } from "./day.ts";
 import { holdWeather, newWeather, nextKind, stepWeather } from "./weather.ts";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
@@ -70,6 +71,54 @@ describe("clock", () => {
     expect(dayAt(6.5).mist).toBe(1);
     expect(dayAt(12).mist).toBe(0);
     expect(dayAt(20).mist).toBe(0);
+  });
+});
+
+describe("the shared day", () => {
+  /** A clock on a real time we move by hand (ms). */
+  const fake = (hour?: number, speed?: number) => { const real = { now: 0 }; return { real, clock: newClock(hour, speed, true, () => real.now) }; };
+  test("alone it starts at 16:00 and runs one day in 720 s of play, faster with speed", () => {
+    const { clock } = fake();
+    expect(clock.hour).toBe(16);
+    for (let i = 0; i < 300; i++) clock.step(1);
+    expect(clock.hour).toBeCloseTo(26 - 24, 9);
+    const fast = fake(16, 4).clock;
+    fast.step(30);
+    expect(fast.hour).toBeCloseTo(20, 9);
+  });
+  test("following, the hour is the given one plus the real time since, whatever the game steps or its speed", () => {
+    const { clock, real } = fake(13, 4);
+    clock.follow(23);
+    expect(clock.hour).toBe(23);
+    clock.step(30); // play at 4x: would be two hours on its own
+    expect(clock.hour).toBe(23);
+    real.now += 60_000; // a minute of real time: two hours, past midnight
+    expect(clock.hour).toBeCloseTo(1, 9);
+    real.now += 600_000; // a hidden tab or a paused game: no steps at all
+    expect(clock.hour).toBeCloseTo(21, 9);
+  });
+  test("alone again it runs on from where it was; setHour and a stopped clock end following", () => {
+    const { clock, real } = fake();
+    clock.follow(23);
+    real.now += 30_000;
+    clock.alone();
+    expect(clock.hour).toBeCloseTo(0, 9);
+    real.now += 600_000;
+    expect(clock.hour).toBeCloseTo(0, 9); // real time no longer counts
+    clock.step(30);
+    expect(clock.hour).toBeCloseTo(1, 9);
+
+    clock.follow(5);
+    clock.setHour(12);
+    real.now += 60_000;
+    expect(clock.hour).toBe(12);
+
+    clock.follow(5);
+    real.now += 30_000;
+    clock.running = false;
+    real.now += 60_000;
+    clock.step(30);
+    expect(clock.hour).toBeCloseTo(6, 9);
   });
 });
 

@@ -1,10 +1,11 @@
-import { holdInHand } from "./grip.ts";
+import { holdInHand, holdInView } from "./grip.ts";
 // Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming and diving, sitting
 // and crawling, the tail slap, the follow camera, and the Motion report the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
 //   beaver.root.parent = player.node;
-//   run(stage, (dt) => player.step(dt), (dt, alpha) => { player.update(dt, alpha); beaver.pose(animator.pose(player.motion, dt)); });
+//   player.camera.eyes = beaver.eyes;
+//   run(stage, (dt) => player.step(dt), (dt, alpha) => { beaver.pose(animator.pose(player.motion, dt)); player.update(dt, alpha); });
 //
 // The object returned has a few more fields than Player (see PlayerControls) for labs and tests; anger is set with
 // `player.motion.anger = …` or `setAnger`, the player never changes it.
@@ -297,7 +298,11 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     node.position.y += lift;
     node.rotation.set(0, facingBefore + Math.atan2(Math.sin(facing - facingBefore), Math.cos(facing - facingBefore)) * alpha, 0);
     camera.update(dt, show.copyFrom(node.position), { velocity, facing, afloat, busy: act.action === "gnaw" || act.action === "build", level: waterLevel(), diving: dive.diving });
-    if (carried && options.hand) holdInHand(carried.stick.mesh, options.hand, node);
+    if (carried && options.hand) {
+      // The first-person view's eyes look the camera's way: its yaw looks from +z round to -z (see camera.gaze).
+      if (camera.view === "first-person") holdInView(carried.stick.mesh, options.hand, stage.camera.position, camera.yaw + Math.PI);
+      else holdInHand(carried.stick.mesh, options.hand, node);
+    }
   };
 
   return {

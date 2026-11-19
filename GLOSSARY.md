@@ -22,6 +22,10 @@ _Avoid_: deep end, pit
 The flat ground at the pond where the dam is built.
 _Avoid_: construction zone, build area
 
+**Day**:
+One turn of sun and moon over the clearing, twelve minutes of play. Everyone in the same world is at the same hour of it; a player alone keeps their own.
+_Avoid_: time, daytime, cycle
+
 **Stick**:
 A piece of wood the beaver can carry and build with. Every tree gnawed into wood yields sticks.
 _Avoid_: log, branch, wood item
@@ -83,6 +87,10 @@ _Avoid_: NPC, AI player
 **Animal**:
 A creature of the world that no player steers: ducks, fish, deer.
 _Avoid_: NPC, mob, wildlife entity
+
+**Third-person view**, **First-person view**:
+The two ways a player can see the clearing. In the third-person view (the usual one) the camera follows behind the beaver, which is in the picture. In the first-person view the player sees through the beaver's eyes, and the beaver itself is not in the picture. Each player switches between them for their own screen only.
+_Avoid_: camera mode, POV, cockpit view
 
 **Experience**:
 The points a player earns by building with sticks, one for each stick built in, and spends at the shop.

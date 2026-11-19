@@ -17,11 +17,12 @@ Combine them with `&`. `README.md` lists the tour ones.
 | Switch | Effect |
 | --- | --- |
 | `play` | skips the start screen |
-| `hour=13`, `clock=stop`, `speed=60` | the hour of the day, a clock that stands still, a faster day |
+| `hour=13`, `clock=stop`, `speed=60` | the hour of the day, a clock that stands still, a faster day; each keeps the page on its own day when connected to a shared world |
 | `weather=fair` | holds one kind of weather; the kinds are `KINDS` in `src/features/sky/weather.ts` |
 | `spawn=x,z` | where the beaver starts |
 | `anger=1` | a furious beaver |
 | `mute` | sound off without touching the saved settings |
+| `quality=low` | picture quality (`low`, `medium`, `high`) for this page, without touching the saved settings |
 | `touch` | touch controls on a desktop page |
 | `debug` | draws the colliders |
 | `standins` | plain shapes instead of `assets/props.glb` |
@@ -31,7 +32,7 @@ A fixed picture for comparing before and after: `?play&hour=13&clock=stop&weathe
 ## Order of checks
 
 1. **While building**: the dev server reloads the page on every save (`PORT=<your port> bun server.ts`). Play only your own station: `?play&tour=fast&station=<Name>` in a picture, or `bun run tour --once --here --port <your tour port> --station "<Name>"` where Chrome runs.
-2. **Once at the end**: `bun run check`, then the whole tour with `bun run tour --once --here --port <your tour port> --repeat 2`. Exit code 0 means every station passed. The first run starts a fresh saved game, so the lodge and cache stations are skipped until the second. "Touch controls" is skipped on a page without touch.
+2. **Once at the end**: `bun run check`, then the whole tour with `bun run tour --once --here --port <your tour port> --repeat 2`. Exit code 0 means every station passed. The first run starts a fresh saved game, so the lodge and cache stations are skipped until the second.
 3. **Once at the end, for shader or asset changes**: the production build, `bun run build`, and one picture from `NODE_ENV=production PORT=<your port> bun server.ts`. The bundle holds only the shader includes that `src/main.ts` imports.
 
 A station that fails on an untouched `main` in the same way is a flake of the tour, not of your change: report it with the failing line instead of changing the station.

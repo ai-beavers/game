@@ -18,6 +18,7 @@ import type { Animator, Beaver, World } from "./contracts.ts";
 import { run, start, STEP, type Stage } from "./engine.ts";
 import { createEvents, watch, type Events } from "./events.ts";
 import { createPlayerControls, type PlayerControls } from "./player/index.ts";
+import { OWN_LAYER } from "./player/camera.ts";
 import { loadProps } from "./props/index.ts";
 import { createSettings, type SettingsStore } from "./settings.ts";
 import type { SkyState } from "./features/sky/index.ts";
@@ -52,6 +53,9 @@ export async function createGame(canvas: HTMLCanvasElement, features: CreateFeat
   const world = await createWorld(stage, props);
   const player = createPlayerControls(stage, { spawn: world.spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
   beaver.root.parent = player.node;
+  // The player's own beaver, seen from its own eyes in the first-person view and left out of that picture.
+  player.camera.eyes = beaver.eyes;
+  for (const mesh of beaver.root.getChildMeshes()) mesh.layerMask = OWN_LAYER;
   const spawn = params.get("spawn")?.split(",").map(Number);
   if (spawn?.length === 2) player.teleport(spawn[0]!, world.heightAt(spawn[0]!, spawn[1]!), spawn[1]!);
   player.setAnger(Number(params.get("anger") ?? 0));
@@ -72,9 +76,10 @@ export async function createGame(canvas: HTMLCanvasElement, features: CreateFeat
     for (const part of parts) part.step?.(dt);
   }, (dt, alpha) => {
     const moving = stage.paused ? 0 : dt;
+    // Posed before the player moves the camera: the first-person view stands at the eyes of this picture's pose.
+    beaver.pose(game.animator.pose(player.motion, moving));
     player.update(moving, alpha);
     beaver.anger = player.motion.anger;
-    beaver.pose(game.animator.pose(player.motion, moving));
     beaver.update(moving);
     world.update(moving, player.node.position);
     for (const part of parts) part.update?.(dt, alpha);

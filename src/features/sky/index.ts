@@ -6,16 +6,15 @@ import { Vector2 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
 import { daylightOf, EXPOSURE, SKY_FILL, SUN_INTENSITY } from "../../light.ts";
 import { waterOf } from "../../world/water.ts";
-import { DAY_SECONDS, dayAt, START } from "./clock.ts";
+import { dayAt } from "./clock.ts";
+import { newClock, START, type Clock } from "./day.ts";
 import { createDome } from "./dome.ts";
 import { makeFireflies, makeMist, makeRain } from "./effects.ts";
 import { holdWeather, KINDS, newWeather, releaseWeather, stepWeather, type Kind } from "./weather.ts";
 
-export interface SkyState {
-  hour: number; dark: number; weather: Kind; clouds: number; rain: number; fog: number; wind: number; wet: number;
-  running: boolean;
-  speed: number;
-  setHour(hour: number): void;
+/** The clock (day.ts): its own day, or, in a shared world, the server's (follow, set by src/features/net). */
+export interface SkyState extends Omit<Clock, "step"> {
+  dark: number; weather: Kind; clouds: number; rain: number; fog: number; wind: number; wet: number;
   setWeather(kind: Kind | "auto"): void;
 }
 
@@ -32,14 +31,12 @@ export const create: CreateFeature = game => {
   const hour = Number(params.get("hour") ?? START), speed = Number(params.get("speed") ?? 1);
   const weather = newWeather(), held = params.get("weather") as Kind | null;
   if (held && KINDS.includes(held)) holdWeather(weather, held);
-  const state: SkyState = {
-    hour: Number.isFinite(hour) ? ((hour % 24) + 24) % 24 : START,
-    speed: Number.isFinite(speed) && speed >= 0 ? speed : 1,
-    running: params.get("clock") !== "stop", dark: 0, weather: weather.kind,
-    clouds: weather.clouds, rain: weather.rain, fog: weather.fog, wind: weather.wind, wet: weather.wet,
-    setHour(value) { if (Number.isFinite(value)) state.hour = ((value % 24) + 24) % 24; },
-    setWeather(kind) { if (kind === "auto") releaseWeather(weather); else if (KINDS.includes(kind)) holdWeather(weather, kind); },
-  };
+  const clock = newClock(Number.isFinite(hour) ? hour : START, Number.isFinite(speed) && speed >= 0 ? speed : 1, params.get("clock") !== "stop");
+  // Onto the clock itself, so its hour and running stay what it says.
+  const state: SkyState = Object.assign(clock, {
+    dark: 0, weather: weather.kind, clouds: weather.clouds, rain: weather.rain, fog: weather.fog, wind: weather.wind, wet: weather.wet,
+    setWeather(kind: Kind | "auto") { if (kind === "auto") releaseWeather(weather); else if (KINDS.includes(kind)) holdWeather(weather, kind); },
+  });
   game.sky = state;
   Object.assign(window, { sky: state });
 
@@ -90,7 +87,7 @@ export const create: CreateFeature = game => {
       time += dt;
       drift.x += dt * 0.004 * (0.4 + 3 * weather.wind); // the clouds go the way the rain is blown (wind below), slower
       drift.y += dt * 0.0022 * (0.4 + 3 * weather.wind);
-      if (state.running) state.hour = (state.hour + dt * 24 * state.speed / DAY_SECONDS) % 24;
+      clock.step(dt);
       stepWeather(weather, dt, Math.random);
     },
     update,
