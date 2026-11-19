@@ -35,7 +35,7 @@ src/anim/          how it moves: Motion in, Pose out, pure maths
 src/player/        input, Rapier character, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
-src/features/      dam building, the trading post, the shop, multiplayer, controls, HUD, wildlife, weather, audio, effects, photo mode and tour
+src/features/      dam building, the trading post, the shop, the canoe, multiplayer, controls, HUD, wildlife, weather, audio, effects, photo mode and tour
 assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), logo.png
 tools/blender/     the models, built in Blender from code
 ```

@@ -10,6 +10,7 @@
 import { WALK_SPEED, type Action, type Motion } from "../contracts.ts";
 import type { Input } from "./input.ts";
 
+export const SLOPE = 40 * Math.PI / 180; // rad: steepest ground it walks up; steeper ground it slides down
 export const COYOTE = 0.1; // s after leaving the ground in which a jump still starts
 export const BUFFER = 0.1; // s a press before landing is remembered
 export const PICKUP_TIME = 1.0, DROP_TIME = 0.6; // s for the whole action; the hand closes or opens at half

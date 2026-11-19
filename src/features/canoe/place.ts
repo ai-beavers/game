@@ -4,6 +4,9 @@
 //   bankPlace(pond, spawn, heightAt, level)        where it lies pulled up on the bank at the start, bow to the water
 //   launch(from, heading, heightAt, level)         the first place along its heading where it floats with the beaver in
 //   wayOut(at, facing, heightAt, level)            where the beaver steps out: the bank if it is near, else the water
+//   beside(feet, canoe)                            whether the feet are near enough to get in
+
+import { SLOPE } from "../../player/state.ts";
 
 export interface Place { x: number; z: number }
 export type HeightAt = (x: number, z: number) => number;
@@ -23,6 +26,9 @@ const FLOATS = DEPTH + 0.05;
 const ASIDE = 0.5;
 /** m of the hull that lie on dry ground, pulled up. */
 const PULLED_UP = 0.55;
+
+/** m from the hull's middle line within which the beaver can get in. */
+const NEAR = 1.0;
 
 const forward = (heading: number) => ({ x: Math.sin(heading), z: Math.cos(heading) });
 
@@ -58,8 +64,8 @@ export function launch(from: Place, heading: number, heightAt: HeightAt, level: 
  *  deeper side. */
 export function wayOut(at: Place, facing: number, heightAt: HeightAt, level: number): Place & { outcome: "bank" | "water" } {
   const f = forward(facing), left = { x: f.z, z: -f.x }, right = { x: -f.z, z: f.x };
-  // Dry, and flat enough to stand on (src/player/index.ts SLOPE is 40°): no steeper than 35° round the feet.
-  const flat = (x: number, z: number) => { const e = 0.2, h = heightAt(x, z), steep = Math.tan(35 * Math.PI / 180) * e;
+  // Dry, and flat enough to stand on: 5° short of the steepest the beaver walks up (SLOPE), round the feet.
+  const flat = (x: number, z: number) => { const e = 0.2, h = heightAt(x, z), steep = Math.tan(SLOPE - 5 * Math.PI / 180) * e;
     return [[e, 0], [-e, 0], [0, e], [0, -e]].every(([dx, dz]) => Math.abs(heightAt(x + dx!, z + dz!) - h) < steep); };
   const dry = (x: number, z: number) => heightAt(x, z) > level + 0.03 && flat(x, z);
   // Ahead from past the bow's tip, beside from past the hull's side, nearest first.
@@ -77,4 +83,12 @@ export function wayOut(at: Place, facing: number, heightAt: HeightAt, level: num
   const side = [left, right].map((d) => ({ x: at.x + d.x * 0.85, z: at.z + d.z * 0.85 }));
   const deeper = side.reduce((a, b) => heightAt(b.x, b.z) < heightAt(a.x, a.z) ? b : a);
   return { ...deeper, outcome: "water" };
+}
+
+/** Whether feet at `feet` are beside the canoe lying at `canoe` (its middle and heading): within NEAR of its middle
+ *  line, from stern to bow. */
+export function beside(feet: Place, canoe: Place & { heading: number }) {
+  const f = forward(canoe.heading), dx = feet.x - canoe.x, dz = feet.z - canoe.z;
+  const along = Math.max(-HULL.length / 2, Math.min(HULL.length / 2, dx * f.x + dz * f.z));
+  return Math.hypot(dx - f.x * along, dz - f.z * along) < NEAR;
 }

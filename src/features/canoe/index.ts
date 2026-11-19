@@ -23,10 +23,9 @@ import type { CreateFeature } from "../../game.ts";
 import { OWN_LAYER } from "../../player/camera.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import { material } from "../../world/models.ts";
-import { BOW, DEPTH, DRAFT, HULL, SEAT, bankPlace, launch, wayOut } from "./place.ts";
+import { BOW, DEPTH, DRAFT, HULL, SEAT, bankPlace, beside, launch, wayOut } from "./place.ts";
 
 const IN: Offer = { action: "use", text: "Get in" }, OUT: Offer = { action: "use", text: "Get out" };
-const NEAR = 1.0; // m from the hull's middle line within which the beaver can get in
 
 export const create: CreateFeature = (game) => {
   const { stage, world, player, beaver, events } = game;
@@ -42,8 +41,10 @@ export const create: CreateFeature = (game) => {
   // the beaver sits in it.
   const body = stage.physics.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   stage.physics.createCollider(RAPIER.ColliderDesc.cuboid(HULL.beam / 2 - 0.02, 0.12, HULL.length / 2 - 0.1), body);
+  let settled = NaN; // the water level it was last put down at
   const settle = () => {
-    lie(hull, left, world.heightAt, level());
+    settled = level();
+    lie(hull, left, world.heightAt, settled);
     body.setTranslation({ x: hull.position.x, y: hull.position.y + 0.02, z: hull.position.z }, false);
     body.setRotation(Quaternion.FromEulerAngles(hull.rotation.x, hull.rotation.y, 0), false);
   };
@@ -51,12 +52,7 @@ export const create: CreateFeature = (game) => {
 
   // ---- E: get in beside it with empty paws, get out wherever it is --------------------------------------------------
   let riding = false, wants: "in" | "out" | undefined;
-  const near = () => {
-    const f = { x: Math.sin(left.heading), z: Math.cos(left.heading) }, dx = player.feet.x - left.x, dz = player.feet.z - left.z;
-    const along = Math.max(-HULL.length / 2, Math.min(HULL.length / 2, dx * f.x + dz * f.z));
-    return Math.hypot(dx - f.x * along, dz - f.z * along) < NEAR && !player.diving;
-  };
-  const canGetIn = (carrying: boolean) => !riding && !carrying && near();
+  const canGetIn = (carrying: boolean) => !riding && !carrying && !player.diving && beside(player.feet, left);
   const before = player.actor;
   const actor: Actor = {
     begin(carrying) {
@@ -129,7 +125,9 @@ export const create: CreateFeature = (game) => {
       wants = undefined;
       if (now === "in" && !riding) getIn();
       else if (now === "out" && riding) getOut();
-      if (!riding) settle(); // the water may have risen under it
+      // Left lying: put down again only when the water rose under it (a few heightAt lookups and two physics writes).
+      // Riding, update() costs one bone chain's world matrices and a few vectors a frame: the paddle in the paw.
+      if (!riding && level() !== settled) settle();
     },
     update(dt) {
       time += stage.paused ? 0 : dt;

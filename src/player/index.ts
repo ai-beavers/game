@@ -16,14 +16,13 @@ import { RAPIER, type Stage } from "../engine.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { keyboard, newInput, type Keyboard } from "./input.ts";
-import { BREATH, CRAWL_SPEED, RIDE_SPEED, SWIM_SPEED, rideKeys, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
+import { BREATH, CRAWL_SPEED, RIDE_SPEED, SLOPE, SWIM_SPEED, rideKeys, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
 export const HEIGHT = 1.0, RADIUS = 0.225;
 const HALF = HEIGHT / 2 - RADIUS, OFFSET = 0.02; // the controller keeps this gap to everything
 // Moving.
 const ACCEL = 6, BRAKE = 9, AIR_ACCEL = 2.5; // m/s²: quick, but with weight
-const SLOPE = 40 * Math.PI / 180; // steepest ground it walks up; steeper ground it slides down
 const STEP_UP = 0.15, STEP_WIDTH = 0.1; // m: highest step it walks up, and the least room it needs on top
 const LIFT_EASE = 18; // 1/s: how fast the picture follows a step up
 const SWIM_ACCEL = 2;
@@ -297,8 +296,9 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // creep (steeper than SLOPE, smaller than an autostep) counts as a wall.
     if (grounded && wish.y <= 0 && moved.y > 0 && moved.y < 0.05 && moved.y > Math.tan(SLOPE) * Math.hypot(moved.x, moved.z)) moved.x = moved.y = moved.z = 0;
     // A ride stops where the water gets too shallow for it: the shore, the dam's mud. It goes on along its facing.
+    // Turned on the spot at the shore, the bow over the shallows: it may only go where the water gets deeper.
     if (ride && level !== undefined && !floats(ride, feet.x + moved.x, feet.z + moved.z, Math.sin(facing), Math.cos(facing), level)
-      && floats(ride, feet.x, feet.z, Math.sin(facing), Math.cos(facing), level)) { moved.x = moved.z = 0; speed = 0; }
+      && (floats(ride, feet.x, feet.z, Math.sin(facing), Math.cos(facing), level) || depthAt(feet.x + moved.x, feet.z + moved.z, level) <= depthAt(feet.x, feet.z, level))) { moved.x = moved.z = 0; speed = 0; }
     // Blocked while walking on the ground: maybe a step to go up.
     let stepped = 0;
     if (!ride && grounded && wish.y <= 0 && Math.hypot(moved.x, moved.z) < 0.5 * Math.hypot(wish.x, wish.z)) {

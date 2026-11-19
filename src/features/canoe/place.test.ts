@@ -1,6 +1,6 @@
 // Where the canoe lies, where it is launched and where the beaver gets out, on a round pond of plain numbers.
 import { expect, test } from "bun:test";
-import { bankPlace, floats, launch, wayOut } from "./place.ts";
+import { bankPlace, beside, floats, launch, wayOut } from "./place.ts";
 
 // A pond 4 m round, 1.2 m deep in the middle, the bank rising gently beyond.
 const pond = { x: 5, z: 5, radius: 4 }, spawn = { x: -1.5, z: -3 };
@@ -47,4 +47,13 @@ test("getting out, it never steps onto a bank too steep to stand on", () => {
   const out = wayOut({ x: 0, z: 0 }, 0, walled, 0);
   expect(out.outcome).toBe("bank");
   expect(out.x).toBeGreaterThan(1.2); // to the left, where it is flat
+});
+
+test("the beaver can get in beside the hull from stern to bow, not off its ends nor further out", () => {
+  const canoe = { x: 0, z: 0, heading: 0 }; // bow to +z, 2 m long
+  expect(beside({ x: 0.7, z: 0 }, canoe)).toBe(true);
+  expect(beside({ x: -0.7, z: 0.9 }, canoe)).toBe(true);
+  expect(beside({ x: 0, z: 1.8 }, canoe)).toBe(true); // just past the bow
+  expect(beside({ x: 1.2, z: 0 }, canoe)).toBe(false);
+  expect(beside({ x: 0, z: 2.2 }, canoe)).toBe(false);
 });
