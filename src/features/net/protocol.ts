@@ -21,14 +21,14 @@ export const MAX_PLAYERS = 16;
 /** Sockets one client address may hold (a household or class behind one router), and how long a new socket has to
  *  say hello before it is closed: the browser says it the moment the socket opens. */
 export const PER_ADDRESS = 4, HELLO_TIME = 5000;
-export const MAX_MESSAGE = 32 * 1024; // bytes; a whole world's build changes are about 12 KB at most
+export const MAX_MESSAGE = 96 * 1024; // bytes; a whole world's build changes are about 45 KB at most (protocol.test.ts)
 export const NAME_LENGTH = 20, CHAT_LENGTH = 140;
 export const SEND_RATE = 20; // states and things per second
 
 // ---- loose things: one id for the same thing in every browser ------------------------------------------------------
 
-/** Trees the server takes changes for (the world has 13). */
-export const MAX_TREES = 32;
+/** Trees the server takes changes for (the world has 49: src/world/place.ts). */
+export const MAX_TREES = 64;
 /** Ids: the world's own sticks from 0, the crates from CRATES, the wood of tree i from WOOD + i * PIECES (one id per
  *  piece of woodFrom, src/features/build/rules.ts, at most 2 logs and 6 sticks). */
 export const CRATES = 64, WOOD = 128, PIECES = 8;
@@ -143,8 +143,8 @@ const place = (v: unknown): v is Place => list(v, 8) && int(v[0], 0, MAX_THINGS 
   && v.slice(4).every((q) => num(q, -1.01, 1.01));
 
 /** Changes a message may hold: more than a whole world needs (a tree grown back and felled again about 34, the
- *  world's 13 trees about 520 with the STICKS of dam, lodge and cache and the find). */
-export const MAX_CHANGES = 600;
+ *  world's 49 trees about 1700 with the STICKS of dam, lodge and cache and the find; protocol.test.ts). */
+export const MAX_CHANGES = 2400;
 const EPOCH = /^[a-z0-9]{1,16}$/;
 const STICK = /^(w\d{1,2}|t\d{1,2}:\d|d\d{1,2}|x[0-9a-z]{1,12})$/; // the names src/features/build gives sticks (placed or traded)
 const turn = (v: unknown) => list(v, 4) && v.every((q) => num(q, -1.01, 1.01));

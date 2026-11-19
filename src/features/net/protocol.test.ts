@@ -8,6 +8,7 @@ import {
   parseChange, parseClient, replay, restore, sameOrigin, sameWorld, shouldReload, stickId, uniqueName, unpackMotion, woodId, type ServerMessage, type Work,
 } from "./protocol.ts";
 import { Track } from "./track.ts";
+import { placeAll } from "../../world/place.ts";
 
 const state = (change: Record<string, unknown> = {}) =>
   JSON.stringify({ t: "state", p: [1, 0.5, -2], f: 0.3, m: packMotion(newMotion()), c: -1, ...change });
@@ -46,7 +47,7 @@ describe("parseClient", () => {
     expect(parseClient(state({ u: [0, 1, 0, 99] }))).toBeUndefined();
     expect(parseClient(JSON.stringify({ t: "things", l: [[0, 1, 2, 3, 0, 0, 0, 7]] }))).toBeUndefined();
     expect(parseClient(JSON.stringify({ t: "things", l: [[-1, 1, 2, 3, 0, 0, 0, 1]] }))).toBeUndefined();
-    expect(parseClient(JSON.stringify({ t: "things", l: Array(500).fill([0, 1, 2, 3, 0, 0, 0, 1]) }))).toBeUndefined();
+    expect(parseClient(JSON.stringify({ t: "things", l: Array(MAX_THINGS + 1).fill([0, 1, 2, 3, 0, 0, 0, 1]) }))).toBeUndefined();
     expect(parseClient(JSON.stringify({ t: "drop", s: [3, 1, 2, 3, 0, 0, 0, 1], v: [0, 0, 100] }))).toBeUndefined();
   });
 
@@ -378,5 +379,23 @@ describe("build changes", () => {
     expect(taken).toBe(177 + STICKS); // without compacting, growing by 16 each time the tree comes back and breaks again
     expect(work.log.length).toBe(1 + 15 + 1 + STICKS); // the find, one tree's life, a bite, the sticks of dam, lodge and cache
     expect(compact(work)).toBe(false); // nothing more to shorten
+  });
+
+  test("a whole world, every tree of the clearing felled, broken, grown back and felled again, is brought in one message", () => {
+    const trees = placeAll().tree.length, t0 = 1.8e12, world = newState();
+    const take = (c: BuildChange, now = t0) => admit(world, c, now);
+    for (let tree = 0; tree < trees; tree++) {
+      expect(stickId(`t${tree}:0`)).toBe(woodId(tree, 0));
+      for (const c of [...Array(MAX_BITES).fill({ type: "bite", tree }), { type: "fell", tree, direction: 1 },
+        { type: "rest", tree, at: [30, 1, -30], turn: [0, 0.6, 0, 0.8] }, ...Array(4).fill({ type: "bite", tree }), { type: "split", tree }] as BuildChange[]) take({ ...c });
+      take({ type: "grow", tree }, t0 + REGROW * 1000);
+      for (const c of [...Array(MAX_BITES).fill({ type: "bite", tree }), { type: "fell", tree, direction: 1 },
+        { type: "rest", tree, at: [30, 1, -30], turn: [0, 0.6, 0, 0.8] }] as BuildChange[]) take({ ...c }, t0 + REGROW * 1000);
+    }
+    for (let k = 0; k < STICKS; k++) take({ type: "place", slot: k, stick: `t${k % trees}:${k % 6}` });
+    expect(world.dam.length).toBe(STICKS);
+    const bring = JSON.stringify({ t: "bring", c: changesOf(world) });
+    expect(bring.length).toBeLessThan(MAX_MESSAGE);
+    expect(parseClient(bring)).toEqual({ t: "bring", c: changesOf(world) });
   });
 });

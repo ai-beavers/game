@@ -4,7 +4,9 @@ import { describe, expect, test } from "bun:test";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { placeAll, SPAWN } from "./place.ts";
 import { dayAt } from "../features/sky/clock.ts";
-import { BASIN, groundAt, groundColliders, heightAt, HILL, POND, pondRatio, RIM, SHELF, SITE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
+import { BASIN, FIRST_RIM, groundAt, groundColliders, heightAt, HILL, POND, pondRatio, RIM, SHELF, SITE, SIZE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
+import { SHOP } from "../features/shop/place.ts";
+import { POST } from "../features/trade/place.ts";
 
 describe("heightAt", () => {
   test("the pond is about 1.2 m deep in its middle", () => {
@@ -68,6 +70,17 @@ describe("heightAt", () => {
       expect(heightAt(x, z)).toBeGreaterThan(heightAt(0, 0) + (sunsetGap(x, z) > 0 ? 0.8 : 2.5));
     }
   });
+  test("the clearing is about 66 m across: low meadow 28 m out, risen into bank beyond 40 m (but where the sun sets)", () => {
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 32) {
+      const out = (r: number) => ({ x: Math.cos(a) * r, z: Math.sin(a) * r });
+      const meadow = out(28), bank = out(40);
+      expect(heightAt(meadow.x, meadow.z)).toBeLessThan(1);
+      if (sunsetGap(bank.x, bank.z) === 0) expect(heightAt(bank.x, bank.z)).toBeGreaterThan(3);
+      // where the first clearing's bank stood 4 m high, it is meadow now
+      const old = out(FIRST_RIM + 6);
+      if (sunsetGap(old.x, old.z) === 0) expect(heightAt(old.x, old.z)).toBeLessThan(1);
+    }
+  });
   test("the evening sun, 6° to 17° high, reaches the middle of the clearing over the bank", () => {
     for (const hour of [18.5, 19, 19.5]) {
       const sun = dayAt(hour).sun, from = heightAt(0, 0) + 0.1;
@@ -81,8 +94,9 @@ describe("placement", () => {
   const wet = (s: { x: number; z: number }) => heightAt(s.x, s.z) <= WATER_LEVEL || pondRatio(s.x, s.z) < 1.1;
   test("is the same every time", () => expect(placeAll()).toEqual(layout));
   test("has what the world promises", () => {
-    expect(layout.tree.length).toBeGreaterThanOrEqual(8);
-    expect(layout.tree.length).toBeLessThanOrEqual(15);
+    const first = layout.tree.filter((t) => Math.hypot(t.x, t.z) < FIRST_RIM);
+    expect(first.length).toBeGreaterThanOrEqual(8);
+    expect(first.length).toBeLessThanOrEqual(15);
     expect(layout.tree.some((t) => Math.hypot(t.x - POND.x, t.z - POND.z) < POND.radius + 3)).toBe(true);
     expect(layout.crate).toHaveLength(3);
     expect(layout.stick).toHaveLength(20);
@@ -111,6 +125,42 @@ describe("placement", () => {
     expect(layout.sunkenLog).toHaveLength(1);
     for (const s of [...layout.bedRock, ...layout.sunkenLog]) expect(heightAt(s.x, s.z)).toBeLessThan(WATER_LEVEL - 1.2);
   });
+  test("the trees a saved game knows stand where they stood, in the same order", () => {
+    // The first clearing's 13 trees, as they were placed before it grew: a saved game names a tree by its index.
+    const first = [[8.4, 8.9], [7.996, -10.654], [-1.902, 12.936], [8.1, -9.133], [0.007, 14.423], [-0.3, -11.186], [4.026, 11.7],
+      [-5.041, -11.98], [12.195, 0.295], [4.904, -8.02], [-7.736, -5.069], [5.474, 12.801], [-14.012, 1.081]];
+    first.forEach(([x, z], i) => {
+      expect(layout.tree[i]!.x).toBeCloseTo(x!, 3);
+      expect(layout.tree[i]!.z).toBeCloseTo(z!, 3);
+    });
+  });
+  test("the far meadow has trees to fell: after the first ones, inside the clearing, on dry walkable ground, apart", () => {
+    const ring = layout.tree.slice(13);
+    const far = layout.tree.filter((t) => Math.hypot(t.x, t.z) > FIRST_RIM);
+    expect(ring.length).toBeGreaterThanOrEqual(25); // about the first meadow's density over three times its area
+    expect(far).toEqual(ring); // the new ones come after the old, and only they stand out there
+    for (const t of ring) {
+      expect(Math.hypot(t.x, t.z)).toBeLessThan(RIM);
+      expect(heightAt(t.x, t.z)).toBeGreaterThan(WATER_LEVEL + 0.05);
+      expect(heightAt(t.x, t.z)).toBeLessThan(1.2);
+      expect(slopeAt(t.x, t.z)).toBeLessThan(0.5);
+      for (const other of layout.tree) if (other !== t) expect(Math.hypot(other.x - t.x, other.z - t.z)).toBeGreaterThan(3);
+      for (const p of [POND, SITE, SHOP, POST]) expect(Math.hypot(p.x - t.x, p.z - t.z)).toBeGreaterThan(5);
+    }
+    for (const s of [...layout.stump, ...layout.log, ...layout.rock]) expect(Math.hypot(s.x, s.z)).toBeLessThan(RIM);
+    expect(layout.stump.filter((s) => Math.hypot(s.x, s.z) > FIRST_RIM).length).toBeGreaterThan(4);
+    expect(layout.log.filter((s) => Math.hypot(s.x, s.z) > FIRST_RIM).length).toBeGreaterThan(3);
+    expect(layout.rock.filter((s) => Math.hypot(s.x, s.z) > FIRST_RIM).length).toBeGreaterThan(3);
+  });
+  test("loose sticks stay near the pond and the building site", () => {
+    for (const s of layout.stick) expect(Math.hypot(s.x, s.z)).toBeLessThan(FIRST_RIM);
+  });
+  test("the far forest stands beyond the bank, and the ground is drawn under it", () => {
+    for (const t of layout.farTree) {
+      expect(Math.hypot(t.x, t.z)).toBeGreaterThan(RIM + 3);
+      expect(Math.max(Math.abs(t.x), Math.abs(t.z))).toBeLessThan(SIZE / 2 - 2);
+    }
+  });
   test("the spawn is clear and dry", () => {
     expect(wet(SPAWN)).toBe(false);
     for (const s of [...layout.tree, ...layout.rock, ...layout.stump, ...layout.log]) expect(Math.hypot(s.x - SPAWN.x, s.z - SPAWN.z)).toBeGreaterThan(1.5);
@@ -118,6 +168,12 @@ describe("placement", () => {
 });
 
 describe("the ground as drawn and collided", () => {
+  test("follows heightAt over the whole clearing and its bank", () => {
+    let worst = 0;
+    for (let x = -RIM - 8; x < RIM + 8; x += 0.37) for (let z = -RIM - 8; z < RIM + 8; z += 0.41)
+      if (pondRatio(x, z) > 1.3) worst = Math.max(worst, Math.abs(groundAt(x, z) - heightAt(x, z)));
+    expect(worst).toBeLessThan(0.1);
+  });
   test("follows heightAt within 0.1 m all over the pond, the basin's walls too", () => {
     let worst = 0;
     for (let x = POND.x - 5; x < POND.x + 5; x += 0.02) for (let z = POND.z - 5; z < POND.z + 5; z += 0.02)

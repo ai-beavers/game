@@ -8,7 +8,9 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { Stage } from "../engine.ts";
 import { daylightOf, LANTERN_GLSL, LANTERN_UNIFORMS } from "../light.ts";
 import { seeded } from "./noise.ts";
-import { BASIN, groundColor, heightAt, RIM, SITE, pondRatio, slopeAt, WATER_LEVEL } from "./terrain.ts";
+import { BASIN, FIRST_RIM, groundColor, heightAt, RIM, SITE, pondRatio, slopeAt, WATER_LEVEL } from "./terrain.ts";
+
+const TILE = 11, REACH = 27; // m: the side of a tile of grass; the farthest a blade still stands (the shader's reach)
 
 export const grassOf = (scene: Scene) => scene.metadata.wind as { value: number } | undefined;
 
@@ -34,7 +36,7 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
       varying vec3 colour; ${LANTERN_GLSL}
       void main() {
         #include<instancesVertex>
-        float far = length(finalWorld[3].xyz - eye), reach = mix(9., 27., ground.w); // each blade stands up to its own distance, then shrinks away
+        float far = length(finalWorld[3].xyz - eye), reach = mix(9., ${REACH}., ground.w); // each blade stands up to its own distance, then shrinks away
         vec4 p = finalWorld * vec4(position * smoothstep(reach, reach - 3., far), 1.);
         float tip = position.y * 4., h = tip * 1.4;
         float tall = length(finalWorld[1].xyz), weed = step(2., tall); // grass is at most 1.3 high, pondweed 4 and more
@@ -60,11 +62,21 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
     effect.setMatrix("lightMatrix", light.shadows.getTransformMatrix());
     effect.setDepthStencilTexture("shadowMap", light.shadows.getShadowMapForRendering());
   });
-  const matrices: number[] = [], grounds: number[] = [], colour = new Color3();
-  for (let i = 0; i < 26000; i++) {
+  // In tiles, each a mesh of its own, so the tiles out of the camera's view are not drawn at all.
+  const tiles = new Map<number, { matrices: number[]; grounds: number[] }>(), colour = new Color3();
+  const weeds = { matrices: [] as number[], grounds: [] as number[] }; // the pondweed, in the first mesh (life reads it)
+  let matrices: number[] = [], grounds: number[] = [];
+  const at = (x: number, z: number) => {
+    const key = Math.floor(x / TILE + 50) * 1000 + Math.floor(z / TILE + 50);
+    let tile = tiles.get(key);
+    if (!tile) tiles.set(key, tile = { matrices: [], grounds: [] });
+    ({ matrices, grounds } = tile);
+  };
+  for (let i = 0; i < 26000 * (RIM / FIRST_RIM) ** 2; i++) { // as thick as in the first, smaller clearing
     const x = (random() * 2 - 1) * RIM, z = (random() * 2 - 1) * RIM;
     if (Math.hypot(x,z) > RIM || pondRatio(x,z) < 1.18 || blocked(x,z) || Math.hypot(x-SITE.x,z-SITE.z) < SITE.radius) continue;
     const h = heightAt(x,z);
+    at(x, z);
     matrices.push(...Matrix.Compose(Vector3.One().scale(0.5 + random() * 0.8), Quaternion.RotationAxis(Vector3.Up(), random()*6.28),
       new Vector3(x, h-0.02, z)).asArray());
     grounds.push(...groundColor(x, z, h, slopeAt(x, z), colour).asArray(), random());
@@ -75,6 +87,7 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
   for (let i = 0; i < 40; i++) {
     const x = BASIN.x + (random() * 2 - 1) * BASIN.along, z = BASIN.z + (random() * 2 - 1) * BASIN.across * 1.4, h = heightAt(x, z);
     if (h > WATER_LEVEL - 1.2) continue;
+    ({ matrices, grounds } = weeds);
     for (let k = 0; k < 7; k++) {
       const tall = 4 + random() * 7; // 0.6 … 1.6 m
       matrices.push(...Matrix.Compose(new Vector3(1.6, tall, 1.6), Quaternion.RotationAxis(Vector3.Up(), random() * 6.28),
@@ -82,10 +95,25 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
       grounds.push(...weed.scale(0.7 + random() * 0.5).asArray(), 1);
     }
   }
-  mesh.thinInstanceSetBuffer("matrix", new Float32Array(matrices), 16, true);
-  mesh.thinInstanceSetBuffer("ground", new Float32Array(grounds), 4, true);
+  const parts: Mesh[] = [];
+  for (const tile of tiles.values()) {
+    const part = mesh.clone("grass tile");
+    parts.push(part);
+    part.thinInstanceSetBuffer("matrix", new Float32Array(tile.matrices), 16, true);
+    part.thinInstanceSetBuffer("ground", new Float32Array(tile.grounds), 4, true);
+    part.thinInstanceRefreshBoundingInfo();
+  }
+  mesh.thinInstanceSetBuffer("matrix", new Float32Array(weeds.matrices), 16, true);
+  mesh.thinInstanceSetBuffer("ground", new Float32Array(weeds.grounds), 4, true);
   const sky = new Color3(), sun = new Color3(), toSun = new Vector3();
   return { update(time: number) {
+    // A tile all of whose blades stand farther than they reach (the shader's REACH) is not drawn at all. Cost per
+    // frame: one distance to each tile's box, at most 36 tiles (66 m square in 11 m tiles); the blades out of reach are not drawn.
+    const eye = (scene.activeCamera ?? camera).globalPosition;
+    for (const part of parts) {
+      const { minimumWorld: lo, maximumWorld: hi } = part.getBoundingInfo().boundingBox;
+      part.isVisible = Math.hypot(Math.max(lo.x - eye.x, 0, eye.x - hi.x), Math.max(lo.z - eye.z, 0, eye.z - hi.z)) < REACH;
+    }
     light.sky.diffuse.scaleToRef(light.sky.intensity, sky);
     light.sun.diffuse.scaleToRef(light.sun.intensity, sun);
     light.sun.direction.scaleToRef(-1, toSun);

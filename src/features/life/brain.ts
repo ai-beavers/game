@@ -160,10 +160,14 @@ export function makeBirds(land: Land, count: number, perches: Perch[], random: R
 const groundPerch = (land: Land, p: { x: number; z: number }): Perch => ({ x: p.x, y: land.heightAt(p.x, p.z), z: p.z });
 
 /** Where a bird lands: a free perch or open ground, well away from the beaver. */
-export function pickLanding(land: Land, perches: Perch[], threat: Threat, random: Random, taken: Perch[] = []): Perch {
-  const freePerches = perches.filter((p) => far(threat, p.x, p.z) > 7 && taken.every((t) => Math.hypot(t.x - p.x, t.z - p.z) > 0.3));
+const FLY_REACH = 28; // m: the farthest a small bird flies at once (across the first, smaller clearing)
+
+export function pickLanding(land: Land, perches: Perch[], threat: Threat, random: Random, taken: Perch[] = [], from?: { x: number; z: number }): Perch {
+  // A flight of a few seconds at most, however big the clearing: a perch or a patch of meadow within reach.
+  const reach = (p: { x: number; z: number }) => !from || Math.hypot(p.x - from.x, p.z - from.z) < FLY_REACH;
+  const freePerches = perches.filter((p) => far(threat, p.x, p.z) > 7 && reach(p) && taken.every((t) => Math.hypot(t.x - p.x, t.z - p.z) > 0.3));
   if (freePerches.length && random() < 0.6) return freePerches[Math.floor(random() * freePerches.length)]!;
-  return groundPerch(land, meadowPoint(land, random, undefined, threat, 8));
+  return groundPerch(land, meadowPoint(land, random, from && { ...from, r: FLY_REACH / 2 }, threat, 8));
 }
 
 export function stepBirds(birds: Bird[], land: Land, perches: Perch[], threat: Threat, dt: number, random: Random) {
@@ -175,7 +179,7 @@ export function stepBirds(birds: Bird[], land: Land, perches: Perch[], threat: T
       if (d < scare || b.alarm <= 0 || b.restless <= 0) {
         if (d < scare || b.alarm <= 0) for (const o of birds) if (o !== b && o.state === "ground" && Math.hypot(o.x - b.x, o.z - b.z) < 3)
           o.alarm = Math.min(o.alarm, 0.1 + random() * 0.35);
-        takeOff(b, land, pickLanding(land, perches, threat, random, birds.filter((o) => o !== b).map((o) => o.to)));
+        takeOff(b, land, pickLanding(land, perches, threat, random, birds.filter((o) => o !== b).map((o) => o.to), b));
         continue;
       }
       // Pecking and hopping about.
@@ -538,10 +542,12 @@ export interface Deer {
 
 const WALK = 0.9, BOUND = 5.5; // m/s
 const DEER_ALERT = 10, DEER_NEAR = 5.5, DEER_RUN = 13; // m: heads up; too close; a beaver running at them
-const DEER_HEAR = 25; // m a tail slap carries for a deer
+const HERD_ALARM = 1.3; // a fleeing deer alarms the others this many times the clearing's radius away: one drinking at the pond too
+const DEER_HEAR = 1.8; // a tail slap carries for a deer this many times the clearing's radius: across it
 /** Radii from the middle: they graze at the meadow's rim, wait under the trees in rain, vanish into the forest. */
 const graze = (land: Land) => [land.rim - 3.5, land.rim - 0.5] as const;
 const SHELTER = 4, COVER = 8; // m beyond the rim
+const SPACING = 4.8, SPREAD = 8.4; // m between the ways out of a herd's deer; m along the rim a deer grazes round its own
 
 const ring = (angle: number, r: number) => ({ x: Math.cos(angle) * r, z: Math.sin(angle) * r });
 type Spot = { x: number; z: number };
@@ -563,7 +569,7 @@ export function grazeSpot(land: Land, trunks: Spot[], herd: Deer[], d: Deer, thr
   const [inner, outer] = graze(land);
   let best: Spot = ring(d.home, outer), score = -Infinity;
   for (let i = 0; i < 16; i++) {
-    const p = near ? { x: d.x + (random() - 0.5) * near * 2, z: d.z + (random() - 0.5) * near * 2 } : ring(d.home + (random() - 0.5) * 0.7, lerp(inner, outer, random()));
+    const p = near ? { x: d.x + (random() - 0.5) * near * 2, z: d.z + (random() - 0.5) * near * 2 } : ring(d.home + (random() - 0.5) * SPREAD / inner, lerp(inner, outer, random()));
     const r = Math.hypot(p.x, p.z);
     if (r < inner - 1 || r > outer + 0.5 || !dry(land, p.x, p.z)) continue;
     const steep = Math.abs(land.heightAt(p.x + 0.5, p.z) - land.heightAt(p.x - 0.5, p.z)) + Math.abs(land.heightAt(p.x, p.z + 0.5) - land.heightAt(p.x, p.z - 0.5));
@@ -578,7 +584,7 @@ export function makeDeer(land: Land, count: number, random: Random): Deer[] {
   const start = random() * TAU;
   return Array.from({ length: count }, (_, i) => {
     // A small herd: they come out near each other, one after the other.
-    const home = start + (i - (count - 1) / 2) * 0.22, at = ring(home, land.rim + COVER);
+    const home = start + (i - (count - 1) / 2) * SPACING / (land.rim + COVER), at = ring(home, land.rim + COVER);
     return {
       ...at, y: land.heightAt(at.x, at.z), heading: home + Math.PI, speed: 0, state: "away", then: "graze", goal: at, home,
       t: 1 + i * 2.5 + random() * 3, left: 0, alert: 0, watched: 0, alarm: Infinity, phase: random() * TAU, stride: 0, bound: 0, air: 0,
@@ -622,7 +628,7 @@ export function stepDeer(herd: Deer[], land: Land, trunks: Spot[], shore: Perch[
       const scared = dist < DEER_NEAR || (threat.speed > 1.4 && dist < DEER_RUN) || d.alarm <= 0;
       if (scared) {
         flee(d, land, dist < DEER_RUN ? threat : { x: 0, z: 0 });
-        for (const o of herd) if (o !== d && o.state !== "away" && o.state !== "flee" && Math.hypot(o.x - d.x, o.z - d.z) < 18) o.alarm = Math.min(o.alarm, 0.2 + random() * 0.5);
+        for (const o of herd) if (o !== d && o.state !== "away" && o.state !== "flee" && Math.hypot(o.x - d.x, o.z - d.z) < HERD_ALARM * land.rim) o.alarm = Math.min(o.alarm, 0.2 + random() * 0.5);
       }
     }
     if (d.state === "flee") {
@@ -828,7 +834,7 @@ export function startle(animals: Animals, land: Land, perches: Perch[], at: { x:
   count += school.length;
   for (const f of animals.frogs) if (f.state === "sit" && near(f)) { leap(f, land, at); count++; }
   for (const b of animals.birds) if (b.state === "ground" && near(b)) {
-    takeOff(b, land, pickLanding(land, perches, threat, random, animals.birds.filter((o) => o !== b).map((o) => o.to)));
+    takeOff(b, land, pickLanding(land, perches, threat, random, animals.birds.filter((o) => o !== b).map((o) => o.to), b));
     count++;
   }
   for (const d of animals.ducks) if (d.flying <= 0 && near(d)) {
@@ -838,6 +844,6 @@ export function startle(animals: Animals, land: Land, perches: Perch[], at: { x:
     count++;
   }
   // Deer hear it far across the clearing.
-  for (const d of animals.deer ?? []) if (d.state !== "away" && d.state !== "flee" && far(threat, d.x, d.z) < Math.max(reach, DEER_HEAR)) { flee(d, land, at); count++; }
+  for (const d of animals.deer ?? []) if (d.state !== "away" && d.state !== "flee" && far(threat, d.x, d.z) < Math.max(reach, DEER_HEAR * land.rim)) { flee(d, land, at); count++; }
   return count;
 }

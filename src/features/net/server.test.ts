@@ -223,7 +223,7 @@ for (const kind of ["server.ts", "worker.ts"] as const) describe(kind, () => {
     const local = Array.from({ length: PER_ADDRESS + 2 }, () => client(port)); // bots and browsers on this machine
     expect(await Promise.all(local.map((c) => c.opened))).toEqual(Array(PER_ADDRESS + 2).fill(true));
     expect(out()).toContain("http://");
-  }, 30000);
+  }, 30000); // ms: ends a hang, says nothing about speed on a busy machine
 
   test.if(!bun)("starts the world afresh for the holder of the reset token only", async () => {
     const { port } = await start({ RESET_TOKEN: "only-the-maintainers-know" });

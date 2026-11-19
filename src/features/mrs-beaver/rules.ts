@@ -15,7 +15,8 @@
 // kept: the quest lives in memory for one visit (no localStorage, no network).
 
 export interface XZ { x: number; z: number }
-/** The three hiding places: on dry land just inside the bank, clear of the Pond, the building site, the Shop, the
+/** The three hiding places: on dry land just inside where the bank stood before the clearing grew (terrain.ts
+ *  FIRST_RIM; they stayed, so a rescue is no longer a walk than before), clear of the Pond, the building site, the Shop, the
  *  trading post and the spawn, each with a straight way over land to HOME (rules.test.ts checks both). West, south,
  *  north. */
 export const HIDING: readonly XZ[] = [{ x: -13.3, z: -2.3 }, { x: 3.5, z: -13 }, { x: -5, z: 13.6 }];

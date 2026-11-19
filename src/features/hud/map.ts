@@ -12,7 +12,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { GOLD } from "./style.ts";
 
 /** Half the width of the mapped square around the middle of the clearing, m, and metres per pixel. */
-export const EXTENT = 22;
+export const EXTENT = 38;
 const RESOLUTION = 0.2;
 const OUTSIDE = "#4a5f36"; // beyond the painted square: thicket
 

@@ -6,9 +6,17 @@
 // Rules: trees ring the clearing and one stands near the pond; nothing solid stands in the water or on the building
 // site; reeds grow in the shallow edge of the pond; sticks lie under trees, on the shore and by the site; the
 // crates wait at the site. Bushes and far trees fill the bank and the land behind it (seen, not walked). Rocks and a
-// sunken log lie down in the pond's deep basin.
+// sunken log lie down in the pond's deep basin. The wide ring of meadow the clearing grew by gets trees, stumps, logs
+// and rocks of its own, at the inner meadow's density.
+//
+// Saved games name trees by their index in `tree`: what was placed before the clearing grew is placed as it was,
+// against the ground as it was then (FIRST_RIM), and the ring's things come after it from a random of their own.
 import { fbm, seeded } from "./noise.ts";
-import { BASIN, HILL, POND, RIM, SITE, WATER_LEVEL, heightAt, pondRatio, slopeAt, sunsetGap } from "./terrain.ts";
+import { SHOP, SHOP_CLEAR } from "../features/shop/place.ts"; // the ring keeps clear of the Shop, which stands in the meadow
+import { BASIN, FIRST_RIM, HILL, POND, RIM, SITE, WATER_LEVEL, heightAt as groundNow, pondRatio, shape, slopeAt as slopeNow, sunsetGap } from "./terrain.ts";
+
+/** The ground the first clearing's things were placed on: its bank started at FIRST_RIM. */
+const { heightAt, slopeAt } = shape(FIRST_RIM);
 
 export interface Spot {
   x: number; z: number;
@@ -30,6 +38,10 @@ export interface Layout {
   /** Under water, in the deep basin: rocks on its bed, a sunken log. */
   bedRock: Spot[]; sunkenLog: Spot[];
 }
+
+/** How many of each the ring gets: the first meadow's 13 trees, 4 stumps, 3 logs and 3 rocks in the grass, for three
+ *  times its area. */
+const RING = { tree: 36, stump: 12, log: 9, rock: 9 };
 
 const dist = (a: { x: number; z: number }, x: number, z: number) => Math.hypot(a.x - x, a.z - z);
 
@@ -71,7 +83,7 @@ export function placeAll(seed = 42): Layout {
     .map((p) => (solid.push({ ...p, r: 1.3 }), spot(p, 1, 2)));
 
   // Rocks: on the steep side of the hill, on the pond's shore, a few in the grass.
-  const steep = scatter(4, 1.5, 4, (x, z) => slopeAt(x, z) > 0.55 && Math.hypot(x, z) < RIM && free(x, z, 0.7), HILL);
+  const steep = scatter(4, 1.5, 4, (x, z) => slopeAt(x, z) > 0.55 && Math.hypot(x, z) < FIRST_RIM && free(x, z, 0.7), HILL);
   const shore = scatter(3, 4.3, 5.6, (x, z) => dry(x, z, 0.02) && offSite(x, z, 0.5) && free(x, z, 0.7), POND);
   const meadow = scatter(3, 3, 14, (x, z) => dry(x, z) && offSite(x, z) && offSpawn(x, z) && free(x, z, 0.8));
   const rock = [...steep, ...shore, ...meadow].map((p) => (solid.push({ ...p, r: 0.6 }), spot(p, 0.7 + random() * 0.7, 3)));
@@ -97,10 +109,11 @@ export function placeAll(seed = 42): Layout {
   for (const p of scatter(20, 2, 13, stickFree)) if (sticks.length < 20) sticks.push(p);
   const stick = sticks.slice(0, 20).map((p) => spot(p, 0.5 + random() * 0.3, 2, { thickness: 0.03 + random() * 0.02 }));
 
-  // The thicket on the bank and the forest behind it, open where the evening sun goes down.
-  const bush = scatter(260, RIM - 1, RIM + 7, (x, z) => heightAt(x, z) > 0.45 && dist(HILL, x, z) > 2.5 && dist(pondTree, x, z) > 2
-    && sunsetGap(x, z) < 0.5).map((p) => spot(p, 0.8 + random() * 0.9, 3));
-  const farTree = scatter(110, RIM + 4, RIM + 26, (x, z) => sunsetGap(x, z) === 0).map((p) => spot(p, 0.9 + random() * 0.6, 5));
+  // The thicket on the bank and the forest behind it, open where the evening sun goes down: at the bank as it is now,
+  // as thick along it as round the first clearing. Seen, not walked, not saved: they may move with the bank.
+  const bush = scatter(520, RIM - 1, RIM + 7, (x, z) => groundNow(x, z) > 0.45 && sunsetGap(x, z) < 0.5, undefined, 8000)
+    .map((p) => spot(p, 0.8 + random() * 0.9, 3));
+  const farTree = scatter(190, RIM + 4, RIM + 26, (x, z) => sunsetGap(x, z) === 0).map((p) => spot(p, 0.9 + random() * 0.6, 5));
 
   // Down in the deep basin: a few rocks fallen from the drop-off and a sunken log on the floor, lengthwise. Their own
   // random, after everything else, so nothing above moves.
@@ -111,5 +124,28 @@ export function placeAll(seed = 42): Layout {
     if (heightAt(x, z) < WATER_LEVEL - 1.3 && [...bedRock, ...sunkenLog].every((r) => dist(r, x, z) > 1))
       bedRock.push({ x, z, turn: deep() * Math.PI * 2, scale: 0.5 + deep() * 0.6, variant: Math.floor(deep() * 3) });
   }
+
+  // The ring the clearing grew by: trees, stumps, logs and rocks as thick as in the first meadow, on walkable meadow
+  // short of the bank, clear of everything above and of each other. Their own random, after everything else, and
+  // after the first clearing's in each list, so nothing above moves and a saved game's tree i is the same tree.
+  const ring = seeded(seed + 2), inRing = { from: FIRST_RIM, to: RIM - 2.5 };
+  const meadowNow = (x: number, z: number, steep: number) => groundNow(x, z) > WATER_LEVEL + 0.1 && groundNow(x, z) < 1.1 && slopeNow(x, z) < steep && sunsetGap(x, z) < 0.5
+    && dist(SHOP, x, z) > SHOP_CLEAR;
+  /** Up to `count` places on the ring passing `test`, each `r` m clear of every solid thing, the ones placed here too. */
+  const spread = (count: number, r: number, test: (x: number, z: number) => boolean) => {
+    const out: { x: number; z: number }[] = [];
+    for (let i = 0; i < count * 60 && out.length < count; i++) {
+      const a = ring() * Math.PI * 2, d = Math.sqrt(inRing.from ** 2 + ring() * (inRing.to ** 2 - inRing.from ** 2));
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (test(x, z) && free(x, z, r)) { out.push({ x, z }); solid.push({ x, z, r }); }
+    }
+    return out;
+  };
+  const ringSpot = (p: { x: number; z: number }, scale: number, variants: number): Spot =>
+    ({ x: p.x, z: p.z, turn: ring() * Math.PI * 2, scale, variant: Math.floor(ring() * variants) });
+  tree.push(...spread(RING.tree, 2.6, (x, z) => meadowNow(x, z, 0.45)).map((p) => ringSpot(p, 0.85 + ring() * 0.4, 5)));
+  stump.push(...spread(RING.stump, 0.7, (x, z) => meadowNow(x, z, 0.3)).map((p) => ringSpot(p, 0.9 + ring() * 0.3, 2)));
+  log.push(...spread(RING.log, 1.4, (x, z) => meadowNow(x, z, 0.2)).map((p) => ringSpot(p, 1, 2)));
+  rock.push(...spread(RING.rock, 0.7, (x, z) => meadowNow(x, z, 0.6)).map((p) => ringSpot(p, 0.7 + ring() * 0.7, 3)));
   return { tree, stump, log, rock, reed, crate, stick, bush, farTree, bedRock, sunkenLog };
 }

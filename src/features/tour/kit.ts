@@ -14,6 +14,7 @@ import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import type { SkyState } from "../sky/index.ts";
 import { LODGE, live as standing, SLOTS, type BuildState } from "../build/rules.ts";
+import { FIRST_RIM } from "../../world/terrain.ts";
 import type { BiteReport } from "../build/tree.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
@@ -199,10 +200,12 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   const pond = world.pond, sky = () => game.sky ?? skip("no sky feature");
   // m south of the pond's middle to swim to: the lodge rises in the middle once the dam holds (and the pond is full).
   const clear = () => (build()?.state.dam.length ?? 0) >= SLOTS ? 1.8 : 0;
-  /** Trees standing now, the first ones or grown back, nearest the building site first. */
+  /** Trees standing now in the first clearing round the pond, the first ones or grown back, nearest the building site
+   *  first. The far meadow's trees are left for players: wood from there is a long walk, and the dam work stays short. */
   const standingTrees = (b: BuildDebug) => {
     const site = world.site!, from = (i: number) => Math.hypot(world.trees![i]!.place.x - site.x, world.trees![i]!.place.z - site.z);
-    return world.trees!.map((_, i) => i).filter((i) => standing(b.state.trees[i])?.fell === undefined && !!standing(b.state.trees[i])).sort((a, c) => from(a) - from(c));
+    const near = (i: number) => Math.hypot(world.trees![i]!.place.x, world.trees![i]!.place.z) < FIRST_RIM;
+    return world.trees!.map((_, i) => i).filter((i) => near(i) && standing(b.state.trees[i])?.fell === undefined && !!standing(b.state.trees[i])).sort((a, c) => from(a) - from(c));
   };
   const fell = async (i: number) => {
     const tree = world.trees![i]!;
