@@ -1,15 +1,14 @@
 // Mrs. Beaver: missing at a hiding place, found at the edge of the Clearing, freed with the Use key, the pen fallen
 // into loose sticks, and her walk home to the building site. Played through input as a person would; only the reset
 // (missing again, at a hiding place picked anew) and where the pen stands come from the feature's debug handle.
-import { HIDING } from "../../mrs-beaver/rules.ts";
+import { HIDING, REACH, type State, type XZ } from "../../mrs-beaver/rules.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
-type XZ = { x: number; z: number };
 /** What the feature puts on window for tools (src/features/mrs-beaver/index.ts); only the part the tour needs. */
 interface MrsBeaverDebug {
   pen: XZ;
-  state: "missing" | "freed";
+  state: State;
   home: XZ;
   her(): XZ | undefined;
   stand(): XZ;
@@ -38,7 +37,7 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       await reach("use", () => her.stand());
       const offer = player.offer();
       expect(offer?.action === "use" && offer.text === FREE, `with free paws at the pen, Use would "${offer?.text}", not "${FREE}"`);
-      expect(near(player.feet, pen) <= 1.3, `Use offers to free her ${near(player.feet, pen).toFixed(2)} m from the pen`);
+      expect(near(player.feet, pen) <= REACH, `Use offers to free her ${near(player.feet, pen).toFixed(2)} m from the pen`);
 
       // Use: the pen falls into loose sticks, she is free, and the line says so.
       const before = world.sticks.filter((s) => near(s.body.translation(), pen) < 1.4).length;
@@ -61,7 +60,7 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       her.reset(HIDING.findIndex((h) => near(h, pen) < 0.01));
       const back = her.stand();
       await walkTo(back.x, back.z, { near: 0.25, limit: 15 });
-      expect(near(player.feet, her.pen) < 1.3, `stood ${near(player.feet, her.pen).toFixed(2)} m from the pen with a stick`);
+      expect(near(player.feet, her.pen) < REACH, `stood ${near(player.feet, her.pen).toFixed(2)} m from the pen with a stick`);
       const offered = player.offer();
       expect(offered?.action === "drop", `with a stick in the paws at the pen, Use would "${offered?.text}", not drop it`);
       await tap("act");

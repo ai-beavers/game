@@ -8,7 +8,7 @@
 import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { Stage } from "../../engine.ts";
 import { hudLayout, onViewport, Overlay } from "../hud/overlay.ts";
-import { GOLD } from "../hud/style.ts";
+import { GOLD, PAPER } from "../hud/style.ts";
 
 export function rescueLine(stage: Stage) {
   const overlay = new Overlay(stage, "mrs-beaver-line", false, 4);
@@ -27,7 +27,7 @@ export function rescueLine(stage: Stage) {
     if (value === text) return;
     text = value;
     pill.set(value);
-    pill.text.color = done ? GOLD : "#f6f2e7";
+    pill.text.color = done ? GOLD : PAPER;
     shownAt = NaN;
   };
   let shownAt = NaN;
