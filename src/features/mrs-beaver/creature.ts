@@ -223,7 +223,7 @@ export function buildTracks(stage: Stage, at: { x: number; z: number }, facing: 
     d.position.set(at.x + fx * along + rx * s, 0, at.z + fz * along + rz * s);
     parts.push(paint(d, c));
   };
-  // The furrow her tail left, faint, down the middle.
+  // The furrow her tail left, faint, down the middle: a dash every 0.24 m. All lengths here are m.
   for (let a = 0.1; a < TRAIL - 0.1; a += 0.24) oval(a, Math.sin(a * 2.2) * 0.025, 0.035, 0.17, furrow);
   // Paired steps: a broad webbed hind print with five toes, the small front print just ahead of it, left then right.
   for (let k = 0, a = 0.15; a < TRAIL - 0.2; k++, a += 0.36) {
@@ -238,7 +238,7 @@ export function buildTracks(stage: Stage, at: { x: number; z: number }, facing: 
   const mesh = Mesh.MergeMeshes(parts, true)!;
   // Each vertex onto the ground beneath it, a hair above, so the prints follow a slope.
   const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-  for (let i = 0; i < positions.length; i += 3) positions[i + 1] = heightAt(positions[i]!, positions[i + 2]!) + 0.03;
+  for (let i = 0; i < positions.length; i += 3) positions[i + 1] = heightAt(positions[i]!, positions[i + 2]!) + 0.03; // m
   mesh.setVerticesData(VertexBuffer.PositionKind, positions);
   mesh.refreshBoundingInfo();
   mesh.name = "mrs-beaver-tracks";

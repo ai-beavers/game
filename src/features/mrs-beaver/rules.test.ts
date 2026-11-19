@@ -33,7 +33,8 @@ test("the first three hiding places stay where they were, and no two brush piles
   HIDING.forEach((a, i) => HIDING.forEach((b, j) => { if (i < j) expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(5.5); }));
 });
 
-test("every hiding place is on dry land just inside where the first clearing's bank stood, clear of the pond, the site, the shop and the post", () => {
+test("every hiding place is on dry land just inside where the first clearing's bank stood, clear of the pond, the site, the dam, the shop, the post and the spawn", () => {
+  const dam = { x: SITE.x + 1.1, z: SITE.z }; // the dam: on the shore, from the site towards the pond
   for (const p of HIDING) {
     const r = Math.hypot(p.x, p.z);
     expect(r).toBeGreaterThan(FIRST_RIM - 4); // they stayed when the clearing grew, as the middle did
@@ -42,6 +43,8 @@ test("every hiding place is on dry land just inside where the first clearing's b
     expect(slopeAt(p.x, p.z)).toBeLessThan(0.25);
     expect(pondRatio(p.x, p.z)).toBeGreaterThan(2);
     expect(Math.hypot(p.x - SITE.x, p.z - SITE.z)).toBeGreaterThan(8);
+    expect(Math.hypot(p.x - dam.x, p.z - dam.z)).toBeGreaterThan(6);
+    expect(Math.hypot(p.x - SPAWN.x, p.z - SPAWN.z)).toBeGreaterThan(6);
     expect(Math.hypot(p.x - SHOP.x, p.z - SHOP.z)).toBeGreaterThan(6);
     expect(Math.hypot(p.x - POST.x, p.z - POST.z)).toBeGreaterThan(8);
     expect(toBoard(p)).toBeGreaterThan(4);
