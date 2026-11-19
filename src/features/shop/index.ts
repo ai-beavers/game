@@ -17,11 +17,11 @@ import { buildShop, COUNTER, KEEPER_Z, RADIUS } from "./building.ts";
 import { shopkeeper, workers } from "./creatures.ts";
 import { shopHud } from "./panel.ts";
 import { buy, earn, load, outfit, wear, type OutfitId, type ShopState } from "./rules.ts";
+import { SHOP } from "./place.ts";
+
+export { SHOP };
 
 const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.shop.tour" : "beaver.shop";
-/** Where the Shop stands: on flat dry ground near the bank, north-west of the building site, its doorway towards
- *  the middle of the Clearing (clear of the Pond, the site and the ways between them and the spawn). */
-export const SHOP = { x: -9.5, z: 8.5 };
 const FACING = Math.atan2(0 - SHOP.x, 2 - SHOP.z);
 const NEAR = 28; // m: within this the creatures move and the screens scroll
 // Cost per frame: the bulbs' and lamps' colours and the ball's turn (a few numbers); a canvas texture uploaded a few

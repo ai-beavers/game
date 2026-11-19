@@ -7,7 +7,7 @@ import { material } from "./models.ts";
 //   buildTerrain(stage)            adds the ground mesh and its fixed colliders (groundColliders), returns the mesh
 //
 // The layout, in metres, y up, +z is where the beaver looks at the start:
-//   meadow clearing around (0, 0), about 33 m across, closed by a bank that rises 4 m into thicket
+//   meadow clearing around (0, 0), about 66 m across, closed by a bank that rises 4 m into thicket
 //   pond at POND, 1.2 m deep, a shallow shore all round, a basin 3 m deep in its south side (BASIN); the building
 //   site SITE is flat at its west shore
 //   hill at HILL, 3 m high: the side facing the clearing is walkable (< 25°), the side facing the bank is steep
@@ -23,8 +23,11 @@ export const WATER_LEVEL = 0;
 export const POND = { x: 5, z: 5, radius: 3.7, depth: 1.2 };
 export const SITE = { x: -0.8, z: 4.8, radius: 1.6, height: 0.1 };
 export const HILL = { x: -8, z: -7, height: 3, gentle: 10, steep: 3.6 };
-export const RIM = 16.5; // where the bank starts, from the middle
-export const SIZE = 90, CELL = 0.5; // the ground mesh: SIZE m square, one sample every CELL m
+export const RIM = 33; // where the bank starts, from the middle
+/** Where the bank started before the clearing grew to four times its area: what was placed then is placed against
+ *  the ground as it was (place.ts), so saved games find their trees where they left them. */
+export const FIRST_RIM = 16.5;
+export const SIZE = 180, CELL = 0.5; // the ground mesh: SIZE m square, one sample every CELL m
 
 const gentleDir = new Vector2(-HILL.x, -HILL.z).normalize(); // the hill's walkable side faces the clearing
 
@@ -54,15 +57,24 @@ export function hillHeight(x: number, z: number) {
   return HILL.height * smoothstep(1, 0, d / reach);
 }
 
-export function heightAt(x: number, z: number): number {
+/** The ground's height and steepness for a clearing whose bank starts `rim` m from the middle. */
+export function shape(rim: number) {
+  const height = (x: number, z: number) => shapedHeight(x, z, rim);
+  /** Steepness at a place, as rise over run (1 = 45°). */
+  const slope = (x: number, z: number, e = 0.25) =>
+    Math.hypot(height(x + e, z) - height(x - e, z), height(x, z + e) - height(x, z - e)) / (2 * e);
+  return { heightAt: height, slopeAt: slope };
+}
+
+function shapedHeight(x: number, z: number, rim: number): number {
   // The meadow: gently uneven.
   let h = 0.16 + fbm(x * 0.11, z * 0.11, 3) * 0.24;
   h = Math.max(h, h * 0.3 + hillHeight(x, z));
   // The bank at the edge, then land that keeps rising into far hills.
-  // Low where the evening sun goes down; inside the clearing (r < RIM) nothing changes.
+  // Low where the evening sun goes down; inside the clearing (r < rim) nothing changes.
   const r = rimDistance(x, z), gap = sunsetGap(x, z);
-  h += 4 * smoothstep(RIM, RIM + 6, r) * (1 - 0.7 * gap);
-  h += (Math.max(0, r - RIM - 6) * 0.08 + 2 * smoothstep(RIM + 6, RIM + 25, r) * (0.6 + fbm(x * 0.04, z * 0.04, 2))) * (1 - 0.85 * gap);
+  h += 4 * smoothstep(rim, rim + 6, r) * (1 - 0.7 * gap);
+  h += (Math.max(0, r - rim - 6) * 0.08 + 2 * smoothstep(rim + 6, rim + 25, r) * (0.6 + fbm(x * 0.04, z * 0.04, 2))) * (1 - 0.85 * gap);
   // The building site: levelled.
   const ds = Math.hypot(x - SITE.x, z - SITE.z);
   h = mix(SITE.height, h, smoothstep(SITE.radius, SITE.radius + 1.4, ds));
@@ -88,11 +100,11 @@ export function basinHeight(x: number, z: number) {
   return mix(floor, WATER_LEVEL, smoothstep(0.5, 1.05, e));
 }
 
+const clearing = shape(RIM);
+/** The ground's height in the clearing as it is; pure, also used by the tests and the placement rules. */
+export const heightAt = (x: number, z: number) => clearing.heightAt(x, z);
 /** Steepness at a place, as rise over run (1 = 45°). */
-export function slopeAt(x: number, z: number) {
-  const e = 0.25;
-  return Math.hypot(heightAt(x + e, z) - heightAt(x - e, z), heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e);
-}
+export const slopeAt = (x: number, z: number) => clearing.slopeAt(x, z);
 
 
 const PALETTE = {

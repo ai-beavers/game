@@ -19,6 +19,7 @@
 // slap the tail (rarely at the forest's edge, where deer graze at dusk).
 import type { Action } from "../../contracts.ts";
 import { CACHE_AT, live, LODGE, SLOTS, STICKS, type BuildState } from "../build/rules.ts";
+import { RIM } from "../../world/terrain.ts";
 
 /** A tree's work spot now: its foot while it stands, the middle of its trunk while it lies. */
 export interface Spot { x: number; z: number }
@@ -58,10 +59,10 @@ const MINE_FOR = 4; // s a tree stays another player's after its last bite
 const NEAR = 6; // m: another free player closer than this to some work, and closer than me, is going for it
 export const PILE = 2.2; // m round the cache: one with a stick in here has the pile
 const LOOK = 3; // m: a real player this close gets looked at
-const EDGE = 11; // m from the middle: the forest's edge begins, where deer come out at dusk
+const EDGE = RIM * 2 / 3; // m from the middle: the forest's edge begins, where deer come out at dusk
 const SLAP_EVERY = 45, SLAP_EDGE = 300; // s between slaps, and at the edge
 const MEET = 1.4; // m: another beaver this close ahead, coming at me, is met head-on
-export const WATCHDOG = 55; // s: no job takes longer (the longest, a calm walk across the clearing with a stick, about 40)
+export const WATCHDOG = 120; // s: no job takes longer (the longest, a calm walk out to the far meadow and back to the dam with a stick, about 80)
 
 const far = (a: Spot, b: Spot) => Math.hypot(a.x - b.x, a.z - b.z);
 

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { apply, CACHE_AT, LODGE, newState, SLOTS, STICKS, type BuildChange, type BuildState } from "../build/rules.ts";
 import { decide, milestone, overdue, yields, type Seen } from "./botmind.ts";
 import { heading, loadWorld } from "./botworld.ts";
+import { RIM } from "../../world/terrain.ts";
 
 const trees = [{ x: 10, z: 0 }, { x: -10, z: 0 }, { x: 0, z: 12 }];
 const seen = (more: Partial<Seen> = {}, changes: BuildChange[] = []): Seen => {
@@ -74,7 +75,7 @@ describe("between jobs", () => {
   test("slaps, dives, swims or walks by the dice; slaps seldom, and more seldom still at the forest's edge", () => {
     expect(decide(seen({ roll: 0.1, sinceSlap: 60 }, done))).toEqual({ kind: "wander", how: "slap" });
     expect(decide(seen({ roll: 0.1, sinceSlap: 20 }, done))).toEqual({ kind: "wander", how: "dive" });
-    expect(decide(seen({ roll: 0.1, sinceSlap: 60, me: { x: 13, z: 0, carry: -1 } }, done))).toEqual({ kind: "wander", how: "dive" });
+    expect(decide(seen({ roll: 0.1, sinceSlap: 60, me: { x: RIM - 3, z: 0, carry: -1 } }, done))).toEqual({ kind: "wander", how: "dive" });
     expect(decide(seen({ roll: 0.1, sinceSlap: 400, me: { x: 13, z: 0, carry: -1 } }, done))).toEqual({ kind: "wander", how: "slap" });
     expect(decide(seen({ roll: 0.5 }, done))).toEqual({ kind: "wander", how: "swim" });
     expect(decide(seen({ roll: 0.9 }, done))).toEqual({ kind: "wander", how: "walk" });
@@ -96,7 +97,8 @@ describe("meeting others", () => {
   });
   test("the watchdog: a job that takes over a minute is stuck", () => {
     expect(overdue(20)).toBe(false);
-    expect(overdue(61)).toBe(true);
+    expect(overdue(90)).toBe(false); // a calm walk out to the far meadow and back with a stick
+    expect(overdue(121)).toBe(true);
   });
 });
 
@@ -108,7 +110,7 @@ describe("the bot's world", async () => {
       const rest = world.restFor(i, world.fallDirection(i));
       for (const { at } of world.woodOf(i, rest)) {
         expect(at[1]).toBeGreaterThan(world.level(SLOTS));
-        expect(Math.hypot(at[0], at[2])).toBeLessThan(16);
+        expect(Math.hypot(at[0], at[2])).toBeLessThan(RIM); // inside the clearing
       }
     });
   });

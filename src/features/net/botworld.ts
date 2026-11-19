@@ -18,7 +18,7 @@ import "@babylonjs/loaders/glTF/2.0/glTFLoader.js";
 import type { WorldTree } from "../../contracts.ts";
 import { vertices } from "../../world/models.ts";
 import { placeAll } from "../../world/place.ts";
-import { heightAt, POND, SITE, WATER_LEVEL } from "../../world/terrain.ts";
+import { heightAt, POND, RIM, SITE, WATER_LEVEL } from "../../world/terrain.ts";
 import { BITE_HEIGHT, measure } from "../build/tree.ts";
 import { bitesToFell, CACHE_AT, crestHeight, DAM, damPlan, live, pondLevel, profile, SLOTS, woodFrom, type BuildState, type TreeState } from "../build/rules.ts";
 import { CRATES, woodId } from "./protocol.ts";
@@ -109,7 +109,7 @@ export async function loadWorld() {
       let fine = true;
       for (let d = 0.5; d <= reach && fine; d += 0.5) {
         const x = t.x + dx * d, z = t.z + dz * d;
-        fine = dry(x, z) && Math.hypot(x - SITE.x, z - SITE.z) > SITE.radius + 1 && Math.hypot(x, z) < 15.5;
+        fine = dry(x, z) && Math.hypot(x - SITE.x, z - SITE.z) > SITE.radius + 1 && Math.hypot(x, z) < RIM - 1;
       }
       if (fine) return a;
     }
