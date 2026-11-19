@@ -54,6 +54,10 @@ _Avoid_: store, House of AI (that is only its sign), disco, trading post (that i
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.
 _Avoid_: NPC, vendor, merchant
 
+**Mrs. Beaver**:
+The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places at the edge of the clearing. The player finds her and frees her, and then she waits at the building site. Each player has their own, and no one else sees her.
+_Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
+
 **Outfit**:
 A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.
 _Avoid_: skin, costume, clothes

@@ -42,7 +42,7 @@ test("the beaver says why it does what it does, by the hour, the weather and wha
   expect(reason("Dam work", at({ carrying: true }))).toContain("stick");
   expect(reason("A new thing", at({}))).toBe("A new thing"); // no line of its own: its name
   expect(reason("Trading", at({ day: Date.parse("2026-12-20") }))).toBe("Wood to spare. Let's go shopping!");
-  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping"];
+  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping", "Find Mrs. Beaver"];
   for (const hour of [3, 9, 12.5, 19.5, 23]) for (const weather of ["fair", "rain", "fog"]) for (const activity of activities)
     for (const day of [undefined, Date.parse("2026-11-19")]) // one row of the caption, new or not
       expect(reason(activity, at({ hour, weather, day })).length).toBeLessThanOrEqual(40);
@@ -114,4 +114,11 @@ test("the beaver is hidden behind stacked crates, seen past them, and a crown ro
   expect(sight(eye, points, [box(0, 0.5, 0, 1.5, 1, 1.5)]).seen).toBe(true); // among reeds: no camera move helps
   expect(sight(eye, points, [box(0, 1, -5, 1, 1, 1, true)]).within).toBe(true); // the camera in a bush
   expect(sight(eye, points, [], (_, p) => p.y < 0.4).seen).toBe(true); // the ground hides the feet only
+});
+
+test("looking for Mrs. Beaver: a reason of its own, new for a week from the day it came", () => {
+  expect(reason("Find Mrs. Beaver", at({}))).toBe("Where is my Mrs. Beaver?");
+  expect(fresh("Find Mrs. Beaver", at({ day: Date.parse("2026-11-19") }))).toBe(true);
+  expect(fresh("Find Mrs. Beaver", at({ day: Date.parse("2026-11-26") }))).toBe(false);
+  expect(reason("Find Mrs. Beaver", at({ day: Date.parse("2026-11-26") }))).toBe("Where is my Mrs. Beaver?");
 });
