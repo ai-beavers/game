@@ -51,6 +51,7 @@ export async function mrsBeaver(stage: Stage) {
   return {
     beaver,
     /** Whether she wears her flower behind her ear. */
+    get flower() { return !!flower?.isEnabled(false); },
     set flower(on: boolean) { flower?.setEnabled(on); },
     /** speed: m/s over the ground, 0 standing; she always faces where she goes. */
     update(dt: number, speed: number) {
@@ -64,7 +65,7 @@ export async function mrsBeaver(stage: Stage) {
 }
 
 /** Her flower: five round petals, pale pink, round a yellow middle, facing +x. One mesh, about 7 cm across. */
-export function buildFlower(stage: Stage) {
+function buildFlower(stage: Stage) {
   const { scene } = stage, petal = new Color3(0.98, 0.72, 0.82), middle = new Color3(1, 0.78, 0.15), parts: Mesh[] = [];
   for (let k = 0; k < 5; k++) {
     const a = (k / 5) * Math.PI * 2, p = MeshBuilder.CreateSphere("petal", { diameter: 0.045, segments: 5 }, scene);

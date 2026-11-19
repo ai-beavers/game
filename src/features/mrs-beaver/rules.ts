@@ -7,6 +7,8 @@
 //   take(quest)                                      true once: the flower picked up (flower step → find)
 //   find(quest, pen)                                 true once: within FIND m of the pen (find step → gnaw)
 //   gnaw(quest, dt)                                  true once: gnawed GNAW s in all, the pen open (gnaw step → freed)
+//   done(quest)                                      how many steps are done, 0 … 3 (the checklist's ticks)
+//   rows(done, fits)                                 which step lines the checklist shows
 //
 // Each change says whether it changed something, so the feature tells of each step exactly once. Nothing here is
 // kept: the quest lives in memory for one visit (no localStorage, no network).
@@ -33,6 +35,8 @@ export const GNAW = 3;
 
 /** The step reached: the one at hand, or freed once all three are done. */
 export type Step = "flower" | "find" | "gnaw" | "freed";
+/** The steps in order: a step's index is how many are done when it is reached. */
+const ORDER: readonly Step[] = ["flower", "find", "gnaw", "freed"];
 export interface Quest { place: number; step: Step; gnawed: number }
 
 /** A new visit: on the flower step, at the hiding place a random number 0 … 1 picks (and its flower spot). */
@@ -70,4 +74,17 @@ export function gnaw(quest: Quest, dt: number): boolean {
   if (quest.gnawed < GNAW) return false;
   quest.step = "freed";
   return true;
+}
+
+/** How many of the three steps are done: 0 on the flower step … 3 once she is freed. */
+export function done(quest: Quest): number {
+  return ORDER.indexOf(quest.step);
+}
+
+/** The step lines (0 … 2) the checklist shows under its title with `done` steps done: all three where they fit, only
+ *  the one at hand where they would not (a small, wide screen), none once she is freed. */
+export function rows(done: number, fits: boolean): number[] {
+  const count = ORDER.length - 1;
+  if (done >= count) return [];
+  return fits ? [0, 1, 2] : [Math.max(0, done)];
 }

@@ -62,7 +62,7 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       await walkTo(way.x, way.z, { near: 0.6, limit: 60, hop: true });
       await reach("use", (attempt) => attempt ? flower : off(flower, her.home, 0.5));
       const offer = player.offer();
-      expect(offer?.text === PICK, `at her flower, Use would "${offer?.text}", not "${PICK}"`);
+      expect(offer?.action === "use" && offer.text === PICK, `at her flower, Use would "${offer?.text}", not "${PICK}"`);
       expect(near(player.feet, flower) <= FLOWER_REACH, `Use offers her flower ${near(player.feet, flower).toFixed(2)} m from it`);
       await tap("act");
       await until(() => her.step === "find", 2, `pressed Use at her flower, the quest is on "${her.step}"`);
@@ -79,7 +79,7 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       await until(() => reads(2), 2, `at her pen the checklist reads ${lines().join(" / ")}`);
       await reach("use", () => her.stand());
       const gnawOffer = player.offer();
-      expect(gnawOffer?.text === GNAW, `at the pen once she is found, Use would "${gnawOffer?.text}", not "${GNAW}"`);
+      expect(gnawOffer?.action === "use" && gnawOffer.text === GNAW, `at the pen once she is found, Use would "${gnawOffer?.text}", not "${GNAW}"`);
 
       // Use held a moment and let go: she is still shut in, and what is gnawed stays.
       await tap("act", 1);

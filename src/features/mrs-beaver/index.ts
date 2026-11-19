@@ -24,7 +24,7 @@ import { RAPIER } from "../../engine.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import { buildDropped, buildPen, mrsBeaver, PEN } from "./creature.ts";
 import { questList } from "./panel.ts";
-import { find, FLOWER, gnaw, GNAW, HIDING, HOME, offered, pick, take, type Quest } from "./rules.ts";
+import { done, find, FLOWER, gnaw, GNAW, HIDING, HOME, offered, pick, take, type Quest } from "./rules.ts";
 
 const NEAR = 28; // m: within this she moves (or while she walks home)
 const WALK = 1.1; // m/s on her way home
@@ -115,13 +115,12 @@ export const create: CreateFeature = (game) => {
   };
 
   const list = questList(stage, ["Find her flower", "Find Mrs. Beaver", "Gnaw the pen open"]);
-  const DONE = { flower: 0, find: 1, gnaw: 2, freed: 3 } as const;
-  const say = () => list.set(DONE[quest.step]);
+  const say = () => list.set(done(quest));
   say();
 
   const away = () => { const p = where(); return Math.hypot(player.feet.x - p.x, player.feet.z - p.z); };
   const toFlower = () => { const f = flowerAt(); return Math.hypot(player.feet.x - f.x, player.feet.z - f.z); };
-  const offers = (carrying: boolean) => offered(quest, { flower: toFlower(), pen: away(), carrying, afloat: player.afloat });
+  const offers = (carrying: boolean) => offered(quest, { flower: toFlower(), pen: away(), carrying, afloat: player.afloat || player.riding });
   const takeFlower = () => {
     if (!take(quest)) return;
     dropped?.dispose(); dropped = undefined;
@@ -169,7 +168,7 @@ export const create: CreateFeature = (game) => {
       get gnawed() { return quest.gnawed; },
       get state() { return quest.step === "freed" ? "freed" : "missing"; },
       /** Whether she wears her flower behind her ear. */
-      get wears() { return !!her?.beaver.root.getDescendants(false, (n) => n.name === "mrs-beaver-flower")[0]?.isEnabled(false); },
+      get wears() { return !!her?.flower; },
       /** Whether her flower lies on the ground. */
       get dropped() { return !!dropped; },
       home: { x: HOME.x, z: HOME.z },

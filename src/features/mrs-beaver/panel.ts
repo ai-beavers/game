@@ -15,6 +15,7 @@ import type { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
 import type { Stage } from "../../engine.ts";
 import { box, hudLayout, measure, onViewport, Overlay, underGoals } from "../hud/overlay.ts";
 import { GOLD, PAPER, QUIET } from "../hud/style.ts";
+import { rows as shown } from "./rules.ts";
 
 export const TITLE = "Find Mrs. Beaver", FOUND = "Mrs. Beaver found";
 
@@ -44,7 +45,7 @@ export function questList(stage: Stage, steps: readonly string[]) {
   const place = (top: number) => {
     y = Math.round(top);
     const freed = done >= steps.length, inset = Math.round(pad * 0.6), full = (1 + steps.length) * lineH + Math.round(pad * 1.2);
-    const rows = freed ? [] : y + full > limit ? [Math.min(done, steps.length - 1)] : steps.map((_, i) => i);
+    const rows = shown(done, y + full <= limit);
     const h = (1 + rows.length) * lineH + Math.round(pad * 1.2);
     overlay.move(back, box(x, y, freed ? Math.min(w, Math.ceil(measure(FOUND, size, "600")) + 2 * pad + 4) : w, h));
     overlay.move(title, box(x + pad, y + inset, w - 2 * pad, lineH));

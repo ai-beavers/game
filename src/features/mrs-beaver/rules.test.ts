@@ -6,7 +6,7 @@ import { heightAt, pondRatio, RIM, SITE, slopeAt, WATER_LEVEL } from "../../worl
 // Where the Shop stands (src/features/shop/index.ts SHOP; that file needs a browser).
 const SHOP = { x: -9.5, z: 8.5 };
 import { POST } from "../trade/place.ts";
-import { FIND, FLOWER, GNAW, find, gnaw, HIDING, HOME, offered, pick, REACH, take } from "./rules.ts";
+import { done, FIND, FLOWER, GNAW, find, gnaw, HIDING, HOME, offered, pick, REACH, rows, take } from "./rules.ts";
 
 test("each visit picks one of the three hiding places from the random number given, and starts on the flower step", () => {
   expect(HIDING).toHaveLength(3);
@@ -122,4 +122,18 @@ test("the Use key offers the flower at the flower and the pen only once she is f
   gnaw(quest, GNAW);
   expect(offered(quest, { ...at, pen: 0.9 })).toBeUndefined(); // freed: nothing more of hers
   expect(FIND).toBeGreaterThan(REACH);
+});
+
+test("the checklist ticks one more step with each step done, and shows the steps that fit", () => {
+  const quest = pick(0);
+  expect(done(quest)).toBe(0);
+  take(quest);
+  expect(done(quest)).toBe(1);
+  find(quest, 0);
+  expect(done(quest)).toBe(2);
+  gnaw(quest, GNAW);
+  expect(done(quest)).toBe(3);
+  expect(rows(0, true)).toEqual([0, 1, 2]);
+  expect(rows(1, false)).toEqual([1]); // too little room: only the step at hand
+  expect(rows(3, true)).toEqual([]); // freed: only the one line "Mrs. Beaver found"
 });
