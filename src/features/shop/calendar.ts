@@ -41,7 +41,7 @@ function draw(texture: DynamicTexture, w: CalendarWeek) {
   const g = texture.getContext() as CanvasRenderingContext2D;
   g.setTransform(-1, 0, 0, 1, PX, 0); // a plane turned to face out shows it mirrored (as the sign's)
   g.fillStyle = "#fbfbfd"; g.fillRect(0, 0, PX, PY);
-  const pad = 36, margin = 172, top = 128, head = 160, bottom = PY - 34;
+  const pad = 36, margin = 156, top = 128, head = 160, bottom = PY - 34;
   const left = pad + margin, col = (PX - left - pad) / 7, grid = top + head;
   const { from, to } = w.hours, hour = (bottom - grid) / (to - from);
   const y = (h: number) => grid + (h - from) * hour;
@@ -64,7 +64,7 @@ function draw(texture: DynamicTexture, w: CalendarWeek) {
   for (let i = 0; i <= 7; i++) { g.moveTo(left + col * i, top); g.lineTo(left + col * i, bottom); }
   g.stroke();
   // The hours, every two, in the margin, each beside its line.
-  g.fillStyle = "#6e6e73"; g.font = `600 46px ${FONT}`; g.textAlign = "right";
+  g.fillStyle = "#6e6e73"; g.font = `600 50px ${FONT}`; g.textAlign = "right";
   for (let h = from; h <= to; h += 2) g.fillText(clock(h), left - 14, y(h));
   w.days.forEach((d, i) => {
     const x = left + col * (i + 0.5);
@@ -78,14 +78,14 @@ function draw(texture: DynamicTexture, w: CalendarWeek) {
       const bx = left + col * i + 6, by = y(entry.from) + 3, bw = col - 12, bh = y(entry.to) - y(entry.from) - 6;
       g.fillStyle = "#7d5cf0"; g.beginPath(); g.roundRect(bx, by, bw, bh, 16); g.fill();
       g.fillStyle = "#ffffff"; g.textAlign = "left";
-      const inner = bw - 28;
+      const inner = bw - 20;
       g.font = `700 44px ${FONT}`;
       const name = lines(g, entry.name.split(" "), inner);
-      name.forEach((line, n) => g.fillText(line, bx + 14, by + 36 + n * 50));
-      g.font = `600 36px ${FONT}`;
+      name.forEach((line, n) => g.fillText(line, bx + 10, by + 36 + n * 50));
+      g.font = `600 40px ${FONT}`;
       // The time span kept whole where it fits, else broken after its dash.
       const time = lines(g, span(entry).split(/(?<=–) /), inner);
-      time.forEach((line, n) => g.fillText(line, bx + 14, by + 36 + name.length * 50 + 8 + n * 42));
+      time.forEach((line, n) => g.fillText(line, bx + 10, by + 36 + name.length * 50 + 8 + n * 46));
     }
   });
   g.setTransform(1, 0, 0, 1, 0, 0);
