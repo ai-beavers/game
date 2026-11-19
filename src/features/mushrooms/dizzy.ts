@@ -13,6 +13,9 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
 import type { Stage } from "../../engine.ts";
+// The post feature's pass name: this pass must lie right after the under-water look, and Babylon keeps the camera's
+// passes in an array of its own (camera._postProcesses), so the order is found there by that name.
+import { UNDERWATER } from "../post/underwater.ts";
 
 /** s for one full turn of the hues (no faster than 6 s, so the colour never flickers). */
 export const HUE_TURN = 9;
@@ -51,7 +54,7 @@ export function createDizzy(stage: Stage) {
   const attach = () => {
     pass ??= make();
     // After the under-water pass when it is on, else first: before bloom and tone mapping.
-    const under = camera._postProcesses.findIndex((p) => p?.name === "underwater");
+    const under = camera._postProcesses.findIndex((p) => p?.name === UNDERWATER);
     camera.attachPostProcess(pass, under + 1);
     attached = true;
   };
@@ -65,7 +68,7 @@ export function createDizzy(stage: Stage) {
       time += dt;
       if (!attached) attach();
       // The under-water pass comes and goes at the front: keep this one right after it.
-      const list = camera._postProcesses, at = list.indexOf(pass!), under = list.findIndex((p) => p?.name === "underwater");
+      const list = camera._postProcesses, at = list.indexOf(pass!), under = list.findIndex((p) => p?.name === UNDERWATER);
       if (under > at) { detach(); attach(); }
       // The camera's sway, on top of where the player's camera put it this picture (it sets its turn anew each one).
       if (scene.activeCamera === camera) {

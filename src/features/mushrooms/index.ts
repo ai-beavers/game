@@ -12,7 +12,8 @@
 //
 // Debug, for bun shot --eval and the tour (window.mushrooms): .spots (where they grow) · .eaten (per spot) ·
 // .appetite (mushrooms eaten in the last two minutes) · .dizzy (0 … 1) · .on (the dizzy pass on the camera) ·
-// .shown(i) (spot i's mushrooms drawn) · .at(i) stands beside spot i, facing it · .dawn() grows all back.
+// .shown(i) (spot i's mushrooms drawn) · .stand(i, d?) (where to stand d m from spot i on the meadow's side) ·
+// .at(i) stands there, facing it · .dawn() grows all back.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
 import type { Actor, Offer } from "../../player/index.ts";
@@ -26,6 +27,11 @@ const MUNCH = 1.1;
 const STAND = 0.6;
 
 const towards = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.atan2(b.x - a.x, b.z - a.z);
+/** Where to stand d m from spot i, on its side away from the tree (towards the meadow's middle). */
+const stand = (i: number, d = STAND) => {
+  const s = SPOTS[i]!, r = Math.hypot(s.x, s.z) || 1;
+  return { x: s.x - (s.x / r) * d, z: s.z - (s.z / r) * d };
+};
 
 export const create: CreateFeature = (game) => {
   const { stage, world, player, events } = game;
@@ -74,9 +80,11 @@ export const create: CreateFeature = (game) => {
       get dizzy() { return dizzy(state); },
       get on() { return view.on; },
       shown: (i: number) => look.shown(i),
+      /** Where to stand d m (default: where .at() stands) from spot i, on the meadow's side. */
+      stand,
       /** Stands beside spot i on the meadow's side, facing it. */
       at(i: number) {
-        const s = SPOTS[i]!, r = Math.hypot(s.x, s.z) || 1, p = { x: s.x - (s.x / r) * STAND, z: s.z - (s.z / r) * STAND }, face = towards(p, s);
+        const s = SPOTS[i]!, p = stand(i), face = towards(p, s);
         player.teleport(p.x, world.heightAt(p.x, p.z), p.z, face);
         player.camera.yaw = face + Math.PI;
       },
