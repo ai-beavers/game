@@ -85,7 +85,7 @@ export interface Moment {
 
 /** The activities the newest features added, and the day each came (UTC). A feature with an activity of its own
  *  enters it here; the beaver is curious about it for FRESH days. Drop an entry once it is older. */
-const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18" };
+const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18", "Find Mrs. Beaver": "2026-11-19" };
 const FRESH = 7; // days
 export const fresh = (activity: string, m: Moment) => {
   const since = m.day === undefined || !NEW[activity] ? NaN : (m.day - Date.parse(NEW[activity]!)) / 86_400_000;
@@ -127,6 +127,7 @@ export function reason(activity: string, m: Moment): string {
     case "Trading": return "Wood to spare. Let's go shopping!";
     case "Sit and crawl": return "Legs tired. Let me sit a bit.";
     case "Shopping": return "Saved up. Time for a new look.";
+    case "Find Mrs. Beaver": return "Where is my Mrs. Beaver?";
     default: return activity;
   }
 }

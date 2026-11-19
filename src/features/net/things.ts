@@ -137,7 +137,7 @@ export function createThings(game: Game, state?: BuildState) {
     split(tree: number, state: BuildState) {
       // A tree grown back breaks into its first one's pieces, moved, not new (build/index.ts): those keep their ids.
       const all = woodOf(game, tree, state), wood = { sticks: all.sticks.filter((id) => !things.has(id)), logs: all.logs.filter((id) => !things.has(id)) };
-      const fresh = world.sticks.filter((s) => !sticks.has(s)), logs = newLogs();
+      const fresh = world.sticks.filter((s) => !sticks.has(s) && !s.mesh.metadata?.local), logs = newLogs();
       if (fresh.length !== wood.sticks.length || logs.length !== wood.logs.length) console.warn("net: the wood of tree", tree, "does not match; partly shared");
       fresh.forEach((thing, k) => { if (wood.sticks[k] !== undefined) add(wood.sticks[k]!, thing, true); });
       logs.forEach((body, k) => { if (wood.logs[k] !== undefined) add(wood.logs[k]!, { mesh: meshOf(body)!, body }, false); });
