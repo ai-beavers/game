@@ -10,11 +10,16 @@
 // tour's own "beaver.shop.tour"), beside the build feature's saved game. Remotes keep the default look.
 //
 // Debug, for bun shot --eval (window.shop): shop.at() stands at the counter · shop.give(n) · shop.state · shop.reset()
-// · shop.place (where it stands, for the HUD's map).
+// · shop.place (where it stands, for the HUD's map) · shop.calendar: the Calendar board's week as drawn (week.ts), front(d)
+// a spot d m in front of it, toBoard(p) a point in its frame (z out of its face).
+//
+// The Calendar board (calendar.ts) beside the shop shows the real week of the browser's own local date, not the
+// Clearing's Day; it is checked about once a minute and redrawn only when the date has changed.
 import type { CreateFeature } from "../../game.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import { buildShop, COUNTER, KEEPER_Z, RADIUS } from "./building.ts";
 import { shopkeeper, workers } from "./creatures.ts";
+import { calendarBoard } from "./calendar.ts";
 import { shopHud } from "./panel.ts";
 import { buy, earn, load, outfit, wear, type OutfitId, type ShopState } from "./rules.ts";
 
@@ -33,6 +38,8 @@ export const create: CreateFeature = async (game) => {
   stage.scene.onDisposeObservable.add(settings.on(({ quality }) => { lively = quality !== "low"; }));
   const shop = buildShop(stage, world, { ...SHOP, facing: FACING });
   const crowd = workers(stage, shop.root);
+  const calendar = calendarBoard(stage, shop, new Date());
+  let checked = Date.now();
   let state: ShopState = load(localStorage.getItem(KEY));
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* not kept, still played */ } };
   const dress = () => { const o = outfit(state.wearing); beaver.look = { shirt: [...o.shirt], hat: [...o.hat] }; };
@@ -87,6 +94,7 @@ export const create: CreateFeature = async (game) => {
       door: (out = 1.2) => shop.toWorld(0, 0, RADIUS + out),
       counter: () => shop.toWorld(0, 0, COUNTER.z + 0.55),
       sign: () => shop.toWorld(1.6, 1.5, RADIUS + 1.6),
+      calendar: { get week() { return calendar.week; }, front: calendar.front, toBoard: calendar.toBoard },
     },
   });
 
@@ -94,6 +102,9 @@ export const create: CreateFeature = async (game) => {
     update(dt) {
       const moving = stage.paused ? 0 : dt, feet = player.feet, inside = shop.inside(feet);
       shop.update(moving, game.sky?.dark ?? 0, inside, lively);
+      calendar.update(game.sky?.dark ?? 0);
+      // The real clock, not the game's: a new local date turns the board to it (and on a Monday to the new week).
+      if (Date.now() - checked > 60_000) { checked = Date.now(); calendar.show(new Date()); }
       if (Math.hypot(feet.x - SHOP.x, feet.z - SHOP.z) < NEAR) { crowd.update(moving, lively); keeper?.update(moving); }
       if (hud.isOpen && !atCounter()) hud.close(); // walked away
       hud.update(dt);
