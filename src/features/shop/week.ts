@@ -3,7 +3,7 @@
 //
 //   week(new Date()) → { title: "November 2026", hours: { from: 8, to: 24 },
 //                        days: [{ name: "Mon", date: 16, key: "2026-11-16", today, entries: [] }, …] }
-//   clock(16) → "16:00"
+//   clock(16) → "16:00"   span(BUILD_FRIDAYS) → "16:00 – 23:00"
 
 export interface CalendarDay {
   /** English weekday, short: Mon … Sun. */
@@ -34,6 +34,8 @@ const HOURS = Object.freeze({ from: 8, to: 24 });
 
 /** A whole clock hour as written on the board: 8 → "08:00", 24 → "24:00". */
 export const clock = (h: number) => `${String(h).padStart(2, "0")}:00`;
+/** From one whole hour to another as written on the board: "16:00 – 23:00". */
+export const span = (r: { from: number; to: number }) => `${clock(r.from)} – ${clock(r.to)}`;
 
 /** The local date as YYYY-MM-DD. */
 export const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

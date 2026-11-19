@@ -5,7 +5,7 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Look } from "../../../contracts.ts";
 import { DEFAULT, OUTFITS, type ShopState } from "../../shop/rules.ts";
-import { BUILD_FRIDAYS, clock, dayKey, type CalendarWeek } from "../../shop/week.ts";
+import { BUILD_FRIDAYS, dayKey, span, type CalendarEntry, type CalendarWeek } from "../../shop/week.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
@@ -93,12 +93,12 @@ export const shopping = (kit: Kit): Station[] => {
       expect(days[0]!.name === "Mon" && days[6]!.name === "Sun", `the board's week runs ${days[0]!.name} … ${days[6]!.name}, not Mon … Sun`);
       const marked = days.filter((d) => d.today);
       expect(marked.length === 1 && marked[0]!.key === dayKey(now), `today is marked on ${marked.map((d) => d.key).join(", ") || "no day"}, not ${dayKey(now)}`);
-      const said = (e: { name: string; from: number; to: number }) => `${e.name} ${clock(e.from)} – ${clock(e.to)}`;
+      const said = (e: CalendarEntry) => `${e.name} ${span(e)}`;
       const fridays = said(BUILD_FRIDAYS);
       expect(days.every((d) => d.entries.map(said).join() === (d.name === "Fri" ? fridays : "")), `entries: ${days.map((d) => `${d.name} [${d.entries.map(said).join(", ")}]`).join(" ")}; only Friday should say "${fridays}"`);
       expect(fridays === "Build Fridays 16:00 – 23:00", `Build Fridays is ${fridays}, not 16:00 – 23:00`);
       // The hours of the day, from morning to midnight, down the board's left.
-      const hours = `${clock(week.hours.from)} – ${clock(week.hours.to)}`;
+      const hours = span(week.hours);
       expect(hours === "08:00 – 24:00", `the board shows the hours ${hours}, not 08:00 – 24:00`);
       expect(!!week.title, "the board has no month and year over its week");
 

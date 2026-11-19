@@ -15,7 +15,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import { RAPIER, type Stage } from "../../engine.ts";
 import type { buildShop } from "./building.ts";
 import { paint, SIGN, WOOD } from "./building.ts";
-import { clock, week, type CalendarWeek } from "./week.ts";
+import { clock, span, week, type CalendarWeek } from "./week.ts";
 
 /** Where it stands in the shop's frame: the sign mirrored across the path, further out for its width. */
 const AT = { x: -SIGN.x - 0.85, z: SIGN.z, yaw: -SIGN.yaw }; // m, m, rad: turned a little towards the path, as the sign is
@@ -23,7 +23,7 @@ const WIDTH = 2.4, HEIGHT = 1.4, LIFT = 0.75; // m: the board, and its lower edg
 const PX = 1536, PY = 896; // texture, the board's proportions
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
-/** Text in lines no wider than `width`: word by word, the time span kept whole where it fits, else broken after its dash. */
+/** The pieces joined by spaces into lines no wider than `width`, a piece wider than that standing on a line of its own. */
 function lines(g: CanvasRenderingContext2D, words: string[], width: number) {
   const out: string[] = [];
   for (const word of words) {
@@ -83,8 +83,9 @@ function draw(texture: DynamicTexture, w: CalendarWeek) {
       const name = lines(g, entry.name.split(" "), inner);
       name.forEach((line, n) => g.fillText(line, bx + 14, by + 36 + n * 50));
       g.font = `600 36px ${FONT}`;
-      const span = lines(g, [`${clock(entry.from)} –`, clock(entry.to)], inner);
-      span.forEach((line, n) => g.fillText(line, bx + 14, by + 36 + name.length * 50 + 8 + n * 42));
+      // The time span kept whole where it fits, else broken after its dash.
+      const time = lines(g, span(entry).split(/(?<=–) /), inner);
+      time.forEach((line, n) => g.fillText(line, bx + 14, by + 36 + name.length * 50 + 8 + n * 42));
     }
   });
   g.setTransform(1, 0, 0, 1, 0, 0);
