@@ -1,4 +1,5 @@
-// The game on Cloudflare: this Worker answers /net and below; every other address is a file of dist/, which
+// The game on Cloudflare: this Worker answers /net and below (/net/events, the House of AI events, itself; the rest
+// through the World); every other address is a file of dist/, which
 // Cloudflare serves without running this (wrangler.jsonc). One Durable Object, World, is the shared world: it runs
 // the same room as server.ts (src/features/net/room.ts) on Cloudflare's WebSockets and keeps the world's work in its
 // own storage.
@@ -14,17 +15,22 @@
 //
 // A deploy ends the object without warning: every player reconnects, and work of the last SAVE_AFTER ms can be lost.
 import { DurableObject } from "cloudflare:workers";
-import { clientAddress, INFO_PATH, PATH, PROXY_HEADERS, RESET_PATH } from "./src/features/net/protocol.ts";
+import { clientAddress, EVENTS_PATH, INFO_PATH, PATH, PROXY_HEADERS, RESET_PATH } from "./src/features/net/protocol.ts";
 import { newRoom, type Socket } from "./src/features/net/room.ts";
+import { houseOfAiEvents } from "./src/features/shop/events.ts";
 
-interface Env { WORLD: DurableObjectNamespace<World>; GIT_SHA?: string; RESET_TOKEN?: string }
+/** HOUSE_OF_AI_FEED (--var): another iCal address for the House of AI events than Luma's (the tests' fixture). */
+interface Env { WORLD: DurableObjectNamespace<World>; GIT_SHA?: string; RESET_TOKEN?: string; HOUSE_OF_AI_FEED?: string }
 
 const KEPT = "world"; // the key the world's work is kept under, as the text server.ts keeps in WORLD_FILE
 const NOT_FOUND = () => new Response("not found", { status: 404 });
+// shortcut: the copy of the events is kept per isolate, so Cloudflare may hold a few; move it into World if Luma minds.
+let events: ReturnType<typeof houseOfAiEvents> | undefined;
 
 export default {
   fetch(req, env) {
     const { pathname } = new URL(req.url);
+    if (pathname === EVENTS_PATH) return (events ??= houseOfAiEvents(env.HOUSE_OF_AI_FEED || undefined))();
     if (pathname !== PATH && pathname !== INFO_PATH && pathname !== RESET_PATH) return NOT_FOUND();
     // One world for everyone: the same object by its fixed name, placed in western Europe when it is first made.
     return env.WORLD.get(env.WORLD.idFromName("world"), { locationHint: "weur" }).fetch(req);

@@ -17,6 +17,8 @@ import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, typ
 export const PATH = "/net", INFO_PATH = "/net/info";
 /** On Cloudflare only (worker.ts): POST with the reset token starts the world afresh. */
 export const RESET_PATH = "/net/reset";
+/** GET: the House of AI events as JSON, [{ name, start, end }] (src/features/shop/events.ts); not part of the room. */
+export const EVENTS_PATH = "/net/events";
 export const MAX_PLAYERS = 16;
 /** Sockets one client address may hold (a household or class behind one router), and how long a new socket has to
  *  say hello before it is closed: the browser says it the moment the socket opens. */

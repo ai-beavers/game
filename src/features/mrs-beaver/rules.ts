@@ -27,9 +27,10 @@ export const FLOWER: readonly XZ[] = [{ x: -7.9, z: 0 }, { x: 0.8, z: -6.1 }, { 
 /** Where she waits once freed: beside the building site, on its south-west side away from the dam and the crates. */
 export const HOME: XZ = { x: -2.5, z: 2.3 };
 /** The bends of her way home from each hiding place (same order), walked in turn before HOME: from the north one the
- *  straight way runs into the Calendar board beside the Shop, so it bends round the board's east end, short of the
- *  crates by the site. Every leg is a straight way over dry land past nothing solid (rules.test.ts checks them). */
-export const BENDS: readonly (readonly XZ[])[] = [[], [], [{ x: -3.1, z: 9.5 }]];
+ *  straight way runs into the Calendar board beside the Shop, so it bends round the board's east end and then again
+ *  to pass west of the crates by the site. Every leg is a straight way over dry land past nothing solid (rules.test.ts
+ *  checks them). */
+export const BENDS: readonly (readonly XZ[])[] = [[], [], [{ x: -1.9, z: 9.7 }, { x: -2.9, z: 4.8 }]];
 /** Her way home from a hiding place: the points she walks to in turn, the last one HOME. */
 export const wayHome = (place: number): XZ[] => [...(BENDS[place] ?? []), HOME];
 /** m from the middle of the pen to the player's feet within which the Use key offers to gnaw it open. */

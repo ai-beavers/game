@@ -7,10 +7,11 @@ import { FIRST_RIM, heightAt, pondRatio, SITE, slopeAt, WATER_LEVEL } from "../.
 const SHOP = { x: -9.5, z: 8.5 }, FACING = Math.atan2(0 - SHOP.x, 2 - SHOP.z);
 /** A point in the Shop's frame (building.ts toWorld), in the world. */
 const shopToWorld = (x: number, z: number) => ({ x: SHOP.x + x * Math.cos(FACING) + z * Math.sin(FACING), z: SHOP.z - x * Math.sin(FACING) + z * Math.cos(FACING) });
-// In front of the Shop: the post of its sign (building.ts SIGN) and the Calendar board, 2.4 m wide, mirrored across
-// the path from the sign and turned the other way (calendar.ts AT).
-const SIGN_POST = shopToWorld(1.6, 2.7 + 1.6), BOARD = shopToWorld(-1.6 - 0.85, 2.7 + 1.6), BOARD_YAW = FACING + 0.35;
-const BOARD_ENDS = [-1.25, 1.25].map((t) => ({ x: BOARD.x + Math.cos(BOARD_YAW) * t, z: BOARD.z - Math.sin(BOARD_YAW) * t }));
+// In front of the Shop: the post of its sign (building.ts SIGN) and the Calendar board, 3.6 m wide, mirrored across
+// the path from the sign and turned the other way, its middle 0.6 m further out along its line than the first 2.4 m
+// board's, so its edge nearest the path stayed (calendar.ts AT).
+const SIGN_POST = shopToWorld(1.6, 2.7 + 1.6), BOARD = shopToWorld(-1.6 - 0.85 - 0.6 * Math.cos(0.35), 2.7 + 1.6 + 0.6 * Math.sin(0.35)), BOARD_YAW = FACING + 0.35;
+const BOARD_ENDS = [-1.85, 1.85].map((t) => ({ x: BOARD.x + Math.cos(BOARD_YAW) * t, z: BOARD.z - Math.sin(BOARD_YAW) * t }));
 /** m from p to the Calendar board's face, end to end. */
 const toBoard = (p: { x: number; z: number }) => {
   const [a, b] = BOARD_ENDS as [{ x: number; z: number }, { x: number; z: number }], dx = b.x - a.x, dz = b.z - a.z;
@@ -59,7 +60,7 @@ test("from every hiding place a way of straight legs over dry land leads home, p
   HIDING.forEach((p, i) => {
     const way = wayHome(i);
     expect(way.at(-1)).toEqual(HOME);
-    expect(way.length).toBeLessThanOrEqual(2); // home straight, or round one bend
+    expect(way.length).toBeLessThanOrEqual(3); // home straight, or round the Calendar board's east end and the crates
     let from = p, walked = 0;
     for (const to of way) {
       for (let t = 0; t <= 1; t += 0.01) {
