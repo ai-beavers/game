@@ -31,7 +31,7 @@ A piece of wood the beaver can carry and build with. Every tree gnawed into wood
 _Avoid_: log, branch, wood item
 
 **Lantern**:
-The light the beaver carries in its left hand, hanging by its handle, while it is dark; by day it rides in the backpack. It glows from dusk until dawn. The right hand stays free for sticks.
+The light the beaver carries in its left hand, hanging by its handle, while it is dark; by day it rides in the backpack. It glows from dusk until dawn, unless the player has switched it off. The right hand stays free for sticks.
 _Avoid_: lamp, torch, light
 
 **Backpack**:
@@ -99,6 +99,10 @@ _Avoid_: crouch, rest, kneel
 **Crawl**:
 The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
 _Avoid_: crouch, sneak, prone
+
+**Flash**:
+The player switching the lantern off and on with one button while it is dark, so that other players see it blink. A flash means what the players agree it means; the game gives it no meaning.
+_Avoid_: blink, signal, toggle
 
 **Remote**:
 Another player's beaver as this browser draws it.

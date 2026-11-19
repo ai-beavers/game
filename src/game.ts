@@ -35,6 +35,9 @@ export interface Game {
   settings: SettingsStore;
   /** The hour, the dark and the weather, once the sky feature runs (it puts itself here). */
   sky?: SkyState;
+  /** The player's lantern, once the lantern feature runs (it puts itself here): out of the backpack, and switched
+   *  off by a flash. */
+  lantern?: { readonly out: boolean; readonly off: boolean };
 }
 
 export interface Feature {

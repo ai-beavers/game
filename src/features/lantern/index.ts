@@ -1,73 +1,37 @@
 // A lantern in the beaver's left hand, hanging by its handle (a viewer's wish): it glows warm as it gets dark and lights the ground, the
-// trees and the pond's edge around the beaver, and goes out at dawn. Nothing to press. Only the local beaver has one.
+// trees and the pond's edge around the beaver, and goes out at dawn. Other players see one in every beaver's paw (remote.ts).
 // By day it rides in the backpack (backpack.ts): at dusk the beaver reaches over its left shoulder and takes it out, at
 // dawn it puts it back (stow.ts says when; the reach is Motion.reachBack, drawn by the animator). Under water it is
 // hidden and back in the paw on surfacing, without the backpack.
-// It is not parented to the hand bone (that turns with the wrist and grows into a fist): each picture it is put below
-// where the paw is, upright, turned the way the beaver faces, so it swings with the arm and its light sways along.
-// Cost per picture: the world matrices from the beaver's root down to the left hand (under ten nodes), recomputed once.
+// A flash (L, the pad's Y, the touch screen's Light; a viewer's wish): while it is out, a press switches it off, the next
+// one on again, at once: the glass, the PointLight and the self-lit shaders' glow together. It travels to the others as
+// Motion.lanternOff. It stays off through a dive, and goes back on in the backpack at dawn (stow.ts flash).
+// It hangs below the paw each picture (look.ts hanger), so it swings with the arm and its light sways along.
 //
 // One PointLight, made once and always enabled, its intensity 0 by day: the standard and PBR materials keep the same
 // lights all day, so nothing recompiles at dusk. The shaders that light themselves (grass, leaves, the larger animals)
 // take it through daylight().lantern (src/light.ts). On low quality there is no light, only the glowing glass.
-import { Color3 } from "@babylonjs/core/Maths/math.color.js";
-import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { PointLight } from "@babylonjs/core/Lights/pointLight.js";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
-import type { Node } from "@babylonjs/core/node.js";
 import type { CreateFeature } from "../../game.ts";
 import { daylightOf, LANTERN_REACH } from "../../light.ts";
 import { OWN_LAYER } from "../../player/camera.ts";
-import { smoothstep } from "../../world/noise.ts";
 import { makeBackpack } from "./backpack.ts";
-import { busy, newStow, stepStow } from "./stow.ts";
+import { GLOW, glowOf, hanger, lanternMaterials, makeLantern, WARM } from "./look.ts";
+import { busy, flash, newStow, stepStow } from "./stow.ts";
 
-const WARM = new Color3(1, 0.5, 0.17); // deeper than candlelight: the night's grade takes colour out of the midtones
-const HANDLE = { y: 0.075, diameter: 0.045, thickness: 0.006 }; // m: the ring on top of the glass that the paw holds
-const HANDLE_TOP = HANDLE.y + HANDLE.diameter / 2 + HANDLE.thickness / 2; // m above the glass's middle
-const HANG = 0.01 + HANDLE_TOP; // m from the hand bone (the wrist) down to the glass's middle: the handle sits in the paw
-const LIGHT = 2.4, GLOW = 1.0, SHADERS = 1.8; // at full dark: the PointLight, the glass, the self-lit shaders
+const LIGHT = 2.4, SHADERS = 1.8; // at full dark: the PointLight, the self-lit shaders
 
-export const create: CreateFeature = ({ stage, beaver, player, settings, sky }) => {
-  const { scene } = stage, daylight = daylightOf(scene);
+export const create: CreateFeature = (game) => {
+  const { stage, beaver, player, settings, sky } = game, { scene } = stage, daylight = daylightOf(scene);
   if (!daylight || !sky) return {};
-  const glassMat = new StandardMaterial("lantern-glass", scene);
-  glassMat.diffuseColor.set(0.5, 0.42, 0.3);
-  glassMat.specularColor.setAll(0.3);
-  const frameMat = new StandardMaterial("lantern-frame", scene);
-  frameMat.diffuseColor.set(0.09, 0.08, 0.07);
-  frameMat.specularColor.setAll(0.15);
-  const glass = MeshBuilder.CreateCylinder("lantern", { height: 0.08, diameter: 0.06, tessellation: 8 }, scene);
-  glass.material = glassMat;
-  const at = (mesh: Mesh, y: number, turn = 0) => { mesh.position.y = y; mesh.rotation.x = turn; return mesh; };
-  const frame = Mesh.MergeMeshes([ // one draw call
-    at(MeshBuilder.CreateCylinder("cap", { height: 0.025, diameterTop: 0.025, diameterBottom: 0.08, tessellation: 8 }, scene), 0.052),
-    at(MeshBuilder.CreateCylinder("base", { height: 0.014, diameter: 0.075, tessellation: 8 }, scene), -0.047),
-    at(MeshBuilder.CreateTorus("handle", { diameter: HANDLE.diameter, thickness: HANDLE.thickness, tessellation: 12 }, scene), HANDLE.y, Math.PI / 2),
-  ], true)!;
-  frame.name = "lantern-frame";
-  frame.material = frameMat;
-  frame.parent = glass;
-  glass.rotationQuaternion = null;
+  const materials = lanternMaterials(scene, "lantern"), glassMat = materials.glass;
+  const glass = makeLantern(scene, "lantern", materials), hang = hanger(glass, beaver);
   const pack = makeBackpack(scene, beaver.chest);
   const stow = newStow(sky.dark), motion = player.motion;
-  const paw = beaver.leftHand, chain: TransformNode[] = [];
-  for (let n: Node | null = paw; n; n = n.parent) if (n instanceof TransformNode) chain.unshift(n);
-  const ahead = new Vector3();
-  /** Below the left paw as it is in this picture (the bones were just posed), upright, facing the beaver's way. */
-  const hang = () => {
-    for (const node of chain) node.computeWorldMatrix(true);
-    glass.position.copyFrom(paw.getAbsolutePosition()).y -= HANG;
-    Vector3.TransformNormalToRef(Vector3.Forward(), beaver.root.getWorldMatrix(), ahead);
-    glass.rotation.y = Math.atan2(ahead.x, ahead.z);
-    glass.computeWorldMatrix(true);
-  };
+  game.lantern = { get out() { return stow.drawn; }, get off() { return stow.off; } };
   // Worn by the player's own beaver: out of the first-person view's picture, the light shines on.
-  for (const mesh of [glass, frame]) mesh.isPickable = false;
-  for (const mesh of [glass, frame, pack]) mesh.layerMask = OWN_LAYER;
+  for (const mesh of [glass, ...glass.getChildMeshes(), pack]) mesh.layerMask = OWN_LAYER;
   const light = new PointLight("lantern-light", Vector3.Zero(), scene);
   light.parent = glass;
   light.diffuse.copyFrom(WARM);
@@ -76,13 +40,20 @@ export const create: CreateFeature = ({ stage, beaver, player, settings, sky }) 
   light.falloffType = PointLight.FALLOFF_STANDARD; // linear to its range in PBR too: no white fur right beside it
   light.intensity = 0;
   // Low quality: no light in the materials (a recompile once, when the setting changes), the glass glows alone.
-  let lit = true;
+  let lit = true, held = false;
   scene.onDisposeObservable.add(settings.on(({ quality }) => { lit = quality !== "low"; light.setEnabled(lit); }));
   return {
+    step() {
+      // The moment the flash button goes down, once per press; read per step, so a tap shorter than a picture counts.
+      const down = !!player.input.flash;
+      if (down && !held) flash(stow);
+      held = down;
+    },
     update(dt) {
       if (!stage.paused) stepStow(stow, dt, sky.dark, busy(motion, player.diving));
       motion.reachBack = stow.reach;
-      const on = smoothstep(0.08, 0.5, sky.dark), shown = stow.drawn && !player.diving;
+      if (stow.off) motion.lanternOff = true; else delete motion.lanternOff;
+      const on = stow.off ? 0 : glowOf(sky.dark), shown = stow.drawn && !player.diving;
       glass.setEnabled(shown);
       if (shown) hang();
       glassMat.emissiveColor.copyFrom(WARM).scaleInPlace(GLOW * on);

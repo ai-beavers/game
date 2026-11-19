@@ -15,7 +15,7 @@ import { RUN_SPEED, WALK_SPEED, type CreatePlayer, type Player, type PlayerOptio
 import { RAPIER, type Stage } from "../engine.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
-import { keyboard, newInput, type Keyboard } from "./input.ts";
+import { keyboard, newInput, type Input, type Keyboard } from "./input.ts";
 import { BREATH, CRAWL_SPEED, RIDE_SPEED, SLOPE, SWIM_SPEED, rideKeys, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
@@ -43,6 +43,8 @@ const DIVE_SPEED = 0.6, DIVE_TOP = 0.62, HEAD_UNDER = 0.5, RISE = 0.9;
 export const REACH = 0.6, REACH_RADIUS = 0.45; // m in front of the feet, and how far from that point a stick may lie
 export interface PlayerControls extends Player {
   keys: Keyboard;
+  /** What the player wanted in the last step, from every device. Features read their own buttons here (the flash). */
+  readonly input: Readonly<Input>;
   camera: FollowCamera;
   collider: RAPIER.Collider;
   controller: RAPIER.KinematicCharacterController;
@@ -338,7 +340,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   };
 
   return {
-    node, motion, step, update, keys, camera, collider, controller, feet, velocity,
+    node, motion, step, update, keys, input, camera, collider, controller, feet, velocity,
     get facing() { return facing; },
     get afloat() { return afloat; },
     get diving() { return dive.diving; },

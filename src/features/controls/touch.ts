@@ -1,11 +1,12 @@
 // Touch controls: a stick that appears under the left thumb, dragging on the right half turns the camera, two
-// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run, slap the tail, dive while held: sit on land) plus small pause and
-// photo buttons at the top right.
+// fingers there pinch to zoom, and buttons under the right thumb (jump, use, run, slap the tail, dive while held: sit on land, and Light to flash the lantern
+// while it is out) plus small pause and photo buttons at the top right.
 //
 //   const pad = touchControls(game, pause, photo);   builds the overlay and listens on the canvas; pause() opens the
 //                                                    menu, photo() the photo mode
 //   game.player.keys.add(pad);                pad.read(input) fills the player's Input once per step
 //   pad.show(visible);                        once per frame: hidden for the photo mode and the pause menu
+//   pad.light(out);                           once per frame: the Light button only while the lantern is out
 //
 // Touches on the canvas are taken here (camera.ts leaves them alone); mouse and pen still go to the camera.
 import { Overlay, box, onViewport, safeArea } from "../hud/overlay.ts";
@@ -19,10 +20,17 @@ const TURN_X = 0.006, TURN_Y = 0.005; // rad per px of drag, as the mouse
 export function touchControls(game: Game, pause: () => void, photo: () => void) {
   const canvas = game.stage.canvas, camera = game.player.camera;
   const overlay = new Overlay(game.stage,"touch-controls",false,8);
-  const held = { jump: false, act: false, slap: false, dive: false }, tapped = { jump: false, act: false, slap: false, dive: false };
-  const release = () => { for (const k of ["jump","act","slap","dive"] as const) held[k] = tapped[k] = false; };
+  const held = { jump: false, act: false, slap: false, dive: false, flash: false }, tapped = { ...held };
+  const release = () => { for (const k of ["jump","act","slap","dive","flash"] as const) held[k] = tapped[k] = false; };
   let stickId = -1, ox = 0, oy = 0, move = { x: 0, y: 0, run: 0 }, running = false;
-  let base: ReturnType<Overlay["rect"]>, knob: typeof base, run: ReturnType<Overlay["button"]>;
+  let base: ReturnType<Overlay["rect"]>, knob: typeof base, run: ReturnType<Overlay["button"]>, light: typeof run | undefined;
+  let lanternOut = false;
+  const showLight = () => {
+    if (!light) return;
+    light.panel.isVisible = light.caption.isVisible = lanternOut;
+    light.element.hidden = !lanternOut;
+    if (!lanternOut) { held.flash = tapped.flash = false; light.panel.background = "#324540"; }
+  };
   function place(x: number, y: number, kx = 0, ky = 0) {
     overlay.move(base,box(x-56,y-56,112,112));
     overlay.move(knob,box(x+kx-20,y+ky-20,40,40));
@@ -52,7 +60,10 @@ export function touchControls(game: Game, pause: () => void, photo: () => void) 
     const slap = overlay.button("slap","Slap",box(w-148,h-142,50,50),() => {});
     // Left of Use, where the thumb rolls off it: held as long as the beaver stays under.
     const dive = overlay.button("dive","Dive",box(w-208,h-63,50,50),() => {});
-    for (const [key,button] of [["jump",jump],["act",act],["slap",slap],["dive",dive]] as const) {
+    // Left of Slap, above Dive: shown only while the lantern is out, so the day screen stays as it was.
+    light = overlay.button("light","Light",box(w-206,h-127,50,50),() => {});
+    showLight();
+    for (const [key,button] of [["jump",jump],["act",act],["slap",slap],["dive",dive],["flash",light]] as const) {
       button.panel.cornerRadius = 40;
       button.element.onpointerdown = e => {
         e.preventDefault();
@@ -124,7 +135,7 @@ export function touchControls(game: Game, pause: () => void, photo: () => void) 
   // The phone's keyboard pans the page to show the name or chat field; when it closes, back to the top.
   visualViewport?.addEventListener("resize", () => { if (!(document.activeElement instanceof HTMLInputElement)) scrollTo(0, 0); });
 
-  const source: Source & { show(on: boolean): void } = {
+  const source: Source & { show(on: boolean): void; light(out: boolean): void } = {
     read(into: Input): Input {
       into.move.x = move.x; into.move.y = move.y;
       into.run = running ? 1 : move.run;
@@ -132,8 +143,14 @@ export function touchControls(game: Game, pause: () => void, photo: () => void) 
       into.act = held.act || tapped.act;
       into.slap = held.slap || tapped.slap;
       into.dive = held.dive || tapped.dive;
-      tapped.jump = tapped.act = tapped.slap = tapped.dive = false;
+      into.flash = held.flash || tapped.flash;
+      tapped.jump = tapped.act = tapped.slap = tapped.dive = tapped.flash = false;
       return into;
+    },
+    light(out: boolean) {
+      if (out === lanternOut) return;
+      lanternOut = out;
+      showLight();
     },
     show(on: boolean) {
       if (on === visible) return;
