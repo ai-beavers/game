@@ -2,6 +2,7 @@
 // exports `create` (see src/game.ts).
 import type { CreateFeature } from "../game.ts";
 import { create as audio } from "./audio/index.ts";
+import { create as canoe } from "./canoe/index.ts";
 import { create as build } from "./build/index.ts";
 import { create as controls } from "./controls/index.ts";
 import { create as fx } from "./fx/index.ts";
@@ -15,4 +16,4 @@ import { create as sky } from "./sky/index.ts";
 import { create as tour } from "./tour/index.ts";
 import { create as trade } from "./trade/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, lantern, post, build, trade, shop, fx, life, net, audio, hud, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, post, build, trade, shop, canoe, fx, life, net, audio, hud, tour];

@@ -114,6 +114,9 @@ export interface Motion {
   /** Low on land, held by the player: "sit" on its haunches, tail flat on the ground; "crawl" low on all fours, the
    *  front paws stepping with the hind feet. Left out: standing (bots never go low). */
   low?: "sit" | "crawl";
+  /** Sits in a canoe (with low "sit") and paddles it: the right arm strokes as the speed says, a paddle in the paw. Only
+   *  the local player's own beaver tells it (src/features/canoe); left out: no paddle. */
+  paddle?: boolean;
 }
 
 export interface Animator {
