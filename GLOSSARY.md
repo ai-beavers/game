@@ -62,6 +62,10 @@ _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the sho
 A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.
 _Avoid_: skin, costume, clothes
 
+**Canoe**:
+The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
+_Avoid_: boat, raft, kayak
+
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
 _Avoid_: base, house, storage

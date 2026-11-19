@@ -205,6 +205,17 @@ function sit(body: Body, time: number) {
   const placed = body.fk();
   for (const [sign, lr] of SIDES) reachArm(body, placed, lr, onChest(placed, [sign * 0.05, -0.13 + 0.004 * breath, 0.15]), [sign, -0.4, -0.4], 0.3);
 }
+/** Where the right paw holds the paddle, relative to the chest (x left, y up, z ahead), at `phase` 0 … 1 of a stroke:
+ *  in ahead and low out to the right at the catch, pulled back along the hull to the hip, lifted and brought forward
+ *  again. strength 0 … 1 (from the speed): 0 rests the paw at the chest as sitting does. */
+export function paddleStroke(phase: number, strength: number): Vec {
+  const PULL = 0.6, pull = phase < PULL, t = smooth(0, 1, pull ? phase / PULL : (phase - PULL) / (1 - PULL));
+  const stroke: Vec = [-0.2, pull ? -0.24 : -0.24 + 0.12 * sin(Math.PI * t), pull ? lerp(0.3, -0.06, t) : lerp(-0.06, 0.3, t)];
+  const rest: Vec = [-0.05, -0.13, 0.15];
+  return [lerp(rest[0], stroke[0], strength), lerp(rest[1], stroke[1], strength), lerp(rest[2], stroke[2], strength)];
+}
+const STROKE = 0.9; // m the canoe goes per stroke
+
 const SIT_DROP = 0.1, SIT_FEET = 0.12, SIT_TAIL = -0.2, SIT_TIP = -0.2; // m, m, rad, rad
 
 /** Crawling: the trunk pitched forward and low, the head up to look ahead, the hind feet on the stride as walking,
@@ -304,10 +315,10 @@ function tailSlap(body: Body, p: number, wet: number) {
 export const createAnimator: CreateAnimator = (): Animator => {
   const body = new Body(), layer = new Body(), extra = new Body();
   const holds = [0, 1].map(() => ({ planted: false, z: 0, yaw: 0, dz: 0, dyaw: 0 }));
-  let phase = 0, lastDistance: number | undefined, swimPhase = 0;
+  let phase = 0, lastDistance: number | undefined, swimPhase = 0, strokePhase = 0;
   let speed = 0, anger = 0, first = true, wasGrounded = true;
   const turning$ = new Ease(-Infinity, Infinity); // eased, not damped: a damped rate jumps in its first frame
-  const sit$ = new Ease(), crawl$ = new Ease(), air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease();
+  const sit$ = new Ease(), crawl$ = new Ease(), air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease(), paddle$ = new Ease();
   const pitch$ = new Ease(-Infinity, Infinity);
   let shown: Action = "none", progress = 0, vertical = 0;
   return {
@@ -379,6 +390,14 @@ export const createAnimator: CreateAnimator = (): Animator => {
         const placed = layer.fk();
         reachArm(layer, placed, "R", onChest(placed, [-0.03, -0.1, 0.27]), [-1, -0.7, -0.2], 1);
         body.blend(layer, holding, RIGHT_ARM);
+      }
+      const paddling = ease(paddle$, m.paddle ? 1 : 0, 0.4);
+      strokePhase = (strokePhase + speed * dt / STROKE) % 1;
+      if (paddling > 0.001) { // in the canoe: the right paw strokes the paddle as fast as the canoe goes
+        layer.copy(body);
+        const placed = layer.fk();
+        reachArm(layer, placed, "R", onChest(placed, paddleStroke(strokePhase, smooth(0.03, 0.4, speed))), rotate(placed.chest.delta, [-1, -0.4, -0.3]), 1);
+        body.blend(layer, paddling, RIGHT_ARM);
       }
       const reach = clamp(m.reachBack ?? 0);
       if (reach > 0) { // the left paw over the shoulder to the backpack, wherever the trunk leans

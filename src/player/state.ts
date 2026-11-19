@@ -8,7 +8,9 @@
 //   const { low, slow } = stepLow(diveHeld, crawlHeld, facts);                                 // sit (C) and crawl (Y)
 //   trackMotion(motion, dt, facts);                                                            // fills motion in place
 import { WALK_SPEED, type Action, type Motion } from "../contracts.ts";
+import type { Input } from "./input.ts";
 
+export const SLOPE = 40 * Math.PI / 180; // rad: steepest ground it walks up; steeper ground it slides down
 export const COYOTE = 0.1; // s after leaving the ground in which a jump still starts
 export const BUFFER = 0.1; // s a press before landing is remembered
 export const PICKUP_TIME = 1.0, DROP_TIME = 0.6; // s for the whole action; the hand closes or opens at half
@@ -100,16 +102,26 @@ export function stepDive(s: Dive, dt: number, held: boolean, afloat: boolean, un
 export type Low = "none" | "sit" | "crawl";
 /** m/s: a crawl goes at about half the walking speed, and never runs. */
 export const CRAWL_SPEED = WALK_SPEED / 2;
-export interface LowFacts { grounded: boolean; afloat: boolean; moving: boolean; acting: boolean; jumping: boolean }
+export interface LowFacts { grounded: boolean; afloat: boolean; moving: boolean; acting: boolean; jumping: boolean; riding?: boolean }
 
 /** Once per step. sit: the dive key held; crawl: Y held. Sit holds only standing still (moving, it walks); crawl
  *  wins over sit; an action (pickup, drop, gnaw, build) or a jump gets it up while it lasts, and it goes low again
  *  after if the key is still held. The tail slap is no action here: a sitting beaver slaps sitting. slow: the crawl's
  *  speed, no running. */
 export function stepLow(sit: boolean, crawl: boolean, f: LowFacts): { low: Low; slow: boolean } {
+  if (f.riding) return { low: "sit", slow: false }; // in the canoe it sits, keys or not
   const low: Low = !f.grounded || f.afloat || f.acting || f.jumping ? "none" : crawl ? "crawl" : sit && !f.moving ? "sit" : "none";
   return { low, slow: low === "crawl" };
 }
+
+// ---- riding a canoe ------------------------------------------------------------------------------------------
+
+// Swimming it goes at SWIM_SPEED; sitting in the canoe (src/features/canoe) it paddles at RIDE_SPEED, a little above
+// walking. In the canoe only the move keys and E count: jump, dive, crawl, run and the tail slap would tip it over.
+export const SWIM_SPEED = 0.5;
+export const RIDE_SPEED = WALK_SPEED * 1.25; // m/s
+/** The input with what does nothing in the canoe taken out: it moves (paddles and steers) and E gets it out. */
+export const rideKeys = (input: Input): Input => ({ ...input, move: { ...input.move }, run: 0, jump: false, slap: false, dive: false, crawl: false });
 
 // ---- motion ------------------------------------------------------------------------------------------------------
 
@@ -137,6 +149,8 @@ export interface StepFacts {
   diving?: boolean;
   /** Sitting or crawling (stepLow); left out by those that never go low (bots). */
   low?: Low;
+  /** Sitting in a canoe and paddling it: no stride, no swimming, the paddle in the right paw. */
+  ride?: boolean;
 }
 
 /** Fills every field of motion in place, except anger (which belongs to whoever sets it). Afloat counts as held
@@ -145,21 +159,24 @@ export function trackMotion(m: SwimMotion, dt: number, f: StepFacts): void {
   const supported = f.grounded || f.afloat, wasSupported = m.airTime === 0;
   m.time += dt;
   m.speed = f.moved / dt;
-  if (f.grounded) m.distance += f.moved;
+  if (f.grounded && !f.ride) m.distance += f.moved;
   m.turning = f.turning;
   if (supported && !wasSupported) { m.sinceLanding = 0; m.landingSpeed = Math.max(0, -m.vertical); }
   else m.sinceLanding += dt;
   m.airTime = supported ? 0 : m.airTime + dt;
   m.grounded = f.grounded;
   m.vertical = f.vertical;
-  const target = f.afloat ? 1 : 0, ease = dt / SWIM_EASE;
+  const target = f.afloat && !f.ride ? 1 : 0, ease = dt / SWIM_EASE;
   m.swimming += Math.max(-ease, Math.min(ease, target - m.swimming));
   m.action = f.act.action;
   m.actionProgress = f.act.action === "none" ? f.slap ?? 0 : f.act.progress;
   m.carrying = f.act.carrying;
   if (f.diving !== undefined) m.diving = f.diving;
-  if (f.low === "sit" || f.low === "crawl") m.low = f.low;
+  if (f.ride) m.low = "sit";
+  else if (f.low === "sit" || f.low === "crawl") m.low = f.low;
   else delete m.low;
+  if (f.ride) m.paddle = true;
+  else delete m.paddle;
 }
 
 // ---- steering ----------------------------------------------------------------------------------------------------
