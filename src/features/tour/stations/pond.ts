@@ -107,6 +107,30 @@ export const pondPatrol = (kit: Kit): Station[] => {
       expect(most > before * 1.5, `slapped, the school stayed together (${before.toFixed(2)} → at most ${most.toFixed(2)} m)`);
       await wait(3); // it gathers again
     }, "Pond patrol"],
+    // Out of the water on the south-west shore, over the lip of the deep basin, where the low pond held the beaver in
+    // (clear of the canoe, beached to the south): it swims there and keeps swimming at the land (no dodging aside, no
+    // key), and climbs out by itself.
+    ["Climb out", async () => {
+      if (!pond) return skip("no pond");
+      const a = 3.9, level = () => player.waterLevel ?? 0, deep = (r: number) => level() - world.heightAt(pond.x + Math.cos(a) * r, pond.z + Math.sin(a) * r);
+      let shore = 2;
+      while (shore < 8 && deep(shore) > 0) shore += 0.05;
+      let r = shore;
+      while (r > 1 && deep(r) < 0.8) r -= 0.05;
+      const at = (d: number) => ({ x: pond.x + Math.cos(a) * d, z: pond.z + Math.sin(a) * d });
+      const start = at(r - 0.3), land = at(shore + 1.5);
+      if (!player.afloat) await walkTo(pond.x, pond.z - clear(), { arrived: () => player.afloat, limit: 30 });
+      await walkTo(start.x, start.z, { near: 0.3, limit: 30 });
+      expect(player.afloat, "off the south shore, yet not afloat");
+      const out = () => !player.afloat && world.heightAt(player.feet.x, player.feet.z) > level(), dry = after("leaveWater");
+      want.to = new Vector3(land.x, 0, land.z);
+      try {
+        await until(out, 8, `swam at the south shore for 8 s, still in the water ${(level() - player.feet.y).toFixed(2)} m deep`);
+        await wait(0.8); // and on, up the bank
+      } finally { want.to = undefined; }
+      expect(dry(), "out on the shore, but it never left the water");
+      expect(out(), "climbed out, then back in the water");
+    }, "Pond patrol"],
     ["Animals at the pond", async () => {
       if (!pond) return skip("no pond");
       expect(stage.scene.meshes.some((o) => o.name.startsWith("life-")), "no animals in the scene");

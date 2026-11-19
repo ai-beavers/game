@@ -24,6 +24,12 @@ const HALF = HEIGHT / 2 - RADIUS, OFFSET = 0.02; // the controller keeps this ga
 // Moving.
 const ACCEL = 6, BRAKE = 9, AIR_ACCEL = 2.5; // m/s²: quick, but with weight
 const STEP_UP = 0.15, STEP_WIDTH = 0.1; // m: highest step it walks up, and the least room it needs on top
+// Climbing out of the water onto the shore, m: the highest ledge of ground it climbs onto from swimming depth, and how
+// far in over the land it goes as it climbs. Measured all round the shore at levels from the low pond to the full one
+// (shore.test.ts): the most it must rise is 0.35 m, at the low pond's south shore, over the lip of the basin's wall.
+// Under half the body, so the rocks, the lodge and the dam (never ground anyway) stay out of reach.
+const CLIMB_OUT = 0.4, CLIMB_IN = 2 * RADIUS;
+const SHORE = 30 * Math.PI / 180; // rad: the steepest the shore rises (world.test.ts), room left for that as it climbs in
 const LIFT_EASE = 18; // 1/s: how fast the picture follows a step up
 const SWIM_ACCEL = 2;
 const RIDE_ACCEL = 1.6, RIDE_BRAKE = 1.1; // m/s²: a canoe gets going slowly and glides on
@@ -124,7 +130,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
 
   const node = new TransformNode("player", stage.scene);
   const feet = options.spawn.clone(), before = feet.clone(), velocity = new Vector3();
-  let lift = 0; // m the picture still lags behind the last steps up
+  const lift = new Vector3(); // m the picture still lags behind the last steps up (and a climb out of the water)
   let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false, under = false;
   let actor: Actor | undefined, aim: number | undefined, ride: Ride | undefined; // aim: where a lasting action turns the beaver
   const desired = new Vector3(), forward = new Vector3();
@@ -183,6 +189,33 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       physics.castShape(at, still, way, shape, 0, distance, false, flags, undefined, collider, undefined, notCarried);
     if (cast(from, up, height)) return 0;
     return cast({ x: from.x, y: from.y + height, z: from.z }, ahead, STEP_WIDTH) ? 0 : height;
+  };
+
+  // Climbs out of the water when swimming is blocked: the same ray finds the shore's ground ahead (only the ground: the
+  // lodge, the dam, a rock or a stick are never climbed onto from the water), walkable and up to CLIMB_OUT above the
+  // feet. Then the body goes up, CLIMB_IN in over the land (rising with it, up to the steepest shore) and down onto it;
+  // anything in the way on the way stops it. Returns how far up and in it goes, or undefined.
+  const climbOut = (dx: number, dz: number) => {
+    const length = Math.hypot(dx, dz), from = collider.translation(), flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
+    if (length < 1e-6) return undefined;
+    const ahead = { x: dx / length, y: 0, z: dz / length }, top = CLIMB_OUT + 0.01;
+    // Just past the front, then further in: on the low pond's south shore the lip of the basin's wall is still steep there.
+    let height = 0;
+    for (const reach of [RADIUS + 0.03, CLIMB_IN, CLIMB_IN + RADIUS]) {
+      probe.origin = { x: feet.x + ahead.x * reach, y: feet.y + top, z: feet.z + ahead.z * reach };
+      const ledge = physics.castRayAndGetNormal(probe, top, true, flags, undefined, collider, undefined, ground);
+      if (ledge && ledge.normal.y >= Math.cos(SLOPE)) { height = top - ledge.timeOfImpact + 0.01; break; }
+    }
+    if (height <= OFFSET + 0.01) return undefined;
+    const cast = (at: RAPIER.Vector, way: RAPIER.Vector, distance: number, gap = 0) =>
+      physics.castShape(at, still, way, shape, gap, distance, false, flags, undefined, collider, undefined, notCarried);
+    const rise = height + (CLIMB_IN + STEP_WIDTH) * Math.tan(SHORE), over = { x: from.x, y: from.y + rise, z: from.z };
+    if (cast(from, up, rise) || cast(over, ahead, CLIMB_IN + STEP_WIDTH)) return undefined;
+    const inside = { x: over.x + ahead.x * CLIMB_IN, y: over.y, z: over.z + ahead.z * CLIMB_IN };
+    const land = cast(inside, { x: 0, y: -1, z: 0 }, rise + 0.05, OFFSET); // set down with the controller's gap
+    if (!land || !ground(land.collider)) return undefined;
+    const y = rise - land.time_of_impact;
+    return y > OFFSET ? { x: ahead.x * CLIMB_IN, y, z: ahead.z * CLIMB_IN } : undefined;
   };
 
   const grab = (stick: Stick) => {
@@ -305,22 +338,36 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     if (ride && level !== undefined && !floats(ride, feet.x + moved.x, feet.z + moved.z, Math.sin(facing), Math.cos(facing), level)
       && (floats(ride, feet.x, feet.z, Math.sin(facing), Math.cos(facing), level) || depthAt(feet.x + moved.x, feet.z + moved.z, level) <= depthAt(feet.x, feet.z, level))) { moved.x = moved.z = 0; speed = 0; }
     // Blocked while walking on the ground: maybe a step to go up.
-    let stepped = 0;
-    if (!ride && grounded && wish.y <= 0 && Math.hypot(moved.x, moved.z) < 0.5 * Math.hypot(wish.x, wish.z)) {
+    let stepped = 0, inX = 0, inZ = 0; // m: lifted by a step or a climb, and carried in by a climb
+    const blocked = !ride && Math.hypot(moved.x, moved.z) < 0.5 * Math.hypot(wish.x, wish.z);
+    if (blocked && grounded && wish.y <= 0) {
       const height = stepUp(wish.x, wish.z);
-      if (height > 0) { moved.x = wish.x; moved.y = height; moved.z = wish.z; lift -= height; before.y += height; stepped = height; }
+      if (height > 0) { moved.x = wish.x; moved.y = height; moved.z = wish.z; lift.y -= height; before.y += height; stepped = height; }
+    }
+    // Blocked in the water (swimming, or on foot as deep as it swims: caught on the lip of the basin's wall): maybe the
+    // shore to climb out onto, on foot from here on.
+    if (blocked && !stepped && !diving && level !== undefined && (afloat || level - feet.y > HOLD_DEPTH)) {
+      const climb = climbOut(wish.x, wish.z);
+      if (climb) {
+        // Up and in, the middle of the body over the land: the picture follows both ways, as it does a step up.
+        inX = climb.x - wish.x; inZ = climb.z - wish.z;
+        moved.x = climb.x; moved.y = climb.y; moved.z = climb.z; stepped = climb.y;
+        lift.x -= inX; lift.y -= climb.y; lift.z -= inZ;
+        before.x += inX; before.y += climb.y; before.z += inZ;
+        afloat = false; vy = 0;
+      }
     }
     const at = body.translation();
     body.setNextKinematicTranslation({ x: at.x + moved.x, y: at.y + moved.y, z: at.z + moved.z });
     feet.set(at.x + moved.x, at.y + moved.y - HEIGHT / 2 - OFFSET, at.z + moved.z);
     grounded = ride ? true : controller.computedGrounded(); // the canoe holds it up
     if (vy > 0 && moved.y < wish.y * 0.5) vy = 0; // bumped the head
-    velocity.set(moved.x / dt, 0, moved.z / dt);
+    velocity.set((moved.x - inX) / dt, 0, (moved.z - inZ) / dt); // a climb's way in is not a dash
 
     under = level !== undefined && level - feet.y > HEAD_UNDER;
 
     trackMotion(motion, dt, {
-      moved: Math.hypot(moved.x, moved.z), vertical: (moved.y - stepped) / dt, // a step up is not a leap
+      moved: Math.hypot(moved.x - inX, moved.z - inZ), vertical: (moved.y - stepped) / dt, // a step up is not a leap
       turning: (facing - facingBefore) / dt, grounded, afloat, act, slap: slap.progress, diving, low, ride: !!ride,
     });
   };
@@ -328,8 +375,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   const show = new Vector3();
   const update = (dt: number, alpha: number) => {
     Vector3.LerpToRef(before, feet, alpha, node.position);
-    lift *= Math.exp(-LIFT_EASE * dt); // a step up shows as a quick rise, not a jump of the whole body
-    node.position.y += lift;
+    lift.scaleInPlace(Math.exp(-LIFT_EASE * dt)); // a step up shows as a quick rise, not a jump of the whole body
+    node.position.addInPlace(lift);
     node.rotation.set(0, facingBefore + Math.atan2(Math.sin(facing - facingBefore), Math.cos(facing - facingBefore)) * alpha, 0);
     camera.update(dt, show.copyFrom(node.position), { velocity, facing, afloat, busy: act.action === "gnaw" || act.action === "build", level: waterLevel(), diving: dive.diving });
     if (carried && options.hand) {
@@ -376,7 +423,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       body.setNextKinematicTranslation(at);
       feet.set(x, at.y - HEIGHT / 2 - OFFSET, z); before.copyFrom(feet);
       facing = facingBefore = turnTo;
-      speed = vy = lift = steering.spin = 0;
+      speed = vy = steering.spin = 0;
+      lift.setAll(0);
       ride = undefined;
     },
     ride(value) {
