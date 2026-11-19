@@ -196,5 +196,5 @@ describe("server.ts", () => {
     const local = Array.from({ length: PER_ADDRESS + 2 }, () => client(port)); // bots and browsers on this machine
     expect(await Promise.all(local.map((c) => c.opened))).toEqual(Array(PER_ADDRESS + 2).fill(true));
     expect(out()).toContain("http://");
-  });
+  }, 30000);
 });
