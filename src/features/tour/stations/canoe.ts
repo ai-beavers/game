@@ -19,7 +19,6 @@ export const canoeing = (kit: Kit): Station[] => {
       // 1. Up to the canoe, beside its stern (on the bank where it lies after a reload).
       const place = canoe.place, f = { x: Math.sin(place.heading), z: Math.cos(place.heading) };
       const beside = (side: number) => ({ x: place.x - f.x * 0.6 + f.z * 0.65 * side, z: place.z - f.z * 0.6 - f.x * 0.65 * side });
-      kit.subject = () => canoe.place;
       await reach("use", (attempt) => beside(attempt % 2 ? -1 : 1), true); // its left, else its right
       // 2. E offers "Get in"; in it goes.
       expect(player.offer()?.text === "Get in", `beside the canoe E would "${player.offer()?.text}", not "Get in"`);

@@ -5,13 +5,14 @@
 //   NODE_ENV=production bun server.ts   no live reload
 //
 // It prints the addresses to open on other devices. It listens on all interfaces: anyone on the network can join.
-// The server is the trust boundary: every message is checked by parseClient (src/features/net/protocol.ts), each
-// socket is rate limited, a player only ever speaks as itself, and only the host may move the loose things.
+// The world's rules are the room's (src/features/net/room.ts), which is the trust boundary and runs on Cloudflare too
+// (worker.ts); this file gives it Bun's sockets and a file.
 //
-// It keeps the world's work (the build feature's changes: trees gnawed and felled, wood, the dam) in order, as long
+// The room keeps the world's work (the build feature's changes: trees gnawed and felled, wood, the dam) in order, as long
 // as it runs (with WORLD_FILE over restarts too), checked by admit() against its own copy of the world; a joiner gets the list,
 // kept as short as the present world (compact). A player whose change it refuses gets the whole world again. While its world is still
-// empty, the first player with a saved world brings it. Type `reset` and Enter in its terminal to start the world
+// empty, the first player with a saved world brings it. It keeps the day too: 16:00 when it starts, one day every 720 s,
+// told to each player in welcome (not saved). Type `reset` and Enter in its terminal to start the world
 // afresh: every player's saved world is forgotten too.
 //
 // On the internet (all optional; without them it behaves as on a LAN):
@@ -25,19 +26,12 @@
 import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { networkInterfaces, hostname } from "node:os";
 import index from "./index.html";
-import {
-  admit, bucket, clientAddress, compact, HELLO_TIME, hostOf, INFO_PATH, MAX_MESSAGE, MAX_PLAYERS, newEpoch, parseClient, PATH,
-  PER_ADDRESS, PROXY_HEADERS, restore, sameOrigin, uniqueName, type PlayerInfo, type ServerMessage, type Work,
-} from "./src/features/net/protocol.ts";
-import { newState, type BuildChange } from "./src/features/build/rules.ts";
+import { clientAddress, INFO_PATH, MAX_MESSAGE, PATH, PROXY_HEADERS } from "./src/features/net/protocol.ts";
+import { newRoom, type Conn } from "./src/features/net/room.ts";
 import type { Built } from "./tools/build.ts";
 
 const PORT = Number(process.env.PORT ?? 5180);
-const RATE = 60, BURST = 120, CHAT_RATE = 1, CHAT_BURST = 4; // messages a second
-const RESEND_RATE = 0.5, RESEND_BURST = 3; // whole worlds a second to one player whose changes are refused
-const STRIKES = 600; // messages dropped for rate before the socket is closed
-const MAX_SOCKETS = 2 * MAX_PLAYERS; // players, and room for those still saying hello or being told it is full
-const VERSION = process.env.GIT_SHA ?? "", WORLD_FILE = process.env.WORLD_FILE || undefined, SAVE_AFTER = 2000; // ms
+const VERSION = process.env.GIT_SHA ?? "", WORLD_FILE = process.env.WORLD_FILE || undefined;
 const TRUST = process.env.TRUST_PROXY || undefined, PROXY_HEADER = TRUST && PROXY_HEADERS[TRUST];
 if (TRUST && !PROXY_HEADER) throw new Error(`TRUST_PROXY must be one of ${Object.keys(PROXY_HEADERS).join(", ")}, not ${TRUST}`);
 
@@ -82,160 +76,28 @@ async function bundle() {
     ? ["/", serve(file, "no-cache")] : [path, serve(file, "public, max-age=31536000, immutable")]));
 }
 
-// ---- the world's work ---------------------------------------------------------------------------------------------
+// ---- the world ----------------------------------------------------------------------------------------------------
 
-const work: Work = { epoch: newEpoch(), world: newState(), log: [] };
-
-// With WORLD_FILE, the world comes back after a restart, with its epoch: returning players hold it already and send
-// only what they made meanwhile. It is read through the same checks as live changes; a file that is no world at all
-// is kept aside as .bad and the server starts afresh.
-if (WORLD_FILE && existsSync(WORLD_FILE)) {
-  const saved = restore(readFileSync(WORLD_FILE, "utf8"));
-  if (saved) {
-    Object.assign(work, { world: saved.world, log: saved.log, epoch: saved.whole ? saved.epoch : newEpoch() });
-    console.log(`The world from ${WORLD_FILE}: ${work.log.length} changes${saved.whole ? "" : ", some left out"}.`);
-    compact(work); // a file from before the server compacted
-  } else {
-    copyFileSync(WORLD_FILE, `${WORLD_FILE}.bad`);
-    console.warn(`${WORLD_FILE} holds no world (kept as ${WORLD_FILE}.bad): starting afresh.`);
-  }
-}
-let saving: ReturnType<typeof setTimeout> | undefined;
-/** Writes the world now: to a new file first, so a crash mid-write leaves the old one whole. */
-function save() {
-  clearTimeout(saving);
-  saving = undefined;
-  if (!WORLD_FILE) return;
+/** Writes the world: to a new file first, so a crash mid-write leaves the old one whole. */
+function keep(text: string) {
   try {
-    writeFileSync(`${WORLD_FILE}.new`, JSON.stringify({ epoch: work.epoch, build: work.log }));
-    renameSync(`${WORLD_FILE}.new`, WORLD_FILE);
+    writeFileSync(`${WORLD_FILE}.new`, text);
+    renameSync(`${WORLD_FILE}.new`, WORLD_FILE!);
   } catch (error) { console.error(`Could not keep the world in ${WORLD_FILE}:`, error); }
 }
-// At most one write per SAVE_AFTER while players build, the first change of a quiet world written SAVE_AFTER later.
-const changed = () => { if (WORLD_FILE) saving ??= setTimeout(save, SAVE_AFTER); };
-if (WORLD_FILE) for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { save(); process.exit(0); });
-
-/** Takes the changes that fit the world, in order, and tells everyone (the sender too, so it can count them). One
- *  that does not fit was already applied by its sender (a grow asked too early, a tree felled by two at once): it
- *  gets the server's world again, to take that instead. */
-function build(ws: Socket, changes: BuildChange[]) {
-  const taken = changes.filter((c) => admit(work.world, c)), n = work.log.length;
-  if (taken.length) {
-    work.log.push(...taken);
-    everyone({ t: "build", id: ws.data.peer!.id, n, c: taken });
-    if (compact(work)) everyone({ t: "epoch", epoch: work.epoch, n: work.log.length });
-    changed();
-  }
-  if (taken.length < changes.length && ws.data.resend.take()) send(ws, { t: "world", epoch: work.epoch, build: work.log });
+// With WORLD_FILE, the world comes back after a restart; a file that is no world at all is kept aside as .bad.
+const room = newRoom({
+  version: VERSION, publicUrl: process.env.PUBLIC_URL,
+  saved: WORLD_FILE && existsSync(WORLD_FILE) ? readFileSync(WORLD_FILE, "utf8") : undefined, keep: WORLD_FILE ? keep : undefined,
+});
+if (room.broken) {
+  copyFileSync(WORLD_FILE!, `${WORLD_FILE}.bad`);
+  console.warn(`${WORLD_FILE} holds no world (kept as ${WORLD_FILE}.bad): starting afresh.`);
 }
+if (WORLD_FILE) for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { room.save(); process.exit(0); });
 
-function reset() {
-  Object.assign(work, { epoch: newEpoch(), world: newState(), log: [] });
-  everyone({ t: "reset" });
-  changed();
-  console.log("The world is reset.");
-}
-
-// ---- players ------------------------------------------------------------------------------------------------------
-
-interface Peer { id: number; name: string; joined: number; carry: number; bot: boolean; away: boolean }
-/** address: what the per-address limit counts it under (undefined: not limited); hello: the timer that closes it
- *  unless it says hello. */
-interface Data {
-  peer?: Peer; rate: ReturnType<typeof bucket>; chat: ReturnType<typeof bucket>; resend: ReturnType<typeof bucket>; strikes: number; address?: string;
-  hello?: ReturnType<typeof setTimeout>;
-}
-type Socket = Bun.ServerWebSocket<Data>;
-
-const sockets = new Set<Socket>(), peers = new Map<Socket, Peer>(), perAddress = new Map<string, number>();
-let nextId = 1, joins = 0, host: Socket | undefined;
-
-const send = (ws: Socket, m: ServerMessage) => void ws.send(JSON.stringify(m));
-const others = (ws: Socket, m: ServerMessage) => void ws.publish("all", JSON.stringify(m)); // everyone but ws
-const everyone = (m: ServerMessage) => void server.publish("all", JSON.stringify(m));
-
-/** Picks the host again; tells everyone when it changed. */
-function elect() {
-  const id = hostOf(peers.values());
-  const next = [...peers].find(([, p]) => p.id === id)?.[0];
-  if (next === host) return;
-  host = next;
-  everyone({ t: "host", id: next ? peers.get(next)!.id : -1 });
-}
-
-function receive(ws: Socket, text: string) {
-  const data = ws.data;
-  if (!data.rate.take()) {
-    if (++data.strikes > STRIKES) ws.close(1008, "too many messages");
-    return;
-  }
-  const m = parseClient(text), peer = data.peer;
-  if (!m) return;
-  if (!peer) {
-    if (m.t !== "hello") return;
-    clearTimeout(data.hello);
-    if (peers.size >= MAX_PLAYERS) {
-      send(ws, { t: "full", players: peers.size, max: MAX_PLAYERS });
-      ws.close(1013, "full"); // "try again later"
-      return;
-    }
-    const name = uniqueName(m.name, [...peers.values()].map((p) => p.name));
-    const me: Peer = { id: nextId++, name, joined: joins++, carry: -1, bot: !!m.bot, away: false };
-    data.peer = me;
-    peers.set(ws, me);
-    const players: PlayerInfo[] = [...peers.values()].filter((p) => p !== me).map(({ id, name }) => ({ id, name }));
-    const carried = [...peers.values()].filter((p) => p.carry >= 0).map((p) => [p.id, p.carry] as [number, number]);
-    elect();
-    const { epoch, log } = work, from = m.epoch === epoch && m.have! <= log.length ? m.have! : 0;
-    send(ws, { t: "welcome", id: me.id, host: host ? peers.get(host)!.id : -1, players, addresses, carried, epoch, from, build: log.slice(from), version: VERSION });
-    if (name !== m.name) send(ws, { t: "name", id: me.id, name }); // the name it is known by
-    others(ws, { t: "join", id: me.id, name: me.name });
-    ws.subscribe("all");
-    if (host && host !== ws) send(host, { t: "need" });
-    console.log(`${me.name} joined (${peers.size} in)`);
-    return;
-  }
-  switch (m.t) {
-    case "hello": case "name":
-      if (!data.chat.take()) return; // each shows as a line in everyone's chat: under the chat's rate
-      peer.name = uniqueName(m.name, [...peers.values()].filter((p) => p !== peer).map((p) => p.name));
-      others(ws, { t: "name", id: peer.id, name: peer.name });
-      if (peer.name !== m.name) send(ws, { t: "name", id: peer.id, name: peer.name });
-      return;
-    case "away":
-      peer.away = m.away;
-      elect();
-      return;
-    case "chat":
-      if (data.chat.take()) others(ws, { t: "chat", id: peer.id, text: m.text });
-      return;
-    case "state": {
-      // A stick goes to whoever claims it first; a later claim is refused and the claimer must let go.
-      if (m.c >= 0 && m.c !== peer.carry) {
-        if ([...peers.values()].some((p) => p !== peer && p.carry === m.c)) { send(ws, { t: "deny", s: m.c }); m.c = -1; }
-      }
-      peer.carry = m.c;
-      others(ws, { ...m, id: peer.id });
-      return;
-    }
-    case "drop":
-      if (peer.carry !== m.s[0]) return;
-      peer.carry = -1;
-      others(ws, { ...m, id: peer.id });
-      return;
-    case "things":
-      if (ws === host) others(ws, m);
-      return;
-    case "build":
-      build(ws, m.c);
-      return;
-    case "bring":
-      // Only into an empty world; one that came too late gets the world there is.
-      if (work.log.length) send(ws, { t: "world", epoch: work.epoch, build: work.log });
-      else build(ws, m.c);
-      return;
-  }
-}
+/** address: what the per-address limit counts the socket under; conn: the room's side of it, once it is open. */
+interface Data { address?: string; conn?: Conn }
 
 const server = Bun.serve<Data>({
   port: PORT,
@@ -244,54 +106,29 @@ const server = Bun.serve<Data>({
   routes,
   fetch(req, server) {
     const url = new URL(req.url);
-    if (url.pathname === INFO_PATH) {
-      // Small for health checks and the join screen; not rate limited, since it costs less than the page itself.
-      const { epoch, log } = work, info = { addresses, players: peers.size, max: MAX_PLAYERS, epoch, changes: log.length, version: VERSION };
-      return Response.json(url.searchParams.has("build") ? { ...info, build: log } : info);
-    }
+    // Not rate limited, since it costs less than the page itself.
+    if (url.pathname === INFO_PATH) return Response.json(room.info(addresses, url.searchParams.has("build")));
     if (url.pathname === PATH) {
-      if (!sameOrigin(req.headers.get("origin"), req.headers.get("host"), process.env.PUBLIC_URL)) return new Response("not from here", { status: 403 });
-      // Full of players is told after hello (the browser cannot read why an upgrade failed); this only bounds sockets.
       const address = clientAddress(req.headers, server.requestIP(req)?.address, PROXY_HEADER);
-      if (address && (perAddress.get(address) ?? 0) >= PER_ADDRESS) return new Response("too many from here", { status: 429 });
-      if (sockets.size >= MAX_SOCKETS) return new Response("full", { status: 503 });
-      const data: Data = { rate: bucket(RATE, BURST), chat: bucket(CHAT_RATE, CHAT_BURST), resend: bucket(RESEND_RATE, RESEND_BURST), strikes: 0, address };
-      return server.upgrade(req, { data }) ? undefined : new Response("WebSocket only", { status: 400 });
+      const refused = room.refuse(req.headers.get("origin"), req.headers.get("host"), address);
+      if (refused) return refused;
+      return server.upgrade(req, { data: { address } }) ? undefined : new Response("WebSocket only", { status: 400 });
     }
     return new Response("not found", { status: 404 });
   },
   websocket: {
     maxPayloadLength: MAX_MESSAGE,
-    idleTimeout: 30, // s; the client sends its state many times a second while it runs
+    idleTimeout: 30, // s; Bun pings idle sockets and every client answers, so only a dead one is closed
     // A client that does not read what it is sent is closed before its queue eats the server's memory (16 MB each by
     // default); 1 MB is many seconds of a full world's traffic.
     backpressureLimit: 1024 * 1024,
     closeOnBackpressureLimit: true,
-    open(ws) {
-      sockets.add(ws);
-      const { address } = ws.data;
-      if (address) perAddress.set(address, (perAddress.get(address) ?? 0) + 1);
-      // Bun pings idle sockets and every client answers, so one that never says hello would hold its place forever.
-      ws.data.hello = setTimeout(() => { if (!ws.data.peer) ws.close(1008, "no hello"); }, HELLO_TIME);
-    },
-    message(ws, text) { receive(ws, typeof text === "string" ? text : ""); },
-    close(ws) {
-      sockets.delete(ws);
-      clearTimeout(ws.data.hello);
-      const { address } = ws.data, n = address ? perAddress.get(address)! - 1 : 0;
-      if (address) { if (n > 0) perAddress.set(address, n); else perAddress.delete(address); }
-      const peer = peers.get(ws);
-      if (!peer) return;
-      peers.delete(ws);
-      ws.unsubscribe("all");
-      everyone({ t: "leave", id: peer.id });
-      if (ws === host) host = undefined;
-      elect();
-      console.log(`${peer.name} left (${peers.size} in)`);
-    },
+    open(ws) { ws.data.conn = room.open(ws, addresses, ws.data.address); },
+    message(ws, text) { room.receive(ws.data.conn!, typeof text === "string" ? text : ""); },
+    close(ws) { room.close(ws.data.conn!); },
   },
 });
 
 console.log(`Beaver on port ${server.port}. Open on this network:\n${addresses.map((a) => `  ${a}`).join("\n")}`);
 console.log("Type reset and Enter to start the world afresh.");
-for await (const line of console) if (line.trim() === "reset") reset();
+for await (const line of console) if (line.trim() === "reset") room.reset();

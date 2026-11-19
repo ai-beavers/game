@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { newMotion } from "../../player/state.ts";
 import { apply, CACHE, LODGE, newState, REGROW, SLOTS, STICKS, type BuildChange } from "../build/rules.ts";
 import {
-  admit, bucket, changesOf, clean, clientAddress, compact, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, NAME_LENGTH, packMotion,
+  admit, bucket, hourAt, changesOf, clean, clientAddress, compact, hostOf, MAX_BITES, MAX_CHANGES, MAX_MESSAGE, MAX_THINGS, NAME_LENGTH, packMotion,
   parseChange, parseClient, replay, restore, sameOrigin, sameWorld, shouldReload, stickId, uniqueName, unpackMotion, woodId, type ServerMessage, type Work,
 } from "./protocol.ts";
 import { Track } from "./track.ts";
@@ -80,6 +80,16 @@ describe("motion", () => {
       expect(parseClient(state({ m: packMotion(m) }))).toBeDefined();
     }
     expect(unpackMotion(packMotion(newMotion()), into).low).toBeUndefined();
+  });
+});
+
+describe("hourAt", () => {
+  test("is 16:00 at the start, a whole day later after 720 s, and wraps past midnight", () => {
+    expect(hourAt(16, 5000, 5000)).toBe(16);
+    expect(hourAt(16, 5000, 5000 + 720_000)).toBeCloseTo(16, 9);
+    expect(hourAt(16, 0, 240_000)).toBeCloseTo(0, 9); // eight hours later: midnight
+    expect(hourAt(23, 0, 60_000)).toBeCloseTo(1, 9); // two hours a minute
+    expect(hourAt(16, 0, 1000)).toBeCloseTo(16 + 2 / 60, 9);
   });
 });
 

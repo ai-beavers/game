@@ -1,7 +1,8 @@
 # Beaver
 
 A beaver you steer through a small world in the browser, in third person. Babylon.js and Babylon GUI with Rapier
-physics, TypeScript, built and served by Bun. In multiplayer, the Bun server synchronizes players and dam progress over WebSocket.
+physics, TypeScript, built and served by Bun. In multiplayer, the server synchronizes players and dam progress over
+WebSocket: the Bun server on a local network, a Worker on Cloudflare for everyone (see "On Cloudflare").
 
 ```
 bun install --frozen-lockfile
@@ -21,7 +22,22 @@ bun run tour --once --here --repeat 30 [--beside]
 /?play&tour                  the beaver plays every feature by itself, round after round, and checks each (src/features/tour)
 bun run tour                 the same as a test without end, headless, 4× fast, on what is committed; failures as clips (tools/tour.ts)
 bun run build                static files in dist/
+bunx wrangler dev            the game as it runs on Cloudflare, on port 8787, from dist/ (worker.ts); needs no account
 ```
+
+## On Cloudflare
+
+Everyone plays at <https://beaver.uq-dev.workers.dev/>, in one shared world of up to 16 players.
+
+- **Publishing**: every push to `main` that passes `check` is deployed by the `deploy` job of `.github/workflows/check.yml`
+  (`wrangler deploy`). Players reconnect by themselves and load the new build once. The world's work stays.
+- **What runs there**: one Worker (`worker.ts`, `wrangler.jsonc`). Cloudflare serves the files of `dist/` itself. One
+  Durable Object holds the world with the same rules as `server.ts`: both run `src/features/net/room.ts`.
+- **Credentials**: the GitHub environment `production` holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and
+  takes runs from `main` only.
+- **Starting the world afresh**: set the token once with `bunx wrangler secret put RESET_TOKEN`, then
+  `curl -X POST -H "Authorization: Bearer <token>" https://beaver.uq-dev.workers.dev/net/reset`. Without the secret
+  the address answers 404.
 
 ## Layout
 
@@ -36,6 +52,8 @@ src/player/        input, Rapier character, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
 src/features/      dam building, the trading post, the shop, the canoe, multiplayer, controls, HUD, wildlife, weather, audio, effects, photo mode and tour
+server.ts          the game and its multiplayer server on Bun, for a local network
+worker.ts          the same multiplayer on Cloudflare: a Worker and a Durable Object
 assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), logo.png
 tools/blender/     the models, built in Blender from code
 ```

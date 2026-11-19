@@ -7,7 +7,7 @@ How to prove a change works before it is handed over. The commands are in `READM
 - **Where Chrome runs** (a normal checkout): `bun shot "<url>" --size 640x360 --out <dir>/<name>.png`, then read the PNG. Headless Chrome needs the GPU: in a sandbox it does not start.
 - **In a sandbox**: your task names a `look` command. It takes the same options as `bun shot` and is answered by a Chrome outside the sandbox. The host plays the tour for you; `bun run tour` does not run there. Tools built on `tools/chrome.ts` (the sound tests in `bun run check`, `bun tools/listen.ts`) borrow the host's Chrome there by themselves, through `LOOK_PORT`; it loads pages only from this machine.
 - **Picture budget**: about a dozen pictures per task, at `640x360`. Every picture read stays in your context for the rest of the session. Take a larger size only to judge fine detail, and keep one before picture of what you change.
-- **Read state instead of pixels** where a number answers the question: `--eval "<expression>"` prints its value as JSON. The page exposes `game`, `sky`, `tour`, `life`, `net`, `audio`, `hud`, `build` and `shop` on `window`.
+- **Read state instead of pixels** where a number answers the question: `--eval "<expression>"` prints its value as JSON. The page exposes `game`, `sky`, `tour`, `life`, `net`, `audio`, `hud`, `build`, `shop` and `mrsBeaver` on `window`.
 - **Sound** never starts in headless Chrome. `bun tools/listen.ts` renders the game's sounds offline and prints their loudness.
 
 ## Address switches
@@ -17,7 +17,7 @@ Combine them with `&`. `README.md` lists the tour ones.
 | Switch | Effect |
 | --- | --- |
 | `play` | skips the start screen |
-| `hour=13`, `clock=stop`, `speed=60` | the hour of the day, a clock that stands still, a faster day |
+| `hour=13`, `clock=stop`, `speed=60` | the hour of the day, a clock that stands still, a faster day; each keeps the page on its own day when connected to a shared world |
 | `weather=fair` | holds one kind of weather; the kinds are `KINDS` in `src/features/sky/weather.ts` |
 | `spawn=x,z` | where the beaver starts |
 | `anger=1` | a furious beaver |

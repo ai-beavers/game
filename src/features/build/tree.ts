@@ -83,7 +83,7 @@ export function measure(tree: WorldTree): Measure {
 
 // ---- drawing the bite ----------------------------------------------------------------------------------------------
 
-/** The actual outline at either rim of the notch. Blender trunks can lean and have irregular cross-sections. */
+/** The actual outline at either rim of the bite. Blender trunks can lean and have irregular cross-sections. */
 function trunkSections(tree: WorldTree, m: Measure, sides: number) {
   const faces: [Vector3, Vector3, Vector3][] = [];
   for (const part of meshes(tree.model)) {
@@ -127,10 +127,24 @@ function trunkSections(tree: WorldTree, m: Measure, sides: number) {
   };
 }
 
-/** Clip the original bark above and below the bite. Its two remaining ends share the source geometry. */
-function notch(root: TransformNode, tree: WorldTree, m: Measure) {
+/** What a tree view shows of its bite, for the tour to check without looking at pixels (TreeView.biteReport). */
+export interface BiteReport {
+  /** How deep, 0 … 1, and whether it has split (the tree falls). */
+  depth: number; split: boolean;
+  /** The fresh wood: shown and opaque; its bounds in the world hold the trunk at the bite, so the picture does not
+   *  cull it (drawn: in the last picture whenever the bark was); every face turned outwards. */
+  wood: { shown: boolean; placed: boolean; drawn: boolean; outward: boolean };
+  /** Its rims, template y, against where the bark is clipped away: covered when nothing lies between. */
+  rims: { low: number; high: number; clipLow: number; clipHigh: number; covered: boolean };
+  /** The clipped bark above and below (below only while it stands): shown and fully opaque. */
+  bark: { above: boolean; shown: boolean; opaque: boolean }[];
+}
+
+/** Clip the original bark above and below the bite and fill the band with fresh wood. Its two remaining ends share
+ *  the source geometry. */
+function bite(root: TransformNode, tree: WorldTree, m: Measure) {
   const scene = root.getScene(), upper = new Plane(0, -1, 0, 0), lower = new Plane(0, 1, 0, 0);
-  const bark: { material: Material; plane: Plane }[] = [], bottom: Mesh[] = [];
+  const bark: { material: Material; plane: Plane; mesh: Mesh }[] = [], bottom: Mesh[] = [];
   for (const part of root.getChildMeshes()) {
     if (!(part instanceof InstancedMesh) || part.material?.name === "leaves") continue;
     const source = part.sourceMesh, original = source.material!;
@@ -142,7 +156,7 @@ function notch(root: TransformNode, tree: WorldTree, m: Measure) {
       half.setEnabled(true);
       const copy = original.clone("cut " + original.name)!;
       half.material = copy;
-      bark.push({ material: copy, plane });
+      bark.push({ material: copy, plane, mesh: half });
       if (plane === lower) bottom.push(half);
       // Material clones may share their source texture or own a clone, depending on the texture type.
       const ownMaps = copy.getActiveTextures().filter(texture => !original.hasTexture(texture));
@@ -172,6 +186,7 @@ function notch(root: TransformNode, tree: WorldTree, m: Measure) {
   };
   root.onAfterWorldMatrixUpdateObservable.add(syncPlanes);
   let last = -1, broken = false;
+  const waist = new Vector3();
   function update(progress: number, split = false) {
     if (split === broken && Math.abs(progress - last) < 0.005) return;
     last = progress; broken = split;
@@ -208,9 +223,39 @@ function notch(root: TransformNode, tree: WorldTree, m: Measure) {
       cut.updateVerticesData("normal", normals);
       cut.updateVerticesData("color", colors);
     }
+    // New vertices give the mesh new bounds, in its own space until its world matrix is computed again; a standing
+    // tree never moves, so they would stay round the world's middle and the camera would cull the fresh wood there.
+    cut.computeWorldMatrix(true);
   }
   update(0);
-  return update;
+
+  function report(): BiteReport {
+    let low = Infinity, high = -Infinity, outward = true;
+    for (let k = 1; k < positions.length; k += 3) { low = Math.min(low, positions[k]!); high = Math.max(high, positions[k]!); }
+    // Front faces are counter-clockwise (a right-handed scene): their normal by the right-hand rule must point away
+    // from the trunk's axis. Faces that shrink to nothing (the split's tip) say nothing.
+    const p = (i: number) => Vector3.FromArray(positions, i * 3);
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = p(indices[i]!), b = p(indices[i + 1]!), c = p(indices[i + 2]!);
+      const normal = Vector3.Cross(b.subtract(a), c.subtract(a));
+      const middle = a.add(b).add(c).scaleInPlace(1 / 3), axis = m.centerAt(middle.y);
+      const out = new Vector3(middle.x - axis.x, 0, middle.z - axis.y);
+      if (normal.length() > 1e-9 && out.length() > 1e-4 && Vector3.Dot(normal, out) <= 0) outward = false;
+    }
+    const center = m.centerAt(m.bite), box = cut.getBoundingInfo().boundingBox;
+    Vector3.TransformCoordinatesToRef(new Vector3(center.x, m.bite, center.y), root.getWorldMatrix(), waist);
+    const active = scene.getActiveMeshes().data, barkDrawn = bark.some(({ mesh }) => active.includes(mesh));
+    const shown = cut.isEnabled() && cut.isVisible && cut.visibility === 1 && cut.material!.alpha === 1;
+    return {
+      depth: last, split: broken,
+      wood: { shown, placed: box.intersectsPoint(waist), drawn: !barkDrawn || !shown || active.includes(cut), outward },
+      rims: { low, high, clipLow: -lower.d, clipHigh: upper.d, covered: low <= -lower.d && high >= upper.d },
+      bark: bark.filter(({ mesh }) => !broken || !bottom.includes(mesh)).map(({ mesh, material, plane }) => ({
+        above: plane === upper, shown: mesh.isEnabled() && mesh.isVisible, opaque: mesh.visibility === 1 && material.alpha === 1,
+      })),
+    };
+  }
+  return { update, report };
 }
 
 export type TreeView = ReturnType<typeof takeTree>;
@@ -222,7 +267,7 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
   root.position.copyFrom(m.position);
   root.rotationQuaternion = m.turn.clone();
   root.scaling.setAll(m.scale);
-  const updateNotch = notch(root, tree, m), center = m.centerAt(m.bite);
+  const { update: updateBite, report: biteReport } = bite(root, tree, m), center = m.centerAt(m.bite);
   const cutPoint = new Vector3(center.x, m.bite, center.y);
   const waist = () => Vector3.TransformCoordinates(cutPoint, root.computeWorldMatrix(true));
   let holder: TransformNode | undefined, body: RAPIER.RigidBody | undefined, hinge: { joint: RAPIER.ImpulseJoint; anchor: RAPIER.RigidBody } | undefined;
@@ -272,8 +317,10 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
     get body() { return body; },
     /** Shows the bite this deep, 0 … 1, while the tree still stands. */
     bite(progress: number) {
-      if (!body) updateNotch(progress);
+      if (!body) updateBite(progress);
     },
+    /** What is shown of the bite now (BiteReport). */
+    biteReport,
     /** Starts the fall this way (horizontal, unit): the stump stays, the rest tips over on a hinge at the cut. */
     fall(direction: Vector3) {
       if (body) return;
@@ -281,7 +328,7 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
       makeBody(RAPIER.RigidBodyDesc.dynamic().setCanSleep(false).setCcdEnabled(true).setLinearDamping(0.05).setAngularDamping(0.3), w, new Quaternion());
       clear();
       addStump();
-      updateNotch(1, true);
+      updateBite(1, true);
       const axis = new Vector3(0, 1, 0).cross(direction).normalize();
       const anchor = physics.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(w.x, w.y, w.z));
       const joint = physics.createImpulseJoint(RAPIER.JointData.revolute({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, axis), anchor, body!, true);
@@ -326,7 +373,7 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
         body.setTranslation(at, true); body.setRotation(turn, true);
       } else {
         makeBody(RAPIER.RigidBodyDesc.fixed(), at, turn);
-        updateNotch(1, true);
+        updateBite(1, true);
       }
       landed = resting = true;
     },

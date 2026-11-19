@@ -43,8 +43,8 @@ export const pondPatrol = (kit: Kit): Station[] => {
       expect(last.startled!.count > 0, "the tail came down, no animal fled");
       await wait(4); // the ducks circle, the fish dart off: something to see
     }, "Tail slap"],
-    // Out in the middle, C held takes the beaver under: below the surface with the under-water picture (live, the
-    // stream's camera stays above and watches it go down); a swim down there, then let go and up again.
+    // Out in the middle, C held takes the beaver under: below the surface with the under-water picture (the camera
+    // goes under with it as a player's does); a swim down there, then let go and up again.
     ["Dive", async () => {
       if (!pond) return skip("no pond");
       const look = () => (stage.scene.metadata.underwater as { on: boolean } | undefined)?.on, depth = () => (player.waterLevel ?? 0) - player.feet.y;

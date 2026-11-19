@@ -45,7 +45,7 @@ export interface GameEvents {
   damFinished: { place: Vector3 };
   /** Where the pond's surface should be now that the dam holds water back (the water itself does not follow yet). */
   pondLevel: { level: number; rise: number };
-  /** A goal of the build feature is reached. */
+  /** A goal of the build feature is reached; or (goal "mrs-beaver") Mrs. Beaver is freed. */
   goalDone: { goal: string; text: string };
   /** From the trade feature (src/features/trade): a good went into the backpack; count: how many of it are in it now. */
   goodTraded: { good: string; count: number };

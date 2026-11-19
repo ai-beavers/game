@@ -1,7 +1,7 @@
 // The production bundle: what `bun run build` writes to dist/ and what `NODE_ENV=production bun server.ts` serves
 // from memory. Viewers open the game from a stream link, many on phones: every byte before the first frame counts.
 //
-//   bun tools/build.ts           dist/, each compressible file beside its .br and .gz
+//   bun tools/build.ts           dist/, each compressible file beside its .br and .gz, and what Cloudflare reads
 //   const files = await build()   path → bytes (and their compressed forms), for server.ts
 //
 // Two things the plain `bun build ./index.html` gets wrong for us:
@@ -73,10 +73,17 @@ if (import.meta.main) {
   const dist = join(root, "dist");
   rmSync(dist, { recursive: true, force: true });
   mkdirSync(dist);
-  for (const [path, file] of await build()) {
+  const files = await build();
+  for (const [path, file] of files) {
     await Bun.write(join(dist, path), file.raw);
     if (file.br) await Bun.write(join(dist, `${path}.br`), file.br);
     if (file.gz) await Bun.write(join(dist, `${path}.gz`), file.gz);
     console.log(`${path.padEnd(28)} ${String(file.raw.length).padStart(9)}${file.br ? `  br ${String(file.br.length).padStart(9)}  gz ${String(file.gz!.length).padStart(9)}` : ""}`);
   }
+  // For Cloudflare, which serves dist/ as the Worker's static assets (wrangler.jsonc) and compresses by itself: the
+  // compressed copies stay here, and hashed names are cached for a year, as server.ts does. The page keeps
+  // Cloudflare's own answer, which is always asked again.
+  const hashed = [...files.keys()].filter((path) => path !== "/index.html");
+  await Bun.write(join(dist, ".assetsignore"), "*.br\n*.gz\n");
+  await Bun.write(join(dist, "_headers"), hashed.map((path) => `${path}\n  Cache-Control: public, max-age=31536000, immutable\n`).join(""));
 }

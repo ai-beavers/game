@@ -20,11 +20,9 @@
 //   camera.turn(yaw, pitch)           other devices (stick, touch): turn by these radians, pitch kept in range
 //   camera.zoom(scale)                distance times scale, kept in 2 … 8 m (eased in the picture)
 //   camera.invertY = true             mouse drag up and down turned round (settings.invertY; the controls feature sets it)
-//   camera.aim, camera.floor          look past the beaver, stay above a height (the tour's live view; players leave them).
-//   camera.room                       how far it may stand along a way, for things without a collider (live view too).
-//                                     Once floor is set the live view directs: the player framing above is off.
+//   camera.room                       how far it may stand along a way, for things without a collider (the live tour's).
 //   camera.view                       "third-person" or "first-person"; V switches it, except while paused (a menu,
-//                                     photo mode) or while the live view directs, which keeps the third-person view.
+//                                     photo mode).
 //   camera.eyes                       where the beaver sees from (Beaver.eyes), for the first-person view.
 //
 // The first-person view stands at the eyes, as the picture shows them, and looks the player's yaw and pitch (pitch
@@ -44,9 +42,8 @@ const MIN_DISTANCE = 2, MAX_DISTANCE = 8;
 const MIN_PITCH = -0.05, MAX_PITCH = 1.35; // rad above the horizon: even at 8 m the camera stays above the feet
 const UNDER_PITCH = -0.7; // rad: diving, the camera may go below the beaver and look up at the surface
 export const REST_PITCH = 0.24, REST_DISTANCE = 4.5; // rad, m: low enough for the horizon, high enough to see the ground ahead
-const FOLLOW = 12; // 1/s, how fast the look point catches up (live view)
 const LET_OUT = 3; // 1/s, how fast the camera goes back out once the view is free
-const LET_IN = 14; // 1/s, how fast it comes in when something comes between (player)
+const LET_IN = 14; // 1/s, how fast it comes in when something comes between
 const CLOSE = 1.4, ROOMY = 2; // m: when the view has less room than this (above, under water), it tries other angles
 const TILT = 5; // 1/s, how fast it changes angle for that
 const BALL = 0.18; // m, radius of the cast ball: keeps the near plane out of walls
@@ -205,8 +202,8 @@ export function view(from: Vector3, at: Vector3, rise: number, across: number) {
 export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) => boolean) {
   const { camera, physics, canvas, engine } = stage;
   const look = new Vector3(), direction = new Vector3(), probe = new Vector3(), ball = new RAPIER.Ball(BALL), rig = newRig();
-  const rotation = { x: 0, y: 0, z: 0, w: 1 }, noFloor = (_x: number, _z: number) => -Infinity;
-  let started = false, shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0;
+  const rotation = { x: 0, y: 0, z: 0, w: 1 };
+  let shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0;
   let seen: View = "third-person", eyes: TransformNode | undefined, eyeChain: TransformNode[] = [];
   const pitchRange = (pitch: number) => seen === "first-person"
     ? Math.max(-EYE_PITCH, Math.min(EYE_PITCH, pitch)) : Math.max(lowest(rig), Math.min(MAX_PITCH, pitch));
@@ -226,24 +223,18 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
     pitch: REST_PITCH,
     distance: REST_DISTANCE,
     invertY: false,
-    /** Added to the look point for the picture only: the live view's director frames ahead and above the beaver. */
-    aim: new Vector3(),
-    /** Lowest height the camera may take at x, z; the live view keeps it out of water and reeds, which have no collider. */
-    floor: noFloor,
     /** How far the camera may stand from `from` along `direction` (unit), up to `distance`, for things without a
-     *  collider; the live view keeps it out of crowns and bushes. */
+     *  collider; the live tour keeps it out of crowns and bushes. */
     room: undefined as ((from: Vector3, direction: Vector3, distance: number) => number) | undefined,
     /** How far it really is now, after pulling in for things in the way. */
     get shown() { return shown; },
-    /** The live view directs the camera (floor set): it keeps the third-person view. */
-    get directed() { return state.floor !== noFloor; },
     get view() { return seen; },
     set view(next: View) {
       if (next === seen) return;
       seen = next;
       camera.layerMask = next === "first-person" ? ALL_LAYERS & ~OWN_LAYER : ALL_LAYERS;
       if (next === "first-person") { state.pitch = pitchRange(state.pitch); return; }
-      // Back behind the beaver as after the live view: the rig afresh where the beaver is, at rest but for the yaw.
+      // Back behind the beaver: the rig afresh where the beaver is, at rest but for the yaw.
       rig.started = false;
       state.pitch = shownPitch = REST_PITCH;
       state.distance = shown = REST_DISTANCE;
@@ -264,8 +255,6 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       state.distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, state.distance * scale));
     },
     update(dt: number, feet: Vector3, going: Going = STANDING) {
-      const live = state.floor !== noFloor; // the tour's live view directs yaw, pitch, distance and aim itself
-      if (live) state.view = "third-person";
       if (seen === "first-person" && eyes) {
         // At the eyes as the bones were just posed (the world matrices from the beaver's root down, recomputed once).
         for (const node of eyeChain) node.computeWorldMatrix(true);
@@ -273,13 +262,12 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
         camera.fov = lens(engine.getAspectRatio(camera) || 16 / 9).fov;
         state.pitch = pitchRange(state.pitch);
         camera.setTarget(gaze(state.yaw, state.pitch).addInPlace(camera.position));
-        started = true;
         return;
       }
       state.pitch = pitchRange(state.pitch);
       const v = going.velocity, moving = Math.hypot(v.x, v.z);
       // Left alone for a while: back to the rest pitch, and round behind when it goes nearly away from the camera.
-      if (!live && (idle += dt) > LEFT_ALONE && moving > 0.3) {
+      if ((idle += dt) > LEFT_ALONE && moving > 0.3) {
         const k = 1 - Math.exp(-CENTRE * dt * Math.min(1, moving / WALK_SPEED));
         state.pitch += (REST_PITCH - state.pitch) * k;
         const off = Math.atan2(Math.sin(Math.atan2(v.x, v.z) + Math.PI - state.yaw), Math.cos(Math.atan2(v.x, v.z) + Math.PI - state.yaw));
@@ -289,28 +277,20 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       // Diving: how far back from the beaver, just under the surface, the water has room for the camera (the bed and
       // the bank are ground, with a collider).
       let room = Infinity;
-      if (!live && going.diving && going.level !== undefined) {
+      if (going.diving && going.level !== undefined) {
         probe.set(feet.x, going.level - ROOM_DEPTH, feet.z);
         direction.set(Math.sin(state.yaw), 0, Math.cos(state.yaw));
         const hit = physics.castShape(probe, rotation, direction, ball, 0, MAX_DISTANCE, true, flags, undefined, undefined, undefined, blocks);
         room = hit ? hit.time_of_impact : MAX_DISTANCE;
       }
-      const shot = live
-        ? { yaw: state.yaw, pitch: state.pitch, distance: state.distance, fov: lens(aspect).fov, rise: 0, across: 0, under: 0 }
-        : stepRig(rig, dt, feet, going, state.yaw, state.pitch, state.distance, aspect, room);
-      if (live) {
-        const goal = direction.set(feet.x, feet.y + LOOK_HEIGHT, feet.z);
-        if (!started) look.copyFrom(goal);
-        else Vector3.LerpToRef(look, goal, 1 - Math.exp(-FOLLOW * dt), look);
-        rig.started = false; // back to the player: the rig starts afresh where the beaver is
-      } else look.copyFrom(rig.pivot);
-      started = true;
+      const shot = stepRig(rig, dt, feet, going, state.yaw, state.pitch, state.distance, aspect, room);
+      look.copyFrom(rig.pivot);
       camera.fov = shot.fov;
       // Hemmed in (a wall right behind, a ramp overhead): look for a steeper or flatter angle with room, so the
       // camera does not end up inside the beaver's back.
       // Diving: the surface is a ceiling (beneath), so the casts below find the bed and the bank in the way, and
       // nothing moves the camera off its way after them.
-      const under = (p: number): [number, number] => !live && going.level !== undefined ? beneath(look.y, p, shot.distance, going.level, shot.under) : [p, shot.distance];
+      const under = (p: number): [number, number] => going.level !== undefined ? beneath(look.y, p, shot.distance, going.level, shot.under) : [p, shot.distance];
       let [aim] = under(shot.pitch);
       const freeUnder = (p: number) => { const [q, d] = under(p); return freeAt(shot.yaw, q, d, shot.under > 0); };
       const close = Math.min(shot.distance, CLOSE + (ROOMY - CLOSE) * shot.under);
@@ -323,21 +303,16 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       }
       shownPitch += (aim - shownPitch) * (1 - Math.exp(-TILT * dt));
       const free = freeAt(shot.yaw, shownPitch, under(shownPitch)[1], shot.under > 0);
-      if (live) shown = free < shown ? free : Math.min(free, shown + (free - shown) * (1 - Math.exp(-LET_OUT * dt)));
-      else {
-        [shown, shownV] = spring(shown, shownV, free, free < shown ? LET_IN : LET_OUT, dt);
-        // Only when the camera would be inside something does it jump in front of it.
-        const inside = shown > free && physics.intersectionWithShape(orbit(look, shot.yaw, shownPitch, shown), rotation, ball, flags,
-          undefined, undefined, undefined, blocks);
-        if (inside) { shown = free; shownV = 0; }
-      }
+      [shown, shownV] = spring(shown, shownV, free, free < shown ? LET_IN : LET_OUT, dt);
+      // Only when the camera would be inside something does it jump in front of it.
+      const inside = shown > free && physics.intersectionWithShape(orbit(look, shot.yaw, shownPitch, shown), rotation, ball, flags,
+        undefined, undefined, undefined, blocks);
+      if (inside) { shown = free; shownV = 0; }
       camera.position.copyFrom(orbit(look, shot.yaw, shownPitch, shown));
-      camera.position.y = Math.max(camera.position.y, state.floor(camera.position.x, camera.position.z));
-      if (!live && going.level !== undefined) camera.position.y = underWater(camera.position.y, going.level, shot.under);
+      if (going.level !== undefined) camera.position.y = underWater(camera.position.y, going.level, shot.under);
       // Pulled in close (something in the way), it looks at the beaver itself, so the beaver never leaves the picture.
       const near = Math.min(1, shown / shot.distance);
-      const at = look.add(state.aim.scale(near));
-      if (!live) at.addInPlace(rig.lead.scale(near));
+      const at = look.add(rig.lead.scale(near));
       // The view turned up and to the side of that point by rise and across: the beaver low and left of the middle.
       camera.setTarget(view(camera.position, at, shot.rise, shot.across).addInPlace(camera.position));
     },
@@ -359,9 +334,9 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
     state.zoom(Math.exp(e.deltaY * 0.001));
   }, { passive: false });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-  // V switches the view: not in a menu or photo mode (both pause), not while typing, not while the live view directs.
+  // V switches the view: not in a menu or photo mode (both pause), not while typing.
   const switchView = (e: KeyboardEvent) => {
-    if (e.code !== "KeyV" || e.repeat || e.altKey || e.ctrlKey || e.metaKey || stage.paused || state.directed) return;
+    if (e.code !== "KeyV" || e.repeat || e.altKey || e.ctrlKey || e.metaKey || stage.paused) return;
     const target = e.target;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return;
     state.view = seen === "first-person" ? "third-person" : "first-person";

@@ -2,8 +2,7 @@
 // game's time, walking and reaching, the events that happened, and the dam work in parts. index.ts makes one Kit, hands
 // it to every station file, and drives it: resume(dt) once a picture lets every waiter go on.
 //
-// A station file destructures what it uses at its top. Two things are written through the kit itself, not a copy:
-// kit.subject (what the live camera brings into the picture; the round loop clears it after each station) and
+// A station file destructures what it uses at its top. One thing is written through the kit itself, not a copy:
 // kit.usedUp (read by the round loop: the saved game has no wood left).
 import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
@@ -15,9 +14,11 @@ import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import type { SkyState } from "../sky/index.ts";
 import { LODGE, live as standing, SLOTS, type BuildState } from "../build/rules.ts";
+import type { BiteReport } from "../build/tree.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
+const BITES = [[0.15, "shallow"], [0.8, "deep"]] as const; // how deep the Bite is when fell() looks at it
 const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is jumped over (teleport), but the last metre
 
 /** What the build feature puts on window for tools (src/features/build/index.ts); only the part the tour needs. */
@@ -25,7 +26,7 @@ export interface BuildDebug {
   state: BuildState;
   dam: { frame: { origin: Vector3; across: Vector3 }; lodgeAt: Vector3; cacheAt: Vector3 };
   fill(n: number): number;
-  views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined }>;
+  views: Map<number, { trunkLine(): { from: Vector3; along: Vector3 } | undefined; biteReport(): BiteReport }>;
   saplings: Map<number, unknown>;
   age(i: number, seconds: number): number | false;
   split(i: number): boolean;
@@ -54,8 +55,6 @@ export interface Kit {
   requested: string[];
   /** What the tour holds down, read once per physics step: where to walk (to; side: a step aside), run, the keys. */
   want: { to: Vector3 | undefined; side: number; run: number; jump: boolean; act: boolean; slap: boolean; dive: boolean; crawl: boolean };
-  /** What the beaver works on, for the live picture: a tree, the dam, a deer. Write it as kit.subject. */
-  subject: (() => { x: number; z: number }) | undefined;
   /** No wood left in the saved game (set by fetchStick): the round loop starts it anew. */
   readonly usedUp: boolean;
   /** The next frame of the world; its dt. */
@@ -93,6 +92,7 @@ export interface Kit {
   /** m south of the pond's middle to swim to (clear of the lodge). */
   clear(): number;
   standingTrees(b: BuildDebug): number[];
+  /** Gnaws tree i down from the clearing's side, checking its Bite shallow and deep, until it lands. */
   fell(i: number): Promise<void>;
   split(i: number): Promise<void>;
   /** Sticks lying about, not in the hand nor built in. */
@@ -113,7 +113,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
 
   // ---- what the tour wants, read once per physics step like any other device ----
   const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false, dive: false, crawl: false };
-  let subject: (() => { x: number; z: number }) | undefined; // what the beaver works on, for the live picture: a tree, the dam, a deer
   player.keys.add({
     read(into: Input) {
       Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap, dive: want.dive, crawl: want.crawl });
@@ -207,24 +206,44 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   };
   const fell = async (i: number) => {
     const tree = world.trees![i]!;
-    subject = () => tree.place;
     // From the side facing the clearing's middle, as build.at(i) does, so it falls outwards.
     const out = new Vector3(-tree.place.x, 0, -tree.place.z).normalize();
     const stand = tree.place.add(out.scale(tree.radius + 0.35));
     await reach("gnaw", (attempt) => attempt ? tree.place : stand, true).catch((e: Error) => { throw new Error(`tree ${i}: ${e.message}`); });
     const falls = after("treeFalls"), lands = after("treeLands");
     want.act = true;
-    try { await until(falls, 15, `gnawed tree ${i} for 15 s, it still stands`); } finally { want.act = false; }
+    try {
+      // The Bite while it deepens, shallow and then deep: drawn, outwards, its rims over the bark's clip, the bark
+      // around it whole and opaque (also with the live camera's clear view fading what is in the way).
+      for (const [depth, name] of BITES) {
+        await until(() => falls() || (build()?.views.get(i)?.biteReport().depth ?? 0) >= depth, 15, `gnawed tree ${i} for 15 s, its Bite never got ${name}`);
+        expect(!falls(), `tree ${i} fell before its Bite was seen ${name}`);
+        await paint(); // the picture of this moment, which the report reads what was drawn from
+        checkBite(i, name);
+      }
+      await until(falls, 15, `gnawed tree ${i} for 15 s, it still stands`);
+    } finally { want.act = false; }
     expect(last.treeFalls!.tree === i, `tree ${last.treeFalls!.tree} fell, not ${i}`);
     // A crown caught in another tree, or a slow tall one, comes to rest without the "landed" moment; the build feature
     // lays every falling tree to rest within 10 s (tree.ts step), so either ends the fall.
     await until(() => lands() || !!standing(build()?.state.trees[i])?.rest, 12, "the tree fell but never landed nor came to rest");
   };
+  const checkBite = (i: number, name: string) => {
+    const r = needBuild().views.get(i)?.biteReport();
+    expect(!!r, `tree ${i} is gnawed, yet no tree view shows its Bite`);
+    const { wood, rims, bark } = r!, at = `the ${name} Bite (${r!.depth.toFixed(2)}) of tree ${i}`;
+    expect(wood.shown, `${at}: its fresh wood is hidden or see-through`);
+    expect(wood.placed && wood.drawn, `${at}: its fresh wood is not drawn (bounds off the trunk, or culled from the picture)`);
+    expect(wood.outward, `${at}: its fresh wood faces inwards, unseen from outside the trunk`);
+    expect(rims.covered, `${at}: a gap between its rims (${rims.low.toFixed(3)} … ${rims.high.toFixed(3)}) and the bark's clip (${rims.clipLow.toFixed(3)} … ${rims.clipHigh.toFixed(3)})`);
+    expect(bark.some((b) => b.above) && bark.some((b) => !b.above), `${at}: ${bark.length} pieces of bark, not one above and one below`);
+    expect(bark.every((b) => b.shown), `${at}: bark above or below it is hidden`);
+    expect(bark.every((b) => b.opaque), `${at}: bark above or below it is faded see-through`);
+  };
   const split = async (i: number) => {
     const b = needBuild();
     // Only a tree lying still can be gnawed (build: the "rest" change); one leaning on another may never be.
     await until(() => !!standing(b.state.trees[i])?.rest, 8, `tree ${i} never came to rest after its fall (leaning on something?)`);
-    subject = () => b.views.get(i)?.trunkLine()?.from ?? world.trees![i]!.place;
     // The nearest point of the trunk as it lies now, a little off its foot; then further along it.
     await reach("split", (attempt) => {
       const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new Vector3() };
@@ -275,7 +294,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     while (b.state.dam.length < upTo) {
       await fetchStick();
       const { origin, across } = b.dam.frame, to = origin.subtract(across.scale(1.25)), from = b.dam.lodgeAt.subtract(across.scale(1.7));
-      subject = () => lodge ? b.dam.lodgeAt : origin;
       await reach("build", (attempt) => lodge ? (attempt ? b.dam.lodgeAt : from) : attempt ? origin : to, true);
       const placed = after("stickPlaced"), finished = after("damFinished"), n = b.state.dam.length + 1;
       await tap("act");
@@ -307,8 +325,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
 
   return {
     game, player, world, stage, beaver, fast, live, requested, want,
-    get subject() { return subject; },
-    set subject(at) { subject = at; },
     get usedUp() { return usedUp; },
     frame, paint, wait, until, tap, press, key, flat, walkTo, reach, last, expect, after, hudText,
     build, needBuild, pond, sky, clear, standingTrees, fell, split, loose, pickUp, fetchStick, buildUpTo, regrowing, resume,
