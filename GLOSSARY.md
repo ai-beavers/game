@@ -50,6 +50,14 @@ _Avoid_: item, loot, product
 The small disco-like hut in the clearing with the sign HOUSE OF AI in front; inside it is a café where the shopkeeper sells outfits and other creatures work at laptops.
 _Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
 
+**Calendar board**:
+The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked and the hours of each day from morning to midnight, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
+_Avoid_: billboard, calendar sign, schedule, week board
+
+**Build Fridays**:
+The weekly event on the Calendar board: every Friday from 16:00 to 23:00, by the viewer's own clock.
+_Avoid_: build day, Friday event
+
 **Shopkeeper**:
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.
 _Avoid_: NPC, vendor, merchant
