@@ -1,0 +1,15 @@
+// The game on Cloudflare: one Worker (worker.ts) that serves what `bun run build` wrote to dist/ and holds the shared
+// world in a Durable Object. Deployed by .github/workflows/check.yml on every push to main; the account comes from
+// CLOUDFLARE_ACCOUNT_ID. See README.md, "On Cloudflare".
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "beaver",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-18",
+  // A request that names a file gets the file; every other one (/net and below) goes to worker.ts.
+  "assets": { "directory": "dist" },
+  "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }],
+  // Who joined and left, and what failed, in the dashboard's logs.
+  "observability": { "enabled": true }
+}

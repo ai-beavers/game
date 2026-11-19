@@ -1,5 +1,6 @@
-// The messages players and server.ts exchange over the WebSocket at /net, and the checks the server runs on every
-// message a player sends. Pure, no browser and no Bun: server.ts, the client (index.ts), bot.ts and the tests share it.
+// The messages players and the server exchange over the WebSocket at /net, and the checks the server runs on every
+// message a player sends. Pure, no browser and no Bun: the room (room.ts, run by server.ts and worker.ts), the client
+// (index.ts), bot.ts and the tests share it.
 //
 //   const message = parseClient(text);      undefined: unknown, too big, out of range; the server drops it
 //   hostOf(players)                         who simulates the loose things: the one who has been in longest
@@ -14,6 +15,8 @@ export { DAY_SECONDS, hourAt, START } from "../sky/day.ts";
 import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
+/** On Cloudflare only (worker.ts): POST with the reset token starts the world afresh. */
+export const RESET_PATH = "/net/reset";
 export const MAX_PLAYERS = 16;
 /** Sockets one client address may hold (a household or class behind one router), and how long a new socket has to
  *  say hello before it is closed: the browser says it the moment the socket opens. */
