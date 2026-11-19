@@ -76,7 +76,7 @@ describe("between jobs", () => {
     expect(decide(seen({ roll: 0.1, sinceSlap: 60 }, done))).toEqual({ kind: "wander", how: "slap" });
     expect(decide(seen({ roll: 0.1, sinceSlap: 20 }, done))).toEqual({ kind: "wander", how: "dive" });
     expect(decide(seen({ roll: 0.1, sinceSlap: 60, me: { x: RIM - 3, z: 0, carry: -1 } }, done))).toEqual({ kind: "wander", how: "dive" });
-    expect(decide(seen({ roll: 0.1, sinceSlap: 400, me: { x: 13, z: 0, carry: -1 } }, done))).toEqual({ kind: "wander", how: "slap" });
+    expect(decide(seen({ roll: 0.1, sinceSlap: 400, me: { x: RIM - 3, z: 0, carry: -1 } }, done))).toEqual({ kind: "wander", how: "slap" });
     expect(decide(seen({ roll: 0.5 }, done))).toEqual({ kind: "wander", how: "swim" });
     expect(decide(seen({ roll: 0.9 }, done))).toEqual({ kind: "wander", how: "walk" });
   });

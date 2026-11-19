@@ -12,7 +12,7 @@
 // Saved games name trees by their index in `tree`: what was placed before the clearing grew is placed as it was,
 // against the ground as it was then (FIRST_RIM), and the ring's things come after it from a random of their own.
 import { fbm, seeded } from "./noise.ts";
-import { SHOP, SHOP_CLEAR } from "../features/shop/place.ts";
+import { SHOP, SHOP_CLEAR } from "../features/shop/place.ts"; // the ring keeps clear of the Shop, which stands in the meadow
 import { BASIN, FIRST_RIM, HILL, POND, RIM, SITE, WATER_LEVEL, heightAt as groundNow, pondRatio, shape, slopeAt as slopeNow, sunsetGap } from "./terrain.ts";
 
 /** The ground the first clearing's things were placed on: its bank started at FIRST_RIM. */
