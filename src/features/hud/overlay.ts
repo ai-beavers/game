@@ -233,6 +233,8 @@ export function hudLayout(stage: Stage) {
 /** What floats over the world this frame, in screen px (net/ui.ts puts the name tags and bubbles here), so the HUD's
  *  marker keeps clear of it. */
 export const floating: Box[] = [];
+/** What hangs under the goals panel this picture (Mrs. Beaver's quest list), or undefined: the marker keeps below it. */
+export const underGoals: { box: Box | undefined } = { box: undefined };
 
 const context = document.createElement("canvas").getContext("2d")!, widths = new Map<string, number>();
 /** Width of a text in px as the HUD draws it, kept per text and size. */

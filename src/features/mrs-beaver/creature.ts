@@ -2,9 +2,11 @@
 //
 //   const her = await mrsBeaver(stage);   her.beaver.root (move it) · her.update(dt, speed) once a picture, while seen
 //   const pen = buildPen(stage);          pen.root (place it) · pen.dispose()
+//   const dropped = buildDropped(stage);  her flower lying in the grass: dropped.root (place it) · dropped.dispose()
 //
 // She is a real beaver (loadBeaver), as the Shopkeeper is, but in a coat of her own (a dusky grey-brown, darker and
-// cooler than any player's or the Shopkeeper's), with no shirt, no hat, no apron or bow: a flower behind her left ear.
+// cooler than any player's or the Shopkeeper's), with no shirt, no hat, no apron or bow: a flower behind her left ear
+// (her.flower = false hides it while she is missing: it lies dropped on the way to her).
 // Standing, she has only her breath and small idle moves (the animator); walking, the animator's stride.
 // The pen is a ring of upright sticks with two lashed across, one mesh and one draw call.
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
@@ -37,34 +39,19 @@ export async function mrsBeaver(stage: Stage) {
   beaver.shirt = false;
   beaver.hat = false;
   const head = beaver.root.getDescendants(false, (n) => n.name === "head")[0] as TransformNode | undefined;
-  if (head) {
-    // Five round petals, pale pink, round a yellow middle; facing out from the side of her head.
-    const petal = new Color3(0.98, 0.72, 0.82), middle = new Color3(1, 0.78, 0.15);
-    const parts: Mesh[] = [];
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2, p = MeshBuilder.CreateSphere("petal", { diameter: 0.045, segments: 5 }, scene);
-      p.scaling.set(0.35, 1, 0.7);
-      p.position.set(0, Math.sin(a) * 0.026, Math.cos(a) * 0.026);
-      parts.push(paint(p, petal));
-    }
-    const heart = MeshBuilder.CreateSphere("heart", { diameter: 0.026, segments: 5 }, scene);
-    heart.position.x = 0.008;
-    parts.push(paint(heart, middle));
-    const flower = Mesh.MergeMeshes(parts, true)!;
-    flower.name = "mrs-beaver-flower";
-    const mat = new StandardMaterial("mrs-beaver-flower", scene);
-    mat.diffuseColor = Color3.White();
-    mat.specularColor.setAll(0.05);
-    flower.material = mat;
-    flower.parent = head;
+  // Her flower behind her left ear: hidden while she is missing (it lies dropped on the way to her), shown once freed.
+  const flower = head ? buildFlower(stage) : undefined;
+  if (flower) {
+    flower.parent = head!;
     flower.position.set(0.085, 0.15, -0.035); // behind her left ear
     flower.rotation.z = -0.5;
-    flower.isPickable = false;
   }
   for (const mesh of beaver.root.getChildMeshes(false)) mesh.isPickable = false;
   const animator = createAnimator(), motion = { ...newMotion(), grounded: true };
   return {
     beaver,
+    /** Whether she wears her flower behind her ear. */
+    set flower(on: boolean) { flower?.setEnabled(on); },
     /** speed: m/s over the ground, 0 standing; she always faces where she goes. */
     update(dt: number, speed: number) {
       motion.time += dt;
@@ -74,6 +61,46 @@ export async function mrsBeaver(stage: Stage) {
       beaver.update(dt);
     },
   };
+}
+
+/** Her flower: five round petals, pale pink, round a yellow middle, facing +x. One mesh, about 7 cm across. */
+export function buildFlower(stage: Stage) {
+  const { scene } = stage, petal = new Color3(0.98, 0.72, 0.82), middle = new Color3(1, 0.78, 0.15), parts: Mesh[] = [];
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2, p = MeshBuilder.CreateSphere("petal", { diameter: 0.045, segments: 5 }, scene);
+    p.scaling.set(0.35, 1, 0.7);
+    p.position.set(0, Math.sin(a) * 0.026, Math.cos(a) * 0.026);
+    parts.push(paint(p, petal));
+  }
+  const heart = MeshBuilder.CreateSphere("heart", { diameter: 0.026, segments: 5 }, scene);
+  heart.position.x = 0.008;
+  parts.push(paint(heart, middle));
+  const flower = Mesh.MergeMeshes(parts, true)!;
+  flower.name = "mrs-beaver-flower";
+  const mat = new StandardMaterial("mrs-beaver-flower", scene);
+  mat.diffuseColor = Color3.White();
+  mat.specularColor.setAll(0.05);
+  flower.material = mat;
+  flower.isPickable = false;
+  return flower;
+}
+
+/** Her flower dropped in the grass: on its green stalk, caught leaning in the grass with its face to the sky, larger
+ *  than life so it shows over the blades. */
+export function buildDropped(stage: Stage) {
+  const { scene } = stage, root = new TransformNode("mrs-beaver-dropped-flower", scene), lean = 0.35;
+  const stalk = paint(MeshBuilder.CreateCylinder("stalk", { height: 0.26, diameter: 0.014, tessellation: 4 }, scene), new Color3(0.2, 0.42, 0.12));
+  stalk.parent = root;
+  stalk.rotation.z = lean;
+  stalk.position.set(-Math.sin(lean) * 0.13, 0.12, 0);
+  stalk.isPickable = false;
+  const head = buildFlower(stage);
+  stalk.material = head.material;
+  head.parent = root;
+  head.rotation.z = Math.PI / 2 - 0.4; // face up, a little to the side
+  head.position.set(-Math.sin(lean) * 0.26, 0.25, 0);
+  head.scaling.setAll(2.4);
+  return { root, dispose() { root.dispose(false, true); } };
 }
 
 export function buildPen(stage: Stage) {
