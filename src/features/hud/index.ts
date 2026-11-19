@@ -14,7 +14,7 @@ import { MapDisplay } from "./map-display.ts";
 import { menuNav } from "./nav.ts";
 import { EXTENT, type MapView } from "./map.ts";
 import { place } from "../net/tags.ts";
-import { box, floating, GOLD, hudLayout, onViewport, Overlay, safeArea } from "./overlay.ts";
+import { box, floating, GOLD, hudLayout, onViewport, Overlay, safeArea, underGoals } from "./overlay.ts";
 import { skyLabel } from "./sky.ts";
 
 interface NetView { connected: boolean; me: number; host: number; remotes: Map<number, Remote> }
@@ -338,8 +338,15 @@ export const create: CreateFeature = game => {
     const behind = p.z < 0 || p.z > 1, rawX = behind ? (w-p.x < w/2 ? 0 : w) : p.x;
     const text = target.label + " " + (rawX < 80 ? "◀" : rawX > w-80 ? "▶" : "▼");
     marker.set(text);
-    const size = marker.measure(text), x = Scalar.Clamp(rawX,size.w/2+8,w-size.w/2-8);
-    const y = Scalar.Clamp(behind ? h : p.y,markerY[0]!+size.h,markerY[1]!) - 5*Math.abs(Math.sin(performance.now()/300));
+    const size = marker.measure(text);
+    let x = Scalar.Clamp(rawX,size.w/2+8,w-size.w/2-8), top = markerY[0]!;
+    // Clear of what hangs under the goals (Mrs. Beaver's quest list): below it where there is room, else beside it.
+    const hung = underGoals.box;
+    if (hung && x-size.w/2 < hung.x+hung.w+8) {
+      if (hung.y+hung.h+8+size.h <= markerY[1]!) top = Math.max(top, hung.y+hung.h+8);
+      else x = Math.max(x, hung.x+hung.w+8+size.w/2);
+    }
+    const y = Scalar.Clamp(behind ? h : p.y,top+size.h,markerY[1]!) - 5*Math.abs(Math.sin(performance.now()/300));
     // Clear of the name tags and bubbles (net/ui.ts): they keep their places, the marker goes up above them.
     const spot = place([...floating.map(f => ({x: f.x+f.w/2, y: f.y+f.h, w: f.w, h: f.h})), {x, y, ...size}], w, h).at(-1)!;
     marker.at(spot.x, spot.y);

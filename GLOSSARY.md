@@ -63,8 +63,16 @@ The female beaver behind the shop's counter who sells outfits. No player steers 
 _Avoid_: NPC, vendor, merchant
 
 **Mrs. Beaver**:
-The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places at the edge of the clearing. The player finds her and frees her, and then she waits at the building site. Each player has their own, and no one else sees her.
+The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places at the edge of the clearing, and her flower lies dropped on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
 _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
+
+**Quest**:
+A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her, gnaw her pen open. Nothing on the map marks where a step is.
+_Avoid_: mission, task, goal (the build goals point the way; a quest does not)
+
+**Step**:
+One line of a quest, ticked when the player has done it.
+_Avoid_: objective, stage, task
 
 **Outfit**:
 A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.
