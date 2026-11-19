@@ -27,20 +27,27 @@ export const HIDING: readonly XZ[] = [{ x: -13.3, z: -2.3 }, { x: 3.5, z: -13 },
 /** Where her flower lies, one spot per hiding place (same order): out along her way from HOME, about a third of it
  *  (up to half where the middle of the clearing is crowded), on dry land, clear of the Pond, the site, the dam, the
  *  Shop, the board, the trading post, the spawn and the sticks laid out (rules.test.ts checks it). */
-export const FLOWER: readonly XZ[] = [{ x: -6.1, z: 0.8 }, { x: 0.5, z: -5.4 }, { x: -4.6, z: 6.6 }, { x: -3.7, z: -5.4 }, { x: -6.4, z: 2.5 }, { x: 3.3, z: -3.8 }];
+export const FLOWER: readonly XZ[] = [{ x: -6.1, z: 0.8 }, { x: 0.5, z: -5.4 }, { x: -4.4, z: 6.6 }, { x: -3.7, z: -5.4 }, { x: -6.4, z: 2.5 }, { x: 3.3, z: -3.8 }];
 /** Where her tracks lie, one spot per hiding place (same order): the middle of a trail of paw prints about 3 m long,
  *  about two thirds of her way out, on dry land clear of all that stands round it (rules.test.ts checks it). */
-export const TRACKS: readonly XZ[] = [{ x: -9.7, z: -0.8 }, { x: 1.5, z: -8 }, { x: -4, z: 11.4 }, { x: -2.1, z: -9.5 }, { x: -10.4, z: 2.8 }, { x: 5.9, z: -5.6 }];
+export const TRACKS: readonly XZ[] = [{ x: -9.7, z: -0.8 }, { x: 1.5, z: -8 }, { x: -3.7, z: 11.7 }, { x: -2.1, z: -9.5 }, { x: -10.4, z: 2.8 }, { x: 5.9, z: -5.6 }];
 /** Which way her tracks point (radians, as Player.teleport: 0 is +z): from each tracks spot at its hiding place. */
 export const TRACKS_FACING: readonly number[] = TRACKS.map((t, i) => Math.atan2(HIDING[i]!.x - t.x, HIDING[i]!.z - t.z));
 /** Where she waits once freed: beside the building site, on its south-west side away from the dam and the crates. */
 export const HOME: XZ = { x: -2.5, z: 2.3 };
 /** The bends of her way home from each hiding place (same order), walked in turn before HOME: from the north one the
- *  straight way runs into the Calendar board beside the Shop, so it bends round the board's east end, short of the
- *  crates by the site; the others bend where a straight way would run up the hill's steep side, past a tree or a rock.
- *  Every leg is a straight way over dry land, no steeper than a beaver walks, past nothing solid (rules.test.ts checks
- *  them). */
-export const BENDS: readonly (readonly XZ[])[] = [[], [], [{ x: -3.1, z: 9.5 }], [{ x: -2, z: -11 }], [{ x: -10.6, z: 2.8 }], [{ x: 0.2, z: -1.6 }]];
+ *  straight way runs into the Calendar board beside the Shop, so it bends round the board's east end and then again
+ *  to pass west of the crates by the site; the others bend where a straight way would run up the hill's steep side,
+ *  past a tree or a rock. Every leg is a straight way over dry land, no steeper than a beaver walks, past nothing solid
+ *  (rules.test.ts checks them). */
+export const BENDS: readonly (readonly XZ[])[] = [
+  [],
+  [],
+  [{ x: -1.9, z: 9.7 }, { x: -2.9, z: 4.8 }],
+  [{ x: -2, z: -11 }],
+  [{ x: -10.6, z: 2.8 }],
+  [{ x: 0.2, z: -1.6 }],
+];
 /** Her way home from a hiding place: the points she walks to in turn, the last one HOME. */
 export const wayHome = (place: number): XZ[] => [...(BENDS[place] ?? []), HOME];
 /** m from the middle of the pen to the player's feet within which the Use key offers to gnaw it open. */

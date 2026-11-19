@@ -51,12 +51,16 @@ The small disco-like hut in the clearing with the sign HOUSE OF AI in front; ins
 _Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
 
 **Calendar board**:
-The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked and the hours of each day from morning to midnight, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
+The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked, the hours of each day from morning to midnight, Build Fridays and the House of AI events, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
 _Avoid_: billboard, calendar sign, schedule, week board
 
 **Build Fridays**:
 The weekly event on the Calendar board: every Friday from 16:00 to 23:00, by the viewer's own clock.
 _Avoid_: build day, Friday event
+
+**House of AI events**:
+The real events of the House of AI in Hamburg, the place the shop's sign is named after, as its public Luma calendar lists them; the Calendar board shows those of its week beside Build Fridays, each at its real moment on the viewer's own clock.
+_Avoid_: Luma events, meetups, shop events
 
 **Shopkeeper**:
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.

@@ -22,11 +22,13 @@
 //   WORLD_FILE=/data/world.json          keeps the world's work there over restarts
 //   GIT_SHA=<commit>                     the build; a page from another build reloads once when it reconnects
 // GET /net/info answers 200 with JSON while the server runs: it is the health check too. Its changes come only with
-// ?build (the page asks once as it loads).
+// ?build (the page asks once as it loads). GET /net/events answers the House of AI events for the Calendar board
+// (src/features/shop/events.ts), from Luma's feed or HOUSE_OF_AI_FEED=<iCal address> (the tests' fixture).
 import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { networkInterfaces, hostname } from "node:os";
 import index from "./index.html";
-import { clientAddress, INFO_PATH, MAX_MESSAGE, PATH, PROXY_HEADERS } from "./src/features/net/protocol.ts";
+import { clientAddress, EVENTS_PATH, INFO_PATH, MAX_MESSAGE, PATH, PROXY_HEADERS } from "./src/features/net/protocol.ts";
+import { houseOfAiEvents } from "./src/features/shop/events.ts";
 import { newRoom, type Conn } from "./src/features/net/room.ts";
 import type { Built } from "./tools/build.ts";
 
@@ -96,6 +98,8 @@ if (room.broken) {
 }
 if (WORLD_FILE) for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { room.save(); process.exit(0); });
 
+const events = houseOfAiEvents(process.env.HOUSE_OF_AI_FEED || undefined);
+
 /** address: what the per-address limit counts the socket under; conn: the room's side of it, once it is open. */
 interface Data { address?: string; conn?: Conn }
 
@@ -108,6 +112,7 @@ const server = Bun.serve<Data>({
     const url = new URL(req.url);
     // Not rate limited, since it costs less than the page itself.
     if (url.pathname === INFO_PATH) return Response.json(room.info(addresses, url.searchParams.has("build")));
+    if (url.pathname === EVENTS_PATH) return events();
     if (url.pathname === PATH) {
       const address = clientAddress(req.headers, server.requestIP(req)?.address, PROXY_HEADER);
       const refused = room.refuse(req.headers.get("origin"), req.headers.get("host"), address);
