@@ -11,8 +11,7 @@
 // canoeOut { outcome: "bank" | "water" }.
 //
 // Debug, for bun shot --eval (window.canoe): canoe.place (its middle and heading now) · canoe.bank (where it lies
-// after a reload) · canoe.riding · canoe.at()
-// stands beside it facing it, empty-pawed.
+// after a reload) · canoe.riding · canoe.at() (stands beside it facing it, empty-pawed).
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";

@@ -145,14 +145,17 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   // How deep the water is over the ground at x, z (only the ground: the lodge or a rock in the way stops the controller).
   const ground = (c: RAPIER.Collider) => c.shapeType() === RAPIER.ShapeType.HeightField || c.shapeType() === RAPIER.ShapeType.TriMesh;
   const sounding = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
-  const depthAt = (x: number, z: number, level: number) => {
+  const depthAt = (x: number, z: number, level: number, under: (c: RAPIER.Collider) => boolean = ground) => {
     sounding.origin = { x, y: level, z };
-    const hit = physics.castRay(sounding, 20, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, undefined, undefined, ground);
+    const hit = physics.castRay(sounding, 20, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, undefined, undefined, under);
     return hit ? hit.timeOfImpact : 20;
   };
-  /** Whether a ride may be at x, z facing (dx, dz) (unit): deep enough at the seat, the bow in the water. */
+  // At the bow, anything solid but the beaver and the sticks: the lodge, the dam or a rock stops the bow there, not
+  // only the beaver's body behind it (else the bow would go a metre into the lodge).
+  const solid = (c: RAPIER.Collider) => c !== collider && !stickBodies.has(c.parent()!);
+  /** Whether a ride may be at x, z facing (dx, dz) (unit): deep enough at the seat, the bow in the water and clear. */
   const floats = (r: Ride, x: number, z: number, dx: number, dz: number, level: number) =>
-    depthAt(x, z, level) > r.depth && depthAt(x + dx * r.bow, z + dz * r.bow, level) > r.draft;
+    depthAt(x, z, level) > r.depth && depthAt(x + dx * r.bow, z + dz * r.bow, level, solid) > r.draft;
 
   const steep = () => {
     down.origin = { x: feet.x, y: feet.y + 0.3, z: feet.z };
