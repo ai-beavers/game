@@ -1,5 +1,5 @@
 // The Calendar board: a big board on two posts beside the shop, mirroring the HOUSE OF AI sign across the path to the
-// doorway, showing the real week (week.ts) in the clean column style of a desktop calendar. Its face is a dynamic
+// doorway, showing the real week (week.ts) as a desktop calendar's week view, with the hours down its left. Its face is a dynamic
 // texture drawn as real text, lit by the scene like the sign; a collider over its posts keeps the beaver out of it.
 //
 //   const board = calendarBoard(stage, shop, new Date())   board.week (what is drawn) · board.show(now) redraws if the
@@ -15,7 +15,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import { RAPIER, type Stage } from "../../engine.ts";
 import type { buildShop } from "./building.ts";
 import { paint, SIGN, WOOD } from "./building.ts";
-import { week, type CalendarWeek } from "./week.ts";
+import { clock, week, type CalendarWeek } from "./week.ts";
 
 /** Where it stands in the shop's frame: the sign mirrored across the path, further out for its width. */
 const AT = { x: -SIGN.x - 0.85, z: SIGN.z, yaw: -SIGN.yaw }; // m, m, rad: turned a little towards the path, as the sign is
@@ -23,41 +23,70 @@ const WIDTH = 2.4, HEIGHT = 1.4, LIFT = 0.75; // m: the board, and its lower edg
 const PX = 1536, PY = 896; // texture, the board's proportions
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
-/** The week on the texture: the title, seven columns headed by weekday and date, today's date in a red circle, and the
- *  Friday's Build Fridays block. */
+/** Text in lines no wider than `width`: word by word, the time span kept whole where it fits, else broken after its dash. */
+function lines(g: CanvasRenderingContext2D, words: string[], width: number) {
+  const out: string[] = [];
+  for (const word of words) {
+    const last = out[out.length - 1];
+    if (last !== undefined && g.measureText(`${last} ${word}`).width <= width) out[out.length - 1] = `${last} ${word}`;
+    else out.push(word);
+  }
+  return out;
+}
+
+/** The week on the texture, as a desktop calendar's week view: the title; seven columns headed by weekday and date,
+ *  today's date in a red circle; the hours down a margin on the left with a thin line at every hour; and each entry as a
+ *  purple block from its start hour's line to its end hour's line, with its name and time span inside. */
 function draw(texture: DynamicTexture, w: CalendarWeek) {
   const g = texture.getContext() as CanvasRenderingContext2D;
   g.setTransform(-1, 0, 0, 1, PX, 0); // a plane turned to face out shows it mirrored (as the sign's)
   g.fillStyle = "#fbfbfd"; g.fillRect(0, 0, PX, PY);
-  const pad = 40, top = 170, col = (PX - 2 * pad) / 7, head = 190;
+  const pad = 36, margin = 172, top = 128, head = 160, bottom = PY - 34;
+  const left = pad + margin, col = (PX - left - pad) / 7, grid = top + head;
+  const { from, to } = w.hours, hour = (bottom - grid) / (to - from);
+  const y = (h: number) => grid + (h - from) * hour;
   g.textBaseline = "middle";
   // The title, month and year, at the top left.
   g.fillStyle = "#1c1c1e"; g.textAlign = "left";
-  g.font = `700 92px ${FONT}`;
-  g.fillText(w.title, pad + 12, 92);
+  g.font = `700 84px ${FONT}`;
+  g.fillText(w.title, pad + 12, 68);
   // Weekend columns a shade darker, as a calendar app shows them.
-  g.fillStyle = "#f0f0f3"; g.fillRect(pad + 5 * col, top, 2 * col, PY - top - pad);
-  w.days.forEach((d, i) => {
-    const x = pad + col * (i + 0.5);
-    g.textAlign = "center";
-    g.fillStyle = "#8e8e93"; g.font = `600 52px ${FONT}`;
-    g.fillText(d.name.toUpperCase(), x, top + 48);
-    if (d.today) { g.fillStyle = "#ff3b30"; g.beginPath(); g.arc(x, top + 130, 62, 0, Math.PI * 2); g.fill(); }
-    g.fillStyle = d.today ? "#ffffff" : "#1c1c1e"; g.font = `${d.today ? 700 : 500} 84px ${FONT}`;
-    g.fillText(String(d.date), x, top + 132);
-    d.entries.forEach((entry, k) => {
-      const bx = pad + col * i + 10, by = top + head + 24 + k * 230, bw = col - 20, bh = 210;
-      g.fillStyle = "#7d5cf0"; g.beginPath(); g.roundRect(bx, by, bw, bh, 20); g.fill();
-      g.fillStyle = "#ffffff"; g.font = `700 50px ${FONT}`; g.textAlign = "left";
-      entry.split(" ").forEach((word, n) => g.fillText(word, bx + 18, by + 52 + n * 62));
-    });
-  });
-  // Thin lines: under the heads, and between the columns.
-  g.strokeStyle = "#d1d1d6"; g.lineWidth = 3;
+  g.fillStyle = "#f0f0f3"; g.fillRect(left + 5 * col, top, 2 * col, bottom - top);
+  // Thin lines: one at every hour across the seven days, and between the columns.
+  g.strokeStyle = "#e0e0e6"; g.lineWidth = 2;
   g.beginPath();
-  g.moveTo(pad, top + head); g.lineTo(PX - pad, top + head);
-  for (let i = 1; i < 7; i++) { g.moveTo(pad + col * i, top); g.lineTo(pad + col * i, PY - pad); }
+  for (let h = from + 1; h < to; h++) { g.moveTo(left, y(h)); g.lineTo(PX - pad, y(h)); }
   g.stroke();
+  g.strokeStyle = "#c7c7cc"; g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(left, grid); g.lineTo(PX - pad, grid);
+  g.moveTo(left, bottom); g.lineTo(PX - pad, bottom);
+  for (let i = 0; i <= 7; i++) { g.moveTo(left + col * i, top); g.lineTo(left + col * i, bottom); }
+  g.stroke();
+  // The hours, every two, in the margin, each beside its line.
+  g.fillStyle = "#6e6e73"; g.font = `600 46px ${FONT}`; g.textAlign = "right";
+  for (let h = from; h <= to; h += 2) g.fillText(clock(h), left - 14, y(h));
+  w.days.forEach((d, i) => {
+    const x = left + col * (i + 0.5);
+    g.textAlign = "center";
+    g.fillStyle = "#8e8e93"; g.font = `600 46px ${FONT}`;
+    g.fillText(d.name.toUpperCase(), x, top + 38);
+    if (d.today) { g.fillStyle = "#ff3b30"; g.beginPath(); g.arc(x, top + 106, 48, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = d.today ? "#ffffff" : "#1c1c1e"; g.font = `${d.today ? 700 : 500} 70px ${FONT}`;
+    g.fillText(String(d.date), x, top + 108);
+    for (const entry of d.entries) {
+      const bx = left + col * i + 6, by = y(entry.from) + 3, bw = col - 12, bh = y(entry.to) - y(entry.from) - 6;
+      g.fillStyle = "#7d5cf0"; g.beginPath(); g.roundRect(bx, by, bw, bh, 16); g.fill();
+      g.fillStyle = "#ffffff"; g.textAlign = "left";
+      const inner = bw - 28;
+      g.font = `700 44px ${FONT}`;
+      const name = lines(g, entry.name.split(" "), inner);
+      name.forEach((line, n) => g.fillText(line, bx + 14, by + 36 + n * 50));
+      g.font = `600 36px ${FONT}`;
+      const span = lines(g, [`${clock(entry.from)} –`, clock(entry.to)], inner);
+      span.forEach((line, n) => g.fillText(line, bx + 14, by + 36 + name.length * 50 + 8 + n * 42));
+    }
+  });
   g.setTransform(1, 0, 0, 1, 0, 0);
   texture.update(true);
 }

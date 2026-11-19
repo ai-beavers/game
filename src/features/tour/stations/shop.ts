@@ -5,7 +5,7 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Look } from "../../../contracts.ts";
 import { DEFAULT, OUTFITS, type ShopState } from "../../shop/rules.ts";
-import { BUILD_FRIDAYS, dayKey, type CalendarWeek } from "../../shop/week.ts";
+import { BUILD_FRIDAYS, clock, dayKey, type CalendarWeek } from "../../shop/week.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
@@ -85,7 +85,7 @@ export const shopping = (kit: Kit): Station[] => {
       await walkTo(closer.x, closer.z, { near: 0.3, limit: 10 });
       if (live) await wait(5);
 
-      // The week of the browser's own today, Monday first, today marked once, Build Fridays on the Friday only.
+      // The week of the browser's own today, Monday first, today marked once, Build Fridays 16:00 – 23:00 on the Friday only.
       const now = new Date(), week = board.week, days = week.days;
       const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() + 6) % 7, 12);
       const keys = Array.from({ length: 7 }, (_, i) => dayKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i, 12)));
@@ -93,7 +93,13 @@ export const shopping = (kit: Kit): Station[] => {
       expect(days[0]!.name === "Mon" && days[6]!.name === "Sun", `the board's week runs ${days[0]!.name} … ${days[6]!.name}, not Mon … Sun`);
       const marked = days.filter((d) => d.today);
       expect(marked.length === 1 && marked[0]!.key === dayKey(now), `today is marked on ${marked.map((d) => d.key).join(", ") || "no day"}, not ${dayKey(now)}`);
-      expect(days.every((d) => d.entries.join() === (d.name === "Fri" ? BUILD_FRIDAYS : "")), `entries: ${days.map((d) => `${d.name} [${d.entries.join(", ")}]`).join(" ")}; only Friday should say "${BUILD_FRIDAYS}"`);
+      const said = (e: { name: string; from: number; to: number }) => `${e.name} ${clock(e.from)} – ${clock(e.to)}`;
+      const fridays = said(BUILD_FRIDAYS);
+      expect(days.every((d) => d.entries.map(said).join() === (d.name === "Fri" ? fridays : "")), `entries: ${days.map((d) => `${d.name} [${d.entries.map(said).join(", ")}]`).join(" ")}; only Friday should say "${fridays}"`);
+      expect(fridays === "Build Fridays 16:00 – 23:00", `Build Fridays is ${fridays}, not 16:00 – 23:00`);
+      // The hours of the day, from morning to midnight, down the board's left.
+      const hours = `${clock(week.hours.from)} – ${clock(week.hours.to)}`;
+      expect(hours === "08:00 – 24:00", `the board shows the hours ${hours}, not 08:00 – 24:00`);
       expect(!!week.title, "the board has no month and year over its week");
 
       // Straight at it and on: it stops the beaver in front of its face.
