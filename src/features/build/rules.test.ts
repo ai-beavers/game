@@ -78,6 +78,20 @@ describe("changes", () => {
     expect(back.trees[3]!.gone).toBeGreaterThanOrEqual(before);
     expect(back.trees[3]!.gone).toBeLessThanOrEqual(Date.now());
   });
+  test("a game saved in a world with more trees keeps all but the trees this world lacks", () => {
+    const s = newState();
+    apply(s, { type: "find" });
+    apply(s, { type: "bite", tree: 2 });
+    apply(s, { type: "fell", tree: 12, direction: 0.5 });
+    apply(s, { type: "bite", tree: 13 });
+    apply(s, { type: "fell", tree: 30, direction: 1.2 });
+    apply(s, { type: "place", slot: 0, stick: "t30:1" });
+    const here = load(JSON.stringify(s), 13);
+    expect(Object.keys(here.trees)).toEqual(["2", "12"]);
+    expect([here.found, here.dam]).toEqual([true, ["t30:1"]]); // the dam keeps its stick: it is drawn as a plain one
+    expect(load(JSON.stringify(s))).toEqual(s); // without a count: as saved
+    expect(Object.keys(load(JSON.stringify({ ...newState(), trees: { "-1": { bites: 1, splitBites: 0 }, x: { bites: 1, splitBites: 0 }, 1.5: { bites: 1, splitBites: 0 } } }), 13).trees)).toEqual([]);
+  });
 });
 
 describe("trees", () => {

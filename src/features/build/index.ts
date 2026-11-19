@@ -70,9 +70,12 @@ export const create: CreateFeature = (game) => {
   const addLoose = world.addLoose, removeLoose = world.removeLoose;
   const water = waterOf(stage.scene), full = world.waterLevel;
   const pondTo = (placed: number, smooth = true) => water?.setLevel(pondLevel(full, placed), smooth);
-  let state = load(localStorage.getItem(KEY));
+  const kept = localStorage.getItem(KEY);
+  let state = load(kept, world.trees.length);
   pondTo(state.dam.length, false); // at once, before the features after this one look at the water
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* not kept, still played */ } };
+  // Saved in a world with more trees: kept without them from now on, for the features that read the saved game too.
+  if (Object.keys(load(kept).trees).length > Object.keys(state.trees).length) save();
   const panel = goalsPanel(), dam = createDam(stage, world), views = new Map<number, TreeView>();
   const view = (i: number) => views.get(i) ?? views.set(i, takeTree(stage, world, i)).get(i)!;
   // Saplings on stumps, growing; once the tree is back (grow), it takes the old view's place and the stump goes.
@@ -138,7 +141,8 @@ export const create: CreateFeature = (game) => {
     let stick = byName.get(id);
     if (!stick || !world.sticks.includes(stick)) {
       const [, tree, k] = id.match(/^t(\d+):(\d+)$/) ?? [];
-      const piece = tree !== undefined ? woodFrom(+tree, measure(world.trees![+tree]!).trunk, 0.2)[+k!] : undefined;
+      const from = tree !== undefined ? world.trees![+tree] : undefined; // none: wood of a tree this world lacks
+      const piece = from ? woodFrom(+tree!, measure(from).trunk, 0.2)[+k!] : undefined;
       const size = piece ? new Vector3(piece.thickness, piece.thickness, piece.length) : new Vector3(0.04, 0.04, 0.65);
       stick = addLoose("stick", piece?.variant ?? 0, size, new Vector3(0, -50, 0), new Quaternion(), 0.3);
     }

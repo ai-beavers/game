@@ -158,14 +158,17 @@ export function apply(s: BuildState, c: BuildChange, now = Date.now()): boolean 
   }
 }
 
-/** Reads a saved state; anything broken or of another version gives a fresh one. */
-export function load(text: string | null): BuildState {
+/** Reads a saved state; anything broken or of another version gives a fresh one. trees: how many the world has. A
+ *  game saved in a world with more of them (another build on the same address) keeps all but the trees this world
+ *  lacks: the game cannot draw those, and stopped at its start over them. */
+export function load(text: string | null, trees = Infinity): BuildState {
   try {
     const s = JSON.parse(text ?? "") as BuildState;
     if (s?.version === 1 && Array.isArray(s.dam) && typeof s.trees === "object" && (s.traded === undefined || Array.isArray(s.traded))) {
       // Saved before trees grew back: their count starts now.
       for (const t of Object.values(s.trees)) if (t?.split && typeof t.gone !== "number") t.gone = Date.now();
-      return { ...newState(), ...s };
+      const here = Object.fromEntries(Object.entries(s.trees).filter(([i]) => Number.isInteger(+i) && +i >= 0 && +i < trees));
+      return { ...newState(), ...s, trees: here };
     }
   } catch { /* fresh */ }
   return newState();
