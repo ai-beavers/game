@@ -1,4 +1,4 @@
-// The Calendar board's week as a player reads it: which dates are shown, which one is today, where "Build Fridays" is.
+// The Calendar board's week as a player reads it: which dates are shown, which one is today, which hours it shows, and when "Build Fridays" is.
 import { expect, test } from "bun:test";
 import { BUILD_FRIDAYS, clock, week } from "./week.ts";
 

@@ -41,7 +41,7 @@ function draw(texture: DynamicTexture, w: CalendarWeek) {
   const g = texture.getContext() as CanvasRenderingContext2D;
   g.setTransform(-1, 0, 0, 1, PX, 0); // a plane turned to face out shows it mirrored (as the sign's)
   g.fillStyle = "#fbfbfd"; g.fillRect(0, 0, PX, PY);
-  const pad = 36, margin = 156, top = 128, head = 160, bottom = PY - 34;
+  const pad = 36, margin = 156, top = 128, head = 160, bottom = PY - 34; // px on the texture
   const left = pad + margin, col = (PX - left - pad) / 7, grid = top + head;
   const { from, to } = w.hours, hour = (bottom - grid) / (to - from);
   const y = (h: number) => grid + (h - from) * hour;
