@@ -3,15 +3,15 @@
 import { expect, test } from "bun:test";
 import { placeAll, SPAWN } from "../../world/place.ts";
 import { FIRST_RIM, heightAt, pondRatio, SITE, slopeAt, WATER_LEVEL } from "../../world/terrain.ts";
-// Where the Shop stands (src/features/shop/index.ts SHOP; that file needs a browser), turned to face the Clearing.
-const SHOP = { x: -9.5, z: 8.5 }, FACING = Math.atan2(0 - SHOP.x, 2 - SHOP.z);
+import { CALENDAR, SHOP, SIGN } from "../shop/place.ts";
+// Where the Shop stands, turned to face the Clearing.
+const FACING = Math.atan2(0 - SHOP.x, 2 - SHOP.z);
 /** A point in the Shop's frame (building.ts toWorld), in the world. */
 const shopToWorld = (x: number, z: number) => ({ x: SHOP.x + x * Math.cos(FACING) + z * Math.sin(FACING), z: SHOP.z - x * Math.sin(FACING) + z * Math.cos(FACING) });
-// In front of the Shop: the post of its sign (building.ts SIGN) and the Calendar board, 3.6 m wide, mirrored across
-// the path from the sign and turned the other way, its middle 0.6 m further out along its line than the first 2.4 m
-// board's, so its edge nearest the path stayed (calendar.ts AT).
-const SIGN_POST = shopToWorld(1.6, 2.7 + 1.6), BOARD = shopToWorld(-1.6 - 0.85 - 0.6 * Math.cos(0.35), 2.7 + 1.6 + 0.6 * Math.sin(0.35)), BOARD_YAW = FACING + 0.35;
-const BOARD_ENDS = [-1.85, 1.85].map((t) => ({ x: BOARD.x + Math.cos(BOARD_YAW) * t, z: BOARD.z - Math.sin(BOARD_YAW) * t }));
+// In front of the Shop: the post of its sign and the Calendar board, mirrored across the path from the sign and turned
+// the other way; solid to its frame's ends.
+const SIGN_POST = shopToWorld(SIGN.x, SIGN.z), BOARD = shopToWorld(CALENDAR.x, CALENDAR.z), BOARD_YAW = FACING + CALENDAR.yaw;
+const BOARD_ENDS = [-1, 1].map((side) => side * (CALENDAR.width / 2 + 0.05)).map((t) => ({ x: BOARD.x + Math.cos(BOARD_YAW) * t, z: BOARD.z - Math.sin(BOARD_YAW) * t }));
 /** m from p to the Calendar board's face, end to end. */
 const toBoard = (p: { x: number; z: number }) => {
   const [a, b] = BOARD_ENDS as [{ x: number; z: number }, { x: number; z: number }], dx = b.x - a.x, dz = b.z - a.z;

@@ -2,7 +2,8 @@
 // then put the default look back on. Played through input as a person would; only the Experience to pay with is
 // given to the tour's own saved game (building enough sticks first is too slow for the fast tour).
 // The Calendar board beside it: walk up the path to it, read the week it shows with Build Fridays and the House of AI
-// events the tour gives it (it plays without the network), and find it solid over its whole width.
+// events the tour gives it (as a test it plays without the network; live, the real ones), and find it solid over its
+// whole width.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Look } from "../../../contracts.ts";
 import { DEFAULT, OUTFITS, type ShopState } from "../../shop/rules.ts";
@@ -82,7 +83,8 @@ export const shopping = (kit: Kit): Station[] => {
     ["Read the calendar", async () => {
       const shop = (window as { shop?: ShopDebug }).shop ?? skip("no shop feature");
       const board = shop.calendar;
-      // The tour plays without the network: it gives the board House of AI events of this week, on the browser's clock.
+      // The tour as a test plays without the network: it gives the board House of AI events of this week, on the
+      // browser's clock. Live, the board keeps the real ones the server gave it, for the stream.
       const now = new Date();
       const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() + 6) % 7, 12);
       const at = (day: number, hour: number) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + day, hour, Math.round((hour % 1) * 60)).toISOString();
@@ -93,7 +95,7 @@ export const shopping = (kit: Kit): Station[] => {
         { name: "Lunch Meetup", start: at(5, 12), end: at(5, 16) },
         { name: "build fridays hamburg - work on your startup", start: at(4, 16), end: at(4, 23) }, // Luma lists it too
       ];
-      board.give(given);
+      if (!live) board.give(given);
 
       // Along the path to the shop (hopped over in the fast tour), then up to the board, stopping facing it.
       const door = shop.door(3);
@@ -117,14 +119,19 @@ export const shopping = (kit: Kit): Station[] => {
       const marked = days.filter((d) => d.today);
       expect(marked.length === 1 && marked[0]!.key === dayKey(now), `today is marked on ${marked.map((d) => d.key).join(", ") || "no day"}, not ${dayKey(now)}`);
       // Build Fridays 16:00 – 23:00 on the Friday, once; each House of AI event on its day at its local time, side by side where they overlap.
-      expect(board.events.length === given.length, `the board holds ${board.events.length} House of AI events, ${given.length} were given`);
       const said = (e: CalendarEntry) => `${e.name} ${span(e)}${e.lanes > 1 ? ` (${e.lane + 1} of ${e.lanes})` : ""}`;
       const fridays = `${BUILD_FRIDAYS.name} ${span(BUILD_FRIDAYS)}`;
       expect(fridays === "Build Fridays 16:00 – 23:00", `Build Fridays is ${fridays}, not 16:00 – 23:00`);
-      const expected: string[][] = [[], ["Evening Talk 18:30 – 21:00"], ["Night Hackathon 20:00 – 24:00"], ["Night Hackathon 08:00 – 10:00"],
-        [fridays], ["Workshop 10:00 – 14:00 (1 of 2)", "Lunch Meetup 12:00 – 16:00 (2 of 2)"], []];
       const read = days.map((d) => d.entries.map(said));
-      expect(read.every((d, i) => d.join("|") === expected[i]!.join("|")), `entries: ${days.map((d, i) => `${d.name} [${read[i]!.join(", ")}]`).join(" ")}; expected ${expected.map((d, i) => `${days[i]!.name} [${d.join(", ")}]`).join(" ")}`);
+      if (live) {
+        // The real events, whatever they are: Build Fridays on the Friday once, and on no other day.
+        expect(read.every((d, i) => d.filter((e) => e === fridays).length === (i === 4 ? 1 : 0)), `Build Fridays stands on ${days.map((d, i) => `${d.name} ×${read[i]!.filter((e) => e === fridays).length}`).join(" ")}, not once on Friday`);
+      } else {
+        expect(board.events.length === given.length, `the board holds ${board.events.length} House of AI events, ${given.length} were given`);
+        const expected: string[][] = [[], ["Evening Talk 18:30 – 21:00"], ["Night Hackathon 20:00 – 24:00"], ["Night Hackathon 08:00 – 10:00"],
+          [fridays], ["Workshop 10:00 – 14:00 (1 of 2)", "Lunch Meetup 12:00 – 16:00 (2 of 2)"], []];
+        expect(read.every((d, i) => d.join("|") === expected[i]!.join("|")), `entries: ${days.map((d, i) => `${d.name} [${read[i]!.join(", ")}]`).join(" ")}; expected ${expected.map((d, i) => `${days[i]!.name} [${d.join(", ")}]`).join(" ")}`);
+      }
       // The hours of the day, from morning to midnight, down the board's left.
       const hours = span(week.hours);
       expect(hours === "08:00 – 24:00", `the board shows the hours ${hours}, not 08:00 – 24:00`);

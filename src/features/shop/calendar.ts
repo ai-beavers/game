@@ -16,18 +16,13 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { RAPIER, type Stage } from "../../engine.ts";
 import type { buildShop } from "./building.ts";
-import { paint, SIGN, WOOD } from "./building.ts";
+import { paint, WOOD } from "./building.ts";
+import { CALENDAR } from "./place.ts";
 import type { HouseEvent } from "./feed.ts";
 import { clock, span, week, type CalendarWeek } from "./week.ts";
 
-/** m: the board, and its lower edge over the ground. */
-export const BOARD = { width: 3.6, height: 2.1, lift: 0.75 };
-const { width: WIDTH, height: HEIGHT, lift: LIFT } = BOARD;
-const GROWN = 0.6; // m its middle stands further out along its own line than the first, smaller board's: its edge nearest the path stayed
-const YAW = -SIGN.yaw; // rad: turned a little towards the path, as the sign is
-/** Where it stands in the shop's frame: the sign mirrored across the path, further out for its width. */
-const AT = { x: -SIGN.x - 0.85 - GROWN * Math.cos(YAW), z: SIGN.z + GROWN * Math.sin(YAW), yaw: YAW };
-const S = WIDTH / 2.4; // the posts and frame grow with the board
+const { width: WIDTH, height: HEIGHT, lift: LIFT } = CALENDAR;
+const S = WIDTH / 2.4; // the posts and frame grow with the board from the first one, 2.4 m wide
 const PX = 1536, PY = 896; // texture, the board's proportions (kept when it grew: the drawing scales as a whole)
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
@@ -109,8 +104,8 @@ export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, 
   const scene: Scene = stage.scene;
   const node = new TransformNode("shop-calendar", scene);
   node.parent = shop.root;
-  node.position.set(AT.x, 0, AT.z);
-  node.rotation.y = AT.yaw;
+  node.position.set(CALENDAR.x, 0, CALENDAR.z);
+  node.rotation.y = CALENDAR.yaw;
   node.computeWorldMatrix(true);
   const parts: Mesh[] = [];
   for (const side of [-1, 1]) {
@@ -140,7 +135,7 @@ export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, 
   face.isPickable = false; face.receiveShadows = true;
 
   // Solid from the ground to over the beaver's head, the whole width of the board.
-  const at = shop.toWorld(AT.x, 0, AT.z);
+  const at = shop.toWorld(CALENDAR.x, 0, CALENDAR.z);
   const q = node.absoluteRotationQuaternion;
   stage.physics.createCollider(RAPIER.ColliderDesc.cuboid(WIDTH / 2 + 0.05 * S, 0.9, 0.08 * S)
     .setTranslation(at.x, at.y + 0.8, at.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }).setFriction(0.9));
