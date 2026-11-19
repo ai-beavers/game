@@ -19,6 +19,7 @@ import type { BiteReport } from "../build/tree.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
+const JUMP_HOLD = 0.3; // s: Space held this long gives the full jump (let go early, it rises less)
 const BITES = [[0.15, "shallow"], [0.8, "deep"]] as const; // how deep the Bite is when fell() looks at it
 const HOP = 1.5; // m: in fast mode a way to the next thing longer than this is jumped over (teleport), but the last metre
 
@@ -143,7 +144,8 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   const key = (code: string) => { press(code, "keydown"); press(code, "keyup"); };
   const flat = (x: number, z: number) => Math.hypot(x - player.feet.x, z - player.feet.z);
 
-  /** Walks (or runs) to x, z until near it or `arrived` says so; steps aside when something is in the way. hop: in
+  /** Walks (or runs) to x, z until near it or `arrived` says so. Stuck the first time on the way, it jumps forward (over
+   *  a log, a lying trunk); stuck again, it steps aside, round what is too tall to jump. hop: in
    *  fast mode the way is not what is tested, so it starts HOP metres short of the goal instead. */
   const walkTo = async (x: number, z: number, { run = 0, near = 0.4, arrived = (): boolean => false, limit = 40, hop = false } = {}) => {
     const away = flat(x, z);
@@ -155,13 +157,20 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     }
     want.to = new Vector3(x, 0, z);
     want.run = run;
-    let t = 0, since = 0, from = player.feet.clone(), dodges = 0;
+    let t = 0, since = 0, from = player.feet.clone(), dodges = 0, jumped = false;
     try {
       while (!arrived() && flat(x, z) > near) {
         const dt = await frame();
         if ((t += dt) > limit) throw new Error(`stuck at ${fmt(player.feet)} on the way to ${x.toFixed(1)}, ${z.toFixed(1)}`);
         if ((since += dt) < STUCK_TIME) continue;
-        if (Vector3.Distance(player.feet, from) < STUCK_MOVE) {
+        const blocked = Vector3.Distance(player.feet, from) < STUCK_MOVE;
+        if (blocked && !jumped) {
+          // A player's jump, walking on: the game's own rules say whether it goes up (not afloat, busy or slapping).
+          jumped = true;
+          want.jump = true;
+          await wait(JUMP_HOLD);
+          want.jump = false;
+        } else if (blocked) {
           // Right, left, right…, each step aside longer than the last, so it gets round a wide thing or out of a corner.
           want.side = dodges % 2 ? -1 : 1;
           await wait(0.9 * (1 + (dodges++ >> 1)));
@@ -170,7 +179,7 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
         since = 0;
         from = player.feet.clone();
       }
-    } finally { want.to = undefined; want.side = 0; want.run = 0; }
+    } finally { want.to = undefined; want.side = 0; want.run = 0; want.jump = false; }
   };
 
   /** Goes to what `where` points at until E would do `action` there. where is asked anew for every try (try 0, 1,

@@ -1,4 +1,5 @@
-// Walking, running and jumping round the clearing, and a run out to its far meadow.
+// Walking, running and jumping round the clearing, over a log in the way, and a run out to its far meadow.
+import { placeAll } from "../../../world/place.ts";
 import type { Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
@@ -20,6 +21,23 @@ export const movement = (kit: Kit): Station[] => {
       const jumped = after("jump"), landed = after("land");
       for (let i = 0; i < 3; i++) { await tap("jump", 0.3); await wait(0.7); }
       expect(jumped() && landed(), "no jump, or no landing");
+    }, "Around the clearing"],
+    ["Jump over a log", async () => {
+      // The meadow log nearest the spawn (about 0.3 m high, under a jump's 0.6 m), crossed square to its length: its
+      // template lies along z, turned about y. Up to it from the spawn's side, then straight over to as far past it.
+      const log = placeAll().log.reduce((a, b) => Math.hypot(a.x - world.spawn.x, a.z - world.spawn.z) < Math.hypot(b.x - world.spawn.x, b.z - world.spawn.z) ? a : b);
+      let ax = Math.cos(log.turn), az = -Math.sin(log.turn);
+      if (ax * (world.spawn.x - log.x) + az * (world.spawn.z - log.z) > 0) { ax = -ax; az = -az; } // from the spawn's side
+      const OFF = 1.3; // m from the log's middle line, both sides
+      await walkTo(log.x - ax * OFF, log.z - az * OFF, { near: 0.2, hop: true });
+      const jumped = after("jump"), landed = after("land");
+      let wide = 0; // how far off the straight line over the log it got: going round the log goes wide
+      const off = () => { wide = Math.max(wide, Math.abs(-az * (player.feet.x - log.x) + ax * (player.feet.z - log.z))); return false; };
+      await walkTo(log.x + ax * OFF, log.z + az * OFF, { near: 0.3, arrived: off, limit: 12 });
+      const past = ax * (player.feet.x - log.x) + az * (player.feet.z - log.z);
+      expect(jumped() && landed(), "walked into the log and never jumped, or never landed");
+      expect(past > 0.8, `only ${past.toFixed(2)} m past the log's middle`);
+      expect(wide < 0.6, `went ${wide.toFixed(2)} m off the line over the log: round it, not over`);
     }, "Around the clearing"],
     ["Walk to the bank", async () => {
       // Due south, away from where the sun sets: 28 m out, where the first clearing's bank stood 4 m high.
