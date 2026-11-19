@@ -1,6 +1,6 @@
 // The "controls" feature: play with a gamepad or on a touch screen, beside keyboard and mouse.
 //
-//   createGame(canvas, [create])      the feature alone (lab/controls.html); in the game it is in FEATURES
+//   createGame(canvas, [create])      the feature alone; in the game it is in FEATURES
 //
 // Gamepad (standard mapping): left stick or d-pad moves, as fast as it is pushed (half way walks, all the way runs;
 // a shoulder button, a trigger or a click on the stick runs too), right stick turns the camera (settings.invertY
