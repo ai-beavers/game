@@ -82,6 +82,10 @@ _Avoid_: skin, costume, clothes
 The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
 _Avoid_: boat, raft, kayak
 
+**Mushroom**:
+A small red-capped mushroom growing at the foot of a tree in the clearing, which the beaver can eat. One eaten is gone until the next day's dawn. Each player has their own, and no one else sees them.
+_Avoid_: shroom, fungus, food, item
+
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
 _Avoid_: base, house, storage
@@ -99,6 +103,10 @@ _Avoid_: crouch, rest, kneel
 **Crawl**:
 The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
 _Avoid_: crouch, sneak, prone
+
+**Dizzy**:
+What a player's view becomes for a while after the beaver eats too many mushrooms too quickly: colours slowly drift and the picture gently sways and waves, with no flashing. Only that player's own screen changes; steering does not, and the HUD stays steady.
+_Avoid_: trip, high, drunk, poisoned
 
 **Remote**:
 Another player's beaver as this browser draws it.
