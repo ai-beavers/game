@@ -32,7 +32,7 @@ const LIFT = HEIGHT / 2 + 0.02; // feet to the capsule's middle, with the player
 const NO_CONTACTS = 0x0002_0000; // member of group 1, takes contacts with no group
 const CLOCK = 13, HOLD = 1500; // the Motion's time in the packed list; ms a short action (a build) stays on its tag
 
-export function createRemote(stage: Stage, id: number, name: string, lanterns?: RemoteLanterns) {
+export function createRemote(stage: Stage, id: number, name: string, lanterns: RemoteLanterns) {
   const node = new TransformNode("net-remote", stage.scene);
   node.setEnabled(false);
   const track = new Track({ angles: [FACING], steps: STEPS, follows: FOLLOWS }), animator = createAnimator(), motion = newMotion();
@@ -45,7 +45,7 @@ export function createRemote(stage: Stage, id: number, name: string, lanterns?: 
     if (disposed) { b.root.dispose(false, true); return undefined; }
     beaver = b;
     b.root.parent = node;
-    lantern = lanterns?.carry(b);
+    lantern = lanterns.carry(b);
     return b;
   });
 

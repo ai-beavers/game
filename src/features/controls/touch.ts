@@ -9,7 +9,7 @@
 //   pad.light(out);                           once per frame: the Light button only while the lantern is out
 //
 // Touches on the canvas are taken here (camera.ts leaves them alone); mouse and pen still go to the camera.
-import { Overlay, box, onViewport, safeArea } from "../hud/overlay.ts";
+import { BUTTON_BACK, Overlay, box, onViewport, safeArea } from "../hud/overlay.ts";
 import type { Game } from "../../game.ts";
 import type { Input, Source } from "../../player/input.ts";
 import { deadZone, stickSpeed } from "./pad.ts";
@@ -29,7 +29,7 @@ export function touchControls(game: Game, pause: () => void, photo: () => void) 
     if (!light) return;
     light.panel.isVisible = light.caption.isVisible = lanternOut;
     light.element.hidden = !lanternOut;
-    if (!lanternOut) { held.flash = tapped.flash = false; light.panel.background = "#324540"; }
+    if (!lanternOut) { held.flash = tapped.flash = false; light.panel.background = BUTTON_BACK; }
   };
   function place(x: number, y: number, kx = 0, ky = 0) {
     overlay.move(base,box(x-56,y-56,112,112));
@@ -70,7 +70,7 @@ export function touchControls(game: Game, pause: () => void, photo: () => void) 
         button.element.setPointerCapture(e.pointerId);
         held[key] = tapped[key] = true; button.panel.background = "#738756";
       };
-      const lift = () => { held[key] = false; button.panel.background = "#324540"; };
+      const lift = () => { held[key] = false; button.panel.background = BUTTON_BACK; };
       button.element.onpointerup = button.element.onpointercancel = button.element.onlostpointercapture = lift;
       button.element.onclick = e => { if (!e.detail) tapped[key] = true; };
     }
