@@ -1,17 +1,20 @@
-// Tests for the rules server.ts keeps toward strangers, against the real server on a free port: sockets per client
-// address, the hello timeout, a full server, the world kept over a restart (and a broken file), the build id.
+// Tests for the rules the room keeps toward strangers, against both servers that run it, each on a free port: the Bun
+// server (server.ts) and the Worker (worker.ts) in wrangler's local runtime, which needs no account and no network.
+// Sockets per client address, the hello timeout, a full server, the same hour, the world kept over a restart, the
+// build id, the origin of a socket. Only server.ts has a file to break or to age; only the Worker has /net/reset.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { apply, REGROW, type BuildChange } from "../build/rules.ts";
-import { DAY_SECONDS, HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, sameWorld, START, type ServerMessage } from "./protocol.ts";
+import { DAY_SECONDS, HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, RESET_PATH, sameWorld, START, type ServerMessage } from "./protocol.ts";
+import { SAVE_AFTER } from "./room.ts";
 
 const root = join(import.meta.dir, "../../..");
 let running: Bun.Subprocess | undefined;
 
 /** Starts server.ts with these environment variables; resolves with its port once it listens. */
-async function start(env: Record<string, string> = {}) {
+async function startBun(env: Record<string, string>) {
   const server = running = Bun.spawn(["bun", "server.ts"], {
     cwd: root, env: { ...process.env, NODE_ENV: "production", PORT: "0", ...env }, stdin: "ignore", stdout: "pipe", stderr: "inherit",
   });
@@ -24,6 +27,23 @@ async function start(env: Record<string, string> = {}) {
   }
   return { port: +port, out: () => out };
 }
+/** Starts worker.ts with `wrangler dev`; resolves with its port once it answers. Of the variables it takes GIT_SHA
+ *  and RESET_TOKEN; its storage is a folder beside WORLD_FILE, so the same variable keeps a world over a restart. */
+async function startWorker(env: Record<string, string>) {
+  mkdirSync(join(root, "dist"), { recursive: true }); // wrangler wants the folder of the game's files; these tests ask for none
+  const free = Bun.serve({ port: 0, fetch: () => new Response() }), port = free.port!;
+  await free.stop(true);
+  const vars = ["GIT_SHA", "RESET_TOKEN"].flatMap((key) => env[key] ? ["--var", `${key}:${env[key]}`] : []);
+  const kept = env.WORLD_FILE ? dirname(env.WORLD_FILE) : mkdtempSync(join(tmpdir(), "beaver-"));
+  const server = running = Bun.spawn(["bun", "x", "wrangler", "dev", "--port", String(port), "--inspector-port", "0", "--persist-to", kept, ...vars], {
+    cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: "false" }, stdin: "ignore", stdout: "ignore", stderr: "inherit",
+  });
+  for (let i = 0; i < 300; i++, await Bun.sleep(100)) {
+    if (server.exitCode !== null) break;
+    if (await fetch(`http://localhost:${port}/net/info`).then((r) => r.ok, () => false)) return { port, out: () => "" };
+  }
+  throw new Error("worker.ts did not start (wrangler dev)");
+}
 async function stop() {
   running?.kill("SIGTERM");
   await running?.exited;
@@ -31,9 +51,10 @@ async function stop() {
 }
 afterEach(stop);
 
-/** A raw client: from `ip` (as Fly would say, for TRUST_PROXY=fly), its messages, and how it ended. */
+/** A raw client: from `ip` (as Fly would say, for TRUST_PROXY=fly, and as Cloudflare says to the Worker), its
+ *  messages, and how it ended. */
 function client(port: number, ip?: string) {
-  const options = ip ? { headers: { "Fly-Client-IP": ip } } : undefined; // Bun's WebSocket takes headers; the DOM type does not say so
+  const options = ip ? { headers: { "Fly-Client-IP": ip, "CF-Connecting-IP": ip } } : undefined; // Bun's WebSocket takes headers; the DOM type does not say so
   const ws = new WebSocket(`ws://localhost:${port}/net`, options as unknown as string[]);
   const messages: ServerMessage[] = [];
   const opened = new Promise<boolean>((resolve) => { ws.onopen = () => resolve(true); ws.onerror = () => resolve(false); });
@@ -45,7 +66,9 @@ function client(port: number, ip?: string) {
 }
 const info = async (port: number, query = "?build") => (await fetch(`http://localhost:${port}/net/info${query}`)).json();
 
-describe("server.ts", () => {
+for (const kind of ["server.ts", "worker.ts"] as const) describe(kind, () => {
+  const bun = kind === "server.ts", start = (env: Record<string, string> = {}) => bun ? startBun(env) : startWorker(env);
+
   test("lets one address hold only so many sockets, and closes those that never say hello", async () => {
     const { port } = await start({ TRUST_PROXY: "fly" });
     const mine = Array.from({ length: PER_ADDRESS }, () => client(port, "203.0.113.9"));
@@ -59,7 +82,7 @@ describe("server.ts", () => {
     expect(await mine[1]!.closed).toBe(1008);
     expect(mine[0]!.ws.readyState).toBe(WebSocket.OPEN);
     expect(await client(port, "203.0.113.9").opened).toBe(true);
-  }, HELLO_TIME + 5000);
+  }, HELLO_TIME + 30000);
 
   test("tells a player when it is full, and closes", async () => {
     const { port } = await start({ TRUST_PROXY: "fly" });
@@ -71,7 +94,7 @@ describe("server.ts", () => {
     expect(await late.next("full")).toEqual({ t: "full", players: MAX_PLAYERS, max: MAX_PLAYERS });
     expect(await late.closed).toBe(1013);
     expect((await info(port)).players).toBe(MAX_PLAYERS);
-  }, 15000);
+  }, 30000);
 
   test("gives everyone who joins the same hour of one day, which starts at 16:00 with the server", async () => {
     const { port } = await start();
@@ -92,7 +115,7 @@ describe("server.ts", () => {
     const counted = first.hour + ((second.at - first.at) / 1000) * 24 / DAY_SECONDS;
     expect(Math.abs(second.hour - counted)).toBeLessThan(0.05); // within 1.5 s of play: what the two messages took
     expect(second.hour - first.hour).toBeGreaterThan(0.04); // the day went on between them: 1.5 s is 0.05 h
-  });
+  }, 30000);
 
   test("keeps the world and its epoch over a restart; a broken file starts afresh, kept aside", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "beaver-")), "world.json"), env = { WORLD_FILE: file, GIT_SHA: "abc123" };
@@ -106,12 +129,15 @@ describe("server.ts", () => {
     const work = [{ type: "find" }, { type: "bite", tree: 2 }, { type: "trade", stick: "w4" }];
     p.ws.send(JSON.stringify({ t: "build", c: [...work, { type: "trade", stick: "w4" }] })); // traded twice: once taken
     expect(await p.next("build")).toMatchObject({ c: work });
-    await stop(); // SIGTERM writes it at once
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ epoch: first.epoch, build: work });
+    // server.ts writes it at once on SIGTERM. Nothing tells the Worker that it ends: what is older than SAVE_AFTER is kept.
+    if (!bun) await Bun.sleep(SAVE_AFTER + 500);
+    await stop();
+    if (bun) expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ epoch: first.epoch, build: work });
 
     ({ port } = await start(env));
     expect(await info(port)).toMatchObject({ epoch: first.epoch, build: work });
     await stop();
+    if (!bun) return; // the rest breaks the file by hand
 
     // A change rules.ts no longer takes: left out, and a new epoch so nobody keeps its copy of the old world.
     writeFileSync(file, JSON.stringify({ epoch: first.epoch, build: [{ type: "find" }, { type: "split", tree: 4 }] }));
@@ -125,9 +151,10 @@ describe("server.ts", () => {
     ({ port } = await start(env));
     expect((await info(port)).build).toEqual([]);
     expect(existsSync(`${file}.bad`)).toBe(true);
-  }, 30000);
+  }, 60000);
 
-  test("compacts the log over regrow cycles; a joiner gets the live world, a refused change the whole world", async () => {
+  // Ages the kept world by hand between restarts, which only a file allows; the rules it checks are the room's.
+  test.if(bun)("compacts the log over regrow cycles; a joiner gets the live world, a refused change the whole world", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "beaver-")), "world.json"), env = { WORLD_FILE: file };
     const life = (direction: number): BuildChange[] => [...Array(8).fill({ type: "bite", tree: 2 }), { type: "fell", tree: 2, direction },
       { type: "rest", tree: 2, at: [direction, 0, 1], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree: 2 }), { type: "split", tree: 2 }];
@@ -187,14 +214,40 @@ describe("server.ts", () => {
     const from = (origin: string) => fetch(`http://localhost:${port}/net`, { headers: { Origin: origin, Upgrade: "websocket", Connection: "Upgrade" } });
     expect((await from("https://evil.example")).status).toBe(403);
     expect((await from(`http://localhost:${port}`)).status).not.toBe(403);
-    expect((await from("https://beaver.example")).status).not.toBe(403);
-  });
+    if (bun) expect((await from("https://beaver.example")).status).not.toBe(403); // the Worker has no other public address
+  }, 30000);
 
-  test("without the new variables: no build id, no file, every local socket", async () => {
+  test.if(bun)("without the new variables: no build id, no file, every local socket", async () => {
     const { port, out } = await start();
     expect((await info(port)).version).toBe("");
     const local = Array.from({ length: PER_ADDRESS + 2 }, () => client(port)); // bots and browsers on this machine
     expect(await Promise.all(local.map((c) => c.opened))).toEqual(Array(PER_ADDRESS + 2).fill(true));
     expect(out()).toContain("http://");
   }, 30000); // ms: ends a hang, says nothing about speed on a busy machine
+
+  test.if(!bun)("starts the world afresh for the holder of the reset token only", async () => {
+    const { port } = await start({ RESET_TOKEN: "only-the-maintainers-know" });
+    const reset = (headers: Record<string, string> = {}, method = "POST") => fetch(`http://localhost:${port}${RESET_PATH}`, { method, headers });
+    const p = client(port);
+    await p.opened;
+    p.hello();
+    await p.next("welcome");
+    p.ws.send(JSON.stringify({ t: "build", c: [{ type: "find" }] }));
+    expect(await p.next("build")).toBeDefined();
+    const before = await info(port);
+    expect((await reset()).status).toBe(404);
+    expect((await reset({ Authorization: "Bearer something-else" })).status).toBe(404);
+    expect((await reset({ Authorization: "Bearer only-the-maintainers-know" }, "GET")).status).toBe(404);
+    expect(await info(port)).toEqual(before);
+    expect((await reset({ Authorization: "Bearer only-the-maintainers-know" })).status).toBe(200);
+    expect(await p.next("reset")).toEqual({ t: "reset" });
+    const after = await info(port);
+    expect([after.build, after.epoch === before.epoch]).toEqual([[], false]);
+  }, 30000);
+
+  test.if(!bun)("answers the reset address like an unknown one when no token is set", async () => {
+    const { port } = await start();
+    expect((await fetch(`http://localhost:${port}${RESET_PATH}`, { method: "POST", headers: { Authorization: "Bearer " } })).status).toBe(404);
+    expect((await fetch(`http://localhost:${port}${RESET_PATH}`, { method: "POST", headers: { Authorization: "Bearer undefined" } })).status).toBe(404);
+  }, 30000);
 });

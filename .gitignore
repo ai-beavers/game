@@ -5,3 +5,4 @@ shots/
 *.blend
 *.blend1
 recordings/
+.wrangler/

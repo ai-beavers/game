@@ -1,23 +1,5 @@
 import { expect, test } from "bun:test";
-import { REST_DISTANCE, REST_PITCH } from "../../player/camera.ts";
-import { bodyPoints, CHOICES, direct, enter, eyeAt, framing, fresh, glide, inside, liveDirector, newHold, reason, shotFor, sight, volume, weight, type Choice, type Moment, type Shot, type Station, type Volume, type XYZ } from "./live.ts";
-
-test("live shots stand back on the way, come close for dam work and stay low over the pond", () => {
-  expect(shotFor("Dam work", true).distance).toBeGreaterThan(shotFor("Dam work", false).distance);
-  expect(shotFor("Dam work", false).distance).toBeLessThan(shotFor("Around the clearing", false).distance);
-  expect(shotFor("Pond patrol", false).pitch).toBeLessThan(shotFor("Dam work", false).pitch);
-  expect(shotFor("Furious beaver", false)).toEqual(shotFor("Map", false)); // no activity of its own: the default
-});
-
-test("the live view is the player's own: behind the beaver at rest, straight behind on the way", () => {
-  expect(shotFor("Around the clearing", false)).toMatchObject({ distance: REST_DISTANCE, pitch: REST_PITCH, side: 0 });
-  for (const activity of ["Dam work", "Tail slap", "Wears a hat", "Around the clearing"]) {
-    const walking = shotFor(activity, true);
-    expect(walking.side).toBe(0);
-    expect(walking.distance).toBeGreaterThanOrEqual(REST_DISTANCE);
-  }
-  expect(Math.abs(shotFor("Wears a hat", false).side)).toBeGreaterThan(Math.PI / 2); // turned round to look at the hat
-});
+import { bodyPoints, enter, fresh, inside, liveDirector, reason, sight, volume, weight, type Moment, type Station } from "./live.ts";
 
 const play = async () => {};
 const build: Station[] = [["Gather", play, "Dam work"], ["Place", play, "Dam work"]];
@@ -60,18 +42,17 @@ test("the beaver says why it does what it does, by the hour, the weather and wha
   expect(reason("Dam work", at({ carrying: true }))).toContain("stick");
   expect(reason("A new thing", at({}))).toBe("A new thing"); // no line of its own: its name
   expect(reason("Trading", at({ day: Date.parse("2026-12-20") }))).toBe("Wood to spare. Let's go shopping!");
-  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping"];
+  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping", "Canoeing", "Find Mrs. Beaver"];
   for (const hour of [3, 9, 12.5, 19.5, 23]) for (const weather of ["fair", "rain", "fog"]) for (const activity of activities)
     for (const day of [undefined, Date.parse("2026-11-19")]) // one row of the caption, new or not
       expect(reason(activity, at({ hour, weather, day })).length).toBeLessThanOrEqual(40);
 });
 
-test("sitting and crawling: a reason of its own, new on the day it came, filmed from the side", () => {
+test("sitting and crawling: a reason of its own, new on the day it came", () => {
   expect(reason("Sit and crawl", at({})).length).toBeLessThan(40);
   expect(reason("Sit and crawl", at({}))).toContain("sit");
   expect(fresh("Sit and crawl", at({ day: Date.parse("2026-11-18") }))).toBe(true);
   expect(fresh("Sit and crawl", at({ day: Date.parse("2026-11-25") }))).toBe(false);
-  expect(Math.abs(shotFor("Sit and crawl", false).side)).toBeGreaterThan(1); // not hidden behind its back
 });
 
 test("the beaver is curious about a new activity for a week, and says so", () => {
@@ -109,10 +90,7 @@ test("an hour of live play shows everything, never the same twice in a row, and 
 // ---- a clear view ----
 const box = (x: number, y: number, z: number, hx: number, hy: number, hz: number, round = false) =>
   volume({ x, y, z }, [{ x: hx, y: 0, z: 0 }, { x: 0, y: hy, z: 0 }, { x: 0, y: 0, z: hz }], round);
-const feet = { x: 0, y: 0, z: 0 }, look = { x: 0, y: 0.7, z: 0 }, points = bodyPoints(feet);
-// A shot from the side, whatever the activities' own are now: these tests are about seeing past things.
-const shot: Shot = { distance: 4.5, pitch: 0.2, side: 1.1, lift: 0.2 }, behind = Math.PI; // the beaver faces +z: behind it is -z
-const shows = (volumes: Volume[]) => (c: Choice) => sight(eyeAt(look, framing(behind, shot, 1, c)), points, volumes).seen;
+const feet = { x: 0, y: 0, z: 0 }, points = bodyPoints(feet);
 
 test("volumes: a box or a round crown in the way, a turned one, the start inside", () => {
   const crate = box(0, 0.5, 2, 0.5, 0.5, 0.5);
@@ -138,46 +116,18 @@ test("the beaver is hidden behind stacked crates, seen past them, and a crown ro
   expect(sight(eye, points, [], (_, p) => p.y < 0.4).seen).toBe(true); // the ground hides the feet only
 });
 
-test("a clear angle: the other side, then higher, then closer; none when it is walled in", () => {
-  const side = (sign: number) => eyeAt(look, framing(behind, shot, sign, CHOICES[0]!));
-  const wall = (at: XYZ, round = false) => box((at.x + look.x) / 2, 0.5, (at.z + look.z) / 2, 0.6, 0.6, 0.6, round);
-  expect(CHOICES.find(shows([]))).toEqual(CHOICES[0]!);
-  expect(CHOICES.find(shows([wall(side(1))]))).toMatchObject({ other: true, higher: false });
-  // Crates on both sides, low: over them.
-  expect(CHOICES.find(shows([wall(side(1)), wall(side(-1))]))).toMatchObject({ other: false, higher: true, closer: false });
-  // A bush where the camera would stand, on both sides and high: closer, in front of it.
-  const far = (sign: number, higher: boolean) => box(side(sign).x, eyeAt(look, framing(behind, shot, sign, { other: false, higher, closer: false })).y, side(sign).z, 0.8, 0.8, 0.8, true);
-  expect(CHOICES.find(shows([far(1, false), far(-1, false), far(1, true), far(-1, true)]))).toMatchObject({ closer: true });
-  // Walled in all round, close: no angle shows it.
-  const ring = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => box(Math.sin(k * Math.PI / 4) * 1.2, 1.5, Math.cos(k * Math.PI / 4) * 1.2, 0.6, 1.5, 0.6));
-  expect(CHOICES.find(shows(ring))).toBe(undefined);
+test("looking for Mrs. Beaver: a reason of its own, new for a week from the day it came", () => {
+  expect(reason("Find Mrs. Beaver", at({}))).toBe("Where is my Mrs. Beaver?");
+  expect(fresh("Find Mrs. Beaver", at({ day: Date.parse("2026-11-19") }))).toBe(true);
+  expect(fresh("Find Mrs. Beaver", at({ day: Date.parse("2026-11-26") }))).toBe(false);
+  expect(reason("Find Mrs. Beaver", at({ day: Date.parse("2026-11-26") }))).toBe("Where is my Mrs. Beaver?");
 });
 
-test("calm: a new angle only for a hidden beaver, held for seconds, and a fade when none shows it", () => {
-  const all = () => true, otherOnly = (c: Choice) => c.other, none = () => false;
-  let { hold } = direct(newHold(), 0.25, true, otherOnly);
-  expect(hold.choice.other).toBe(false); // hidden for a moment only: no move yet
-  ({ hold } = direct(hold, 0.3, true, otherOnly));
-  expect(hold.choice.other).toBe(true);
-  for (let t = 0; t < 5; t += 0.25) ({ hold } = direct(hold, 0.25, false, all));
-  expect(hold.choice.other).toBe(true); // seen, and the plain shot clear again: still held
-  for (let t = 0; t < 1.5; t += 0.25) ({ hold } = direct(hold, 0.25, false, all));
-  expect(hold.choice.other).toBe(false); // after CALM s back to the plain shot
-  const hidden = direct(direct(newHold(), 0.3, true, none).hold, 0.3, true, none);
-  expect(hidden.fade).toBe(true);
-  expect(direct(newHold(), 0.3, false, none).fade).toBe(false);
-});
-
-test("the camera glides: eased in, never faster than its bound, and gets there", () => {
-  let x = 0, v = 0, top = 0;
-  const steps: number[] = [];
-  for (let t = 0; t < 30; t += 1 / 60) {
-    const was = x;
-    [x, v] = glide(x, v, 3, 1.5, 0.4, 1 / 60);
-    steps.push((x - was) * 60);
-    top = Math.max(top, (x - was) * 60);
-  }
-  expect(top).toBeLessThanOrEqual(0.4 + 1e-9);
-  expect(steps[0]!).toBeLessThan(0.1); // starts slowly: no jolt
-  expect(x).toBeCloseTo(3, 2);
+test("canoeing: new on the day it came, then a reason of its own that fits the weather and the hour", () => {
+  expect(fresh("Canoeing", at({ day: Date.parse("2026-11-19") }))).toBe(true);
+  expect(fresh("Canoeing", at({ day: Date.parse("2026-11-26") }))).toBe(false);
+  const later = Date.parse("2026-12-20");
+  expect(reason("Canoeing", at({ day: later, hour: 12.5, weather: "fair" }))).toBe("Calm water. Out in the canoe.");
+  expect(reason("Canoeing", at({ day: later, hour: 23, weather: "fair" }))).toContain("Lantern");
+  expect(reason("Canoeing", at({ day: later, hour: 12.5, weather: "rain" }))).toContain("Rain");
 });

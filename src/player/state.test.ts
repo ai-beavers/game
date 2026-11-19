@@ -1,6 +1,6 @@
 // Tests for the player's pure logic: jump timing, the carry sequence, diving and breath, the Motion bookkeeping. bun test src/player
 import { describe, expect, test } from "bun:test";
-import { BREATH, REFILL, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepLow, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
+import { BREATH, REFILL, RIDE_SPEED, SWIM_SPEED, rideKeys, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepLow, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
 
 const dt = 1 / 60;
 
@@ -219,5 +219,35 @@ describe("sit and crawl", () => {
   test("afloat it never goes low", () => {
     for (const grounded of [true, false]) for (const moving of [true, false])
       expect(stepLow(true, true, { ...on, grounded, moving, afloat: true })).toEqual({ low: "none", slow: false });
+  });
+});
+
+describe("riding a canoe", () => {
+  test("paddles faster than it swims, about as fast as it walks", () => {
+    expect(RIDE_SPEED).toBeGreaterThan(SWIM_SPEED);
+    expect(RIDE_SPEED).toBeGreaterThanOrEqual(0.8);
+    expect(RIDE_SPEED).toBeLessThan(2);
+  });
+  test("jump, dive, crawl and the tail slap do nothing; moving and E still work", () => {
+    const input = { move: { x: 0.3, y: 1 }, run: 1, jump: true, act: true, slap: true, dive: true, crawl: true };
+    expect(rideKeys(input)).toEqual({ move: { x: 0.3, y: 1 }, run: 0, jump: false, act: true, slap: false, dive: false, crawl: false });
+  });
+  test("it sits in the canoe whatever is held, and moving does not get it up", () => {
+    const riding = { grounded: true, afloat: false, moving: true, acting: false, jumping: false, riding: true };
+    expect(stepLow(false, false, riding).low).toBe("sit");
+    expect(stepLow(true, true, riding).low).toBe("sit");
+    expect(stepLow(false, true, riding).slow).toBe(false);
+  });
+  test("paddling it sits and paddles, never walks a stride nor swims", () => {
+    const m = newMotion(), act = newAction();
+    m.swimming = 1;
+    for (let i = 0; i < 60; i++) trackMotion(m, dt, { moved: 0.9 * dt, vertical: 0, turning: 0, grounded: true, afloat: false, act, ride: true });
+    expect(m.low).toBe("sit");
+    expect(m.paddle).toBe(true);
+    expect(m.distance).toBe(0); // no footsteps
+    expect(m.swimming).toBe(0);
+    expect(m.speed).toBeCloseTo(0.9);
+    trackMotion(m, dt, { moved: 0, vertical: 0, turning: 0, grounded: true, afloat: false, act });
+    expect(m.paddle).toBeUndefined();
   });
 });

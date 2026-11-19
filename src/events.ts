@@ -45,10 +45,14 @@ export interface GameEvents {
   damFinished: { place: Vector3 };
   /** Where the pond's surface should be now that the dam holds water back (the water itself does not follow yet). */
   pondLevel: { level: number; rise: number };
-  /** A goal of the build feature is reached. */
+  /** A goal of the build feature is reached; or (goal "mrs-beaver") Mrs. Beaver is freed. */
   goalDone: { goal: string; text: string };
   /** From the trade feature (src/features/trade): a good went into the backpack; count: how many of it are in it now. */
   goodTraded: { good: string; count: number };
+  /** From the canoe feature (src/features/canoe): the beaver got into its canoe, and out of it again, onto the bank
+   *  or into the water beside it. */
+  canoeIn: { place: Vector3 };
+  canoeOut: { place: Vector3; outcome: "bank" | "water" };
   /** A change to the build feature's world state. remote false: made here, after it was applied (send it to others);
    *  emit it with remote true to apply a change that came from another player. */
   buildChange: { change: BuildChange; remote: boolean };

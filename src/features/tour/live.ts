@@ -1,34 +1,13 @@
-import { REST_DISTANCE, REST_PITCH } from "../../player/camera.ts";
-
 /** Stations in one activity play in order, so building can use the wood gathered earlier. stream false: a test of the
  *  player's controls (a menu, a pad), played in the test but left out of the live stream. */
 export type Station = [name: string, play: () => Promise<void>, activity?: string, stream?: false];
 
-/** How the live view frames an activity: metres from the beaver, radians above the horizon, radians round from
- *  straight behind it, and metres above its look point (0.7 m up) it aims at: above the beaver, so it sits in the
- *  lower third as it does for a player. */
-export interface Shot { distance: number; pitch: number; side: number; lift: number }
-// The live view is the player's own: behind the beaver, as someone playing holds the camera (src/player/camera.ts),
-// so the stream looks played, not filmed. An activity turns it only as a player would to see what they do.
-const SHOT: Shot = { distance: REST_DISTANCE, pitch: REST_PITCH, side: 0, lift: 0.45 };
-const SHOTS: Record<string, Shot> = {
-  "Dam work": { ...SHOT, distance: 3.5, side: 0.45 }, // closer and round to the side, as the player's camera does for work
-  "Pond patrol": { ...SHOT, distance: 4.9, pitch: 0.11 }, // lower and a little back, as it does for a swim
-  "Tail slap": { ...SHOT, pitch: 0.11, side: 0.6 }, // a look from the side: the tail coming down
-  "Sky watch": { ...SHOT, pitch: 0.08, lift: 0.9 }, // looking up
-  "Wears a hat": { distance: 1.6, pitch: 0.3, side: 2.3, lift: 0.12 }, // turned round to the front, close: the hat on the head
-  "Sit and crawl": { distance: 2.8, pitch: 0.2, side: 1.6, lift: 0.2 }, // from the side: from behind the back hides the pose
-  // Higher and round to the side: the sign beside the doorway on the way in, then over the low café walls (the roof is
-  // hidden inside) the counter, the Shopkeeper and the tables.
-  "Shopping": { distance: 3.6, pitch: 0.55, side: 0.7, lift: 0.3 },
-};
-
 // ---- a clear view: the beaver must always be seen ----
-// Crowns, bushes, reeds, crates, the lodge have no collider (or one the camera's cast ignores); their bounds are
-// known, as turned boxes or (leaves) the ellipsoids inside them. Each moment the director asks: is the beaver seen
-// from the camera (most of a few points on its body with nothing in between, the camera inside nothing)? When it is
-// not, it tries the other side, a bit higher, a bit closer, in that order and together; only when none of them shows
-// it are the things in the way faded. A new angle holds for CALM s unless the beaver is hidden again.
+// The live tour films with the player's own camera (src/player/camera.ts), behind the beaver, so the stream looks
+// played, not filmed. Crowns, bushes, reeds, crates, the lodge have no collider (or one the camera's cast ignores);
+// their bounds are known, as turned boxes or (leaves) the ellipsoids inside them. Each moment the tour asks: is the
+// beaver seen from the camera (most of a few points on its body with nothing in between, the camera inside nothing)?
+// When it is not for a moment, the things in the way are faded.
 
 export type XYZ = { x: number; y: number; z: number };
 /** A box with its middle at `at` and three half-axes (turned as the thing is), or round: the ellipsoid in that box.
@@ -94,65 +73,6 @@ export function sight(eye: XYZ, points: XYZ[], volumes: Volume[], solid?: (from:
   return { blocked, by, within, seen: !within && blocked * 4 <= points.length };
 }
 
-/** How the director varies a shot to see past something. */
-export interface Choice { other: boolean; higher: boolean; closer: boolean }
-const PLAIN: Choice = { other: false, higher: false, closer: false };
-/** The other side, a bit higher, a bit closer, in that order, then together. */
-export const CHOICES: Choice[] = [PLAIN, { ...PLAIN, other: true }, { ...PLAIN, higher: true }, { ...PLAIN, closer: true },
-  { other: true, higher: true, closer: false }, { other: true, higher: false, closer: true }, { other: false, higher: true, closer: true },
-  { other: true, higher: true, closer: true }];
-const HIGHER = 0.3, CLOSER = 0.6; // rad up, fraction of the distance
-const same = (a: Choice, b: Choice) => a.other === b.other && a.higher === b.higher && a.closer === b.closer;
-
-/** Yaw, pitch and distance for a shot and a choice; behind: the yaw straight behind the beaver, sign: its side. */
-export const framing = (behind: number, shot: Shot, sign: number, c: Choice) => ({
-  yaw: behind + shot.side * sign * (c.other ? -1 : 1),
-  pitch: shot.pitch + (c.higher ? HIGHER : 0),
-  distance: shot.distance * (c.closer ? CLOSER : 1),
-});
-/** Where the camera stands looking at `look` from yaw, pitch, distance, lifted to floor (as src/player/camera.ts). */
-export function eyeAt(look: XYZ, f: { yaw: number; pitch: number; distance: number }, floor?: (x: number, z: number) => number): XYZ {
-  const c = Math.cos(f.pitch), x = look.x + Math.sin(f.yaw) * c * f.distance, z = look.z + Math.cos(f.yaw) * c * f.distance;
-  const y = look.y + Math.sin(f.pitch) * f.distance;
-  return { x, y: floor ? Math.max(y, floor(x, z)) : y, z };
-}
-
-/** The director's memory: the choice it films with, s since it changed, s the beaver has been hidden. */
-export interface Hold { choice: Choice; since: number; hidden: number }
-export const newHold = (): Hold => ({ choice: PLAIN, since: 0, hidden: 0 });
-const CALM = 6; // s a new angle holds, unless the beaver is hidden
-const REACT = 0.5; // s hidden before the camera moves (a trunk passing by is no reason)
-
-/** One look by the director, dt s after the last: hidden now (from where the camera is), and whether a choice would
- *  show the beaver (from where it would stand). Moves to the first choice that does when the beaver has been hidden
- *  for REACT s and the camera is not on its way to a clear one already; back to the plain shot once it shows the
- *  beaver and CALM s have passed. fade: hidden, and no choice shows it. */
-export function direct(hold: Hold, dt: number, hidden: boolean, shows: (c: Choice) => boolean): { hold: Hold; fade: boolean } {
-  const h = { choice: hold.choice, since: hold.since + dt, hidden: hidden ? hold.hidden + dt : 0 };
-  if (h.hidden >= REACT && !shows(h.choice)) {
-    const next = CHOICES.find(shows);
-    if (!next) return { hold: h, fade: true };
-    return { hold: { choice: next, since: 0, hidden: h.hidden }, fade: false };
-  }
-  if (!hidden && h.since >= CALM && !same(h.choice, PLAIN) && shows(PLAIN)) return { hold: { ...h, choice: PLAIN, since: 0 }, fade: false };
-  return { hold: h, fade: h.hidden >= STUCK }; // the clear angle never came (the camera pulled in by a collider)
-}
-const STUCK = 3; // s hidden on the way to a clear angle before fading anyway
-
-/** One step of x (speed v) towards goal: eased in and out (a critically damped spring at `rate` 1/s), and never faster
- *  than `top` per s, so a long way is a slow glide, not a swing. */
-export function glide(x: number, v: number, goal: number, rate: number, top: number, dt: number): [number, number] {
-  const e = x - goal, k = v + rate * e, decay = Math.exp(-rate * dt);
-  const to = goal + (e + k * dt) * decay, speed = (v - rate * k * dt) * decay, most = top * dt;
-  return [x + Math.max(-most, Math.min(most, to - x)), Math.max(-top, Math.min(top, speed))];
-}
-
-/** On the way somewhere the camera is straight behind at the player's distance, so the way ahead is in the picture. */
-export function shotFor(activity: string, walking: boolean): Shot {
-  const shot = SHOTS[activity] ?? SHOT;
-  return walking ? { ...shot, distance: Math.max(shot.distance, SHOT.distance), side: 0, lift: SHOT.lift } : shot;
-}
-
 /** What the director knows when it picks: the clock (s), when each activity was last shown on it, the one just
  *  shown; the hour (0 … 24) and the weather of the sky; whether the ducks are back on the pond since the last slap;
  *  whether a stick is in the beaver's hand (then the dam work goes on). */
@@ -165,7 +85,7 @@ export interface Moment {
 
 /** The activities the newest features added, and the day each came (UTC). A feature with an activity of its own
  *  enters it here; the beaver is curious about it for FRESH days. Drop an entry once it is older. */
-const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18" };
+const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18", Canoeing: "2026-11-18", "Find Mrs. Beaver": "2026-11-19" };
 const FRESH = 7; // days
 export const fresh = (activity: string, m: Moment) => {
   const since = m.day === undefined || !NEW[activity] ? NaN : (m.day - Date.parse(NEW[activity]!)) / 86_400_000;
@@ -207,6 +127,9 @@ export function reason(activity: string, m: Moment): string {
     case "Trading": return "Wood to spare. Let's go shopping!";
     case "Sit and crawl": return "Legs tired. Let me sit a bit.";
     case "Shopping": return "Saved up. Time for a new look.";
+    case "Canoeing": return m.weather === "rain" ? "Rain on the pond. Paddling anyway." : m.weather === "fog" ? "Foggy pond. Paddle slowly."
+      : NIGHT(hour) ? "Moonlit pond. Lantern and paddle." : DUSK(hour) ? "Still water at dusk. Canoe time." : "Calm water. Out in the canoe.";
+    case "Find Mrs. Beaver": return "Where is my Mrs. Beaver?";
     default: return activity;
   }
 }

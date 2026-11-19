@@ -50,13 +50,37 @@ _Avoid_: item, loot, product
 The small disco-like hut in the clearing with the sign HOUSE OF AI in front; inside it is a café where the shopkeeper sells outfits and other creatures work at laptops.
 _Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
 
+**Calendar board**:
+The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked and the hours of each day from morning to midnight, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
+_Avoid_: billboard, calendar sign, schedule, week board
+
+**Build Fridays**:
+The weekly event on the Calendar board: every Friday from 16:00 to 23:00, by the viewer's own clock.
+_Avoid_: build day, Friday event
+
 **Shopkeeper**:
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.
 _Avoid_: NPC, vendor, merchant
 
+**Mrs. Beaver**:
+The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places at the edge of the clearing, and her flower lies dropped on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
+_Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
+
+**Quest**:
+A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her, gnaw her pen open. Nothing on the map marks where a step is.
+_Avoid_: mission, task, goal (the build goals point the way; a quest does not)
+
+**Step**:
+One line of a quest, ticked when the player has done it.
+_Avoid_: objective, stage, task
+
 **Outfit**:
 A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.
 _Avoid_: skin, costume, clothes
+
+**Canoe**:
+The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
+_Avoid_: boat, raft, kayak
 
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
