@@ -64,6 +64,8 @@ export interface Beaver {
   look: Look;
   /** The colour of its calm coat, linear RGB (anger reddens it from there). */
   coat: RGB;
+  /** 0 … 1: grey with age on the muzzle, the face and the pale markings (the Old Beaver); 0 for every player. */
+  grey: number;
   /** Puts every bone where the pose says; bones left out go to rest. */
   pose(pose: Pose): void;
   /** Once per frame, after pose(): whatever the look needs (fur density for the size on screen, …). */

@@ -53,6 +53,9 @@ export interface GameEvents {
    *  or into the water beside it. */
   canoeIn: { place: Vector3 };
   canoeOut: { place: Vector3; outcome: "bank" | "water" };
+  /** From the Old Beaver feature (src/features/old-beaver): he murmurs a line of a lore, or his closing word, one
+   *  syllable a word from where he sits; for the local player only. */
+  oldBeaverSpeaks: { place: Vector3; words: number };
   /** A change to the build feature's world state. remote false: made here, after it was applied (send it to others);
    *  emit it with remote true to apply a change that came from another player. */
   buildChange: { change: BuildChange; remote: boolean };

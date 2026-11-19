@@ -2,7 +2,7 @@
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
 // that src/features/life shows, calling from where they are; the steps and splashes of other players
-// (src/features/net); and a quiet tune that composes itself. With the camera under water all of it is muffled.
+// (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
@@ -20,6 +20,7 @@ import type { CreateFeature } from "../../game.ts";
 import { findWater, groundAt } from "./ground.ts";
 import { createLapping, createMix, createMusic, createNight, createRain, createWind } from "./mix.ts";
 import { rand, SOUNDS, type SoundName } from "./sounds.ts";
+import { SYLLABLE } from "../old-beaver/rules.ts";
 
 export const played: Partial<Record<string, number>> = {};
 
@@ -117,6 +118,11 @@ export const create: CreateFeature = (game) => {
   events.on("goalDone", () => play("chime", undefined, 1, "sfx", 0.1));
   // Half the dam: a chime on the way, so the long middle of the work has a moment too.
   events.on("stickPlaced", ({ count, total }) => { if (count * 2 === total) play("chime", undefined, 1, "sfx", 0.25); });
+
+  // The Old Beaver murmurs a line from where he sits, one slow syllable a word (src/features/old-beaver).
+  events.on("oldBeaverSpeaks", ({ place, words }) => {
+    for (let i = 0; i < words; i++) play("murmur", place, Math.random(), "sfx", i * SYLLABLE + rand(0, 0.06));
+  });
 
   // Lasting sounds: paddling, counted in physics steps so it stops with the pause.
   let stroke = 0;

@@ -81,7 +81,7 @@ test("every sound, the tail slap's crack and thump among them, makes sources tha
 const BANDS: [low: number, high: number, names: string[]][] = [
   [-16, -9, ["fanfare", "chime"]], // milestones: the loudest, a few LU over the scene
   [-20, -11, ["slap", "splash", "crash", "crack", "creak"]], // the alarm and the big moments
-  [-27, -17, ["land", "thump", "shake", "bite", "place", "drop", "pickup", "jump"]], // the beaver at work
+  [-27, -17, ["land", "thump", "shake", "bite", "place", "drop", "pickup", "jump", "murmur"]], // the beaver at work, and the Old Beaver's murmur
   [-30, -22, ["stepGrass", "stepShore", "stepWater", "paddle"]], // under the ambience
   [-41, -22, ["owl", "deer", "cricket", "frog", "tick", "plip", "bird", "lap"]], // the world around, far off or many
 ];
