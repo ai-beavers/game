@@ -11,25 +11,17 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { RAPIER, type Stage } from "../../engine.ts";
 import type { buildShop } from "./building.ts";
-import { RADIUS } from "./building.ts";
+import { paint, SIGN, WOOD } from "./building.ts";
 import { week, type CalendarWeek } from "./week.ts";
 
-/** Where it stands in the shop's frame: across the path from the sign (x 1.6), further out for its width. */
-const AT = { x: -2.45, z: RADIUS + 1.6, yaw: 0.35 }; // turned a little towards the path, as the sign is (-0.35)
+/** Where it stands in the shop's frame: the sign mirrored across the path, further out for its width. */
+const AT = { x: -SIGN.x - 0.85, z: SIGN.z, yaw: -SIGN.yaw }; // m, m, rad: turned a little towards the path, as the sign is
 const WIDTH = 2.4, HEIGHT = 1.4, LIFT = 0.75; // m: the board, and its lower edge over the ground
 const PX = 1536, PY = 896; // texture, the board's proportions
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
-
-const paint = (mesh: Mesh, c: Color3) => {
-  const n = mesh.getTotalVertices(), colours = new Float32Array(n * 4);
-  for (let i = 0; i < n; i++) colours.set([c.r, c.g, c.b, 1], i * 4);
-  mesh.setVerticesData(VertexBuffer.ColorKind, colours);
-  return mesh;
-};
 
 /** The week on the texture: the title, seven columns headed by weekday and date, today's date in a red circle, and the
  *  Friday's Build Fridays block. */
@@ -77,12 +69,11 @@ export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, 
   node.position.set(AT.x, 0, AT.z);
   node.rotation.y = AT.yaw;
   node.computeWorldMatrix(true);
-  const wood = new Color3(0.42, 0.26, 0.14);
   const parts: Mesh[] = [];
   for (const side of [-1, 1]) {
     const post = MeshBuilder.CreateCylinder("calendar-post", { height: LIFT + HEIGHT + 0.25, diameter: 0.11 }, scene);
     post.position.set(side * (WIDTH / 2 - 0.25), (LIFT + HEIGHT + 0.25) / 2 - 0.1, -0.07);
-    parts.push(paint(post, wood));
+    parts.push(paint(post, WOOD));
   }
   const frame = MeshBuilder.CreateBox("calendar-frame", { width: WIDTH + 0.1, height: HEIGHT + 0.1, depth: 0.08 }, scene);
   frame.position.y = LIFT + HEIGHT / 2;

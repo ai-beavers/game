@@ -32,9 +32,14 @@ export const KEEPER_Z = -1.95;
 /** The tables of the café, local x, z; a creature sits at each on the side given (radians, local). */
 export const TABLES = [{ x: -1.55, z: 0.05, seat: -Math.PI / 2 }, { x: 1.55, z: 0.05, seat: Math.PI / 2 }, { x: 1.25, z: 1.45, seat: Math.PI * 0.75 }];
 const TILT = 0.75; // rad the beams point down from level
+/** The shop's wood: its door frame, counter and the sign's post. */
+export const WOOD = new Color3(0.42, 0.26, 0.14);
+/** Where the HOUSE OF AI sign stands in the shop's frame, beside the path to the doorway, turned a little towards it. */
+export const SIGN = { x: 1.6, z: RADIUS + 1.6, yaw: -0.35 }; // m, m, rad
 const BEAM_COLOURS = [new Color3(1, 0.15, 0.55), new Color3(0.2, 0.45, 1), new Color3(0.2, 1, 0.45), new Color3(1, 0.8, 0.15)];
 
-const paint = (mesh: Mesh, c: Color3) => {
+/** Colours a mesh's vertices one colour (the shop's materials multiply them by white). */
+export const paint = (mesh: Mesh, c: Color3) => {
   const n = mesh.getTotalVertices(), colours = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) colours.set([c.r, c.g, c.b, 1], i * 4);
   mesh.setVerticesData(VertexBuffer.ColorKind, colours);
@@ -111,7 +116,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     physics.createCollider(desc.setTranslation(at.x, at.y, at.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }).setFriction(0.9));
   };
 
-  const wood = new Color3(0.42, 0.26, 0.14), plum = new Color3(0.36, 0.13, 0.46), cream = new Color3(0.86, 0.74, 0.56);
+  const wood = WOOD, plum = new Color3(0.36, 0.13, 0.46), cream = new Color3(0.86, 0.74, 0.56);
   const solidMat = matte(scene, "shop-wood");
   // ---- the floor: a low disc whose edge runs down into the grass ----
   const rise = floorY - low + 0.05;
@@ -208,8 +213,8 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
   // ---- the sign on a post in front, beside the path to the doorway, facing out ----
   const sign = new TransformNode("shop-sign", scene);
   sign.parent = root;
-  sign.position.set(1.6, 0, RADIUS + 1.6);
-  sign.rotation.y = -0.35; // turned a little towards the path
+  sign.position.set(SIGN.x, 0, SIGN.z);
+  sign.rotation.y = SIGN.yaw;
   const signPost = MeshBuilder.CreateCylinder("sign-post", { height: 1.9, diameter: 0.1 }, scene);
   signPost.position.y = 0.95 - 0.1;
   const frame = MeshBuilder.CreateBox("sign-frame", { width: 1.5, height: 0.6, depth: 0.08 }, scene);

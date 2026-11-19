@@ -17,7 +17,7 @@
 // Clearing's Day; it is checked about once a minute and redrawn only when the date has changed.
 import type { CreateFeature } from "../../game.ts";
 import type { Actor, Offer } from "../../player/index.ts";
-import { buildShop, COUNTER, KEEPER_Z, RADIUS } from "./building.ts";
+import { buildShop, COUNTER, KEEPER_Z, RADIUS, SIGN } from "./building.ts";
 import { shopkeeper, workers } from "./creatures.ts";
 import { calendarBoard } from "./calendar.ts";
 import { shopHud } from "./panel.ts";
@@ -93,7 +93,7 @@ export const create: CreateFeature = async (game) => {
       /** Where the doorway is, outside, and the counter, inside, in the world (for the tour). */
       door: (out = 1.2) => shop.toWorld(0, 0, RADIUS + out),
       counter: () => shop.toWorld(0, 0, COUNTER.z + 0.55),
-      sign: () => shop.toWorld(1.6, 1.5, RADIUS + 1.6),
+      sign: () => shop.toWorld(SIGN.x, 1.5, SIGN.z),
       calendar: { get week() { return calendar.week; }, front: calendar.front, toBoard: calendar.toBoard },
     },
   });
