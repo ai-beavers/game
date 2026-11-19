@@ -1,14 +1,14 @@
-// Mrs. Beaver's quest in the HUD: a small checklist titled "Find Mrs. Beaver" with its three steps, the done ones
+// Mrs. Beaver's quest in the HUD: a small checklist titled "Find Mrs. Beaver" with its four steps, the done ones
 // ticked in gold, the one at hand in full colour, the ones still to come dimmed; once she is freed only the one gold
 // line "Mrs. Beaver found".
 //
-//   const list = questList(stage, ["Find her flower", …]);   list.set(done) (steps done, 0 … 3) · list.update() once a picture
+//   const list = questList(stage, ["Find her flower", …]);   list.set(done) (steps done, 0 … 4) · list.update() once a picture
 //
 // Babylon GUI on stage.hud through Overlay, with the goals: hung under the goals panel (src/features/hud), following
 // its height as the goals wrap. Deliberately not one of the build rules' goals: those steer the HUD's marker, and her
 // hiding place must not be marked. The list says nothing of where the flower or she is.
 //
-// Names, for the tour: "mrs-beaver" is the title (or the one line once she is freed), "mrs-beaver-step-0" … "-2" the
+// Names, for the tour: "mrs-beaver" is the title (or the one line once she is freed), "mrs-beaver-step-0" … "-3" the
 // step lines, each its step's text with "✓ " (done), "› " (at hand) or "· " (to come) before it.
 import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
