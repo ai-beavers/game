@@ -121,12 +121,12 @@ export const pondPatrol = (kit: Kit): Station[] => {
       const start = at(r - 0.3), land = at(shore + 1.5);
       if (!player.afloat) await walkTo(pond.x, pond.z - clear(), { arrived: () => player.afloat, limit: 30 });
       await walkTo(start.x, start.z, { near: 0.3, limit: 30 });
-      expect(player.afloat, "off the south shore, yet not afloat");
+      expect(player.afloat, "off the south-west shore, yet not afloat");
       const out = () => !player.afloat && world.heightAt(player.feet.x, player.feet.z) > level(), dry = after("leaveWater");
       want.to = new Vector3(land.x, 0, land.z);
       try {
-        await until(out, 8, `swam at the south shore for 8 s, still in the water ${(level() - player.feet.y).toFixed(2)} m deep`);
-        await wait(0.8); // and on, up the bank
+        await until(out, 8, `swam at the south-west shore for 8 s, still in the water ${(level() - player.feet.y).toFixed(2)} m deep`);
+        await wait(0.8); // and on, up the shore
       } finally { want.to = undefined; }
       expect(dry(), "out on the shore, but it never left the water");
       expect(out(), "climbed out, then back in the water");

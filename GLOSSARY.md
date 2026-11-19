@@ -18,6 +18,10 @@ _Avoid_: lake, river
 The deep part of the pond, where the beaver can dive.
 _Avoid_: deep end, pit
 
+**Shore**:
+Where the pond meets the land, all the way round; it moves out as the pond rises. The beaver goes into the water and out of it anywhere along it.
+_Avoid_: edge, side, hole, bank (the bank is the clearing's)
+
 **Building site**:
 The flat ground at the pond where the dam is built.
 _Avoid_: construction zone, build area

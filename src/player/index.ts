@@ -13,6 +13,7 @@ import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { RUN_SPEED, WALK_SPEED, type CreatePlayer, type Player, type PlayerOptions, type Stick } from "../contracts.ts";
 import { RAPIER, type Stage } from "../engine.ts";
+import { SHORE_SLOPE } from "../world/terrain.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { keyboard, newInput, type Input, type Keyboard } from "./input.ts";
@@ -29,7 +30,6 @@ const STEP_UP = 0.15, STEP_WIDTH = 0.1; // m: highest step it walks up, and the 
 // (shore.test.ts): the most it must rise is 0.35 m, at the low pond's south shore, over the lip of the basin's wall.
 // Under half the body, so the rocks, the lodge and the dam (never ground anyway) stay out of reach.
 const CLIMB_OUT = 0.4, CLIMB_IN = 2 * RADIUS;
-const SHORE = 30 * Math.PI / 180; // rad: the steepest the shore rises (world.test.ts), room left for that as it climbs in
 const LIFT_EASE = 18; // 1/s: how fast the picture follows a step up
 const SWIM_ACCEL = 2;
 const RIDE_ACCEL = 1.6, RIDE_BRAKE = 1.1; // m/s²: a canoe gets going slowly and glides on
@@ -209,7 +209,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     if (height <= OFFSET + 0.01) return undefined;
     const cast = (at: RAPIER.Vector, way: RAPIER.Vector, distance: number, gap = 0) =>
       physics.castShape(at, still, way, shape, gap, distance, false, flags, undefined, collider, undefined, notCarried);
-    const rise = height + (CLIMB_IN + STEP_WIDTH) * Math.tan(SHORE), over = { x: from.x, y: from.y + rise, z: from.z };
+    const rise = height + (CLIMB_IN + STEP_WIDTH) * Math.tan(SHORE_SLOPE), over = { x: from.x, y: from.y + rise, z: from.z };
     if (cast(from, up, rise) || cast(over, ahead, CLIMB_IN + STEP_WIDTH)) return undefined;
     const inside = { x: over.x + ahead.x * CLIMB_IN, y: over.y, z: over.z + ahead.z * CLIMB_IN };
     const land = cast(inside, { x: 0, y: -1, z: 0 }, rise + 0.05, OFFSET); // set down with the controller's gap

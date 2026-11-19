@@ -51,7 +51,7 @@ function setUp(level: number, extra?: (physics: RAPIER.World) => void) {
   return { player, run };
 }
 
-/** Where the water's edge is along bearing a at this level: the first point out from the middle that is dry. */
+/** Where the shore is along bearing a at this level: the first point out from the middle that is dry. */
 function shoreAt(a: number, level: number) {
   for (let r = 2; r < 8; r += 0.02) if (groundAt(POND.x + Math.cos(a) * r, POND.z + Math.sin(a) * r) > level) return r;
   return 8;
