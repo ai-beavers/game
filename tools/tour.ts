@@ -7,13 +7,13 @@
 //   --port 5193                  where its server listens      --speed real     the tour in real time (default fast)
 //   bun run tour --once [--station Name ...] [--here]
 //                                a check that ends: one whole round (or the named stations, in that order), one line
-//                                per station, exit 0 when none failed, else 1. The tour's saved game is kept between
-//                                runs (recordings/tour-save.json, -<port>.json off the default port), so run after run
-//                                the dam grows and then the lodge; a save left by another build (commit and diff) is
-//                                thrown away, not continued.
+//                                per station, exit 0 when none failed, else 1. The tour's world is kept between
+//                                runs: its server keeps it in a file (recordings/tour-world.json.tour, -<port> off
+//                                the default port), so run after run the dam grows and then the lodge; a world left
+//                                by another build (commit and diff) is thrown away, not continued.
 //   bun run tour --once --here --repeat 30 [--beside]
 //                                the soak: that many --once runs one after the other, a line each (fresh or continued
-//                                save, what failed), exit 1 when any failed; --beside keeps a second, endless tour
+//                                world, what failed), exit 1 when any failed; --beside keeps a second, endless tour
 //                                running on port + 1 meanwhile, as load.
 //
 // Prints one line per station and round, nothing else. Each station's result goes as a line of JSON into
@@ -35,8 +35,9 @@ const port = Number(option("port", "5193")), here = args.includes("--here"), spe
 const named = args.flatMap((a, i) => a === "--station" && args[i + 1] ? [args[i + 1]!] : []);
 const root = process.cwd(), tree = here ? root : join(tmpdir(), `beaver-tour-${port}`);
 const url = `http://localhost:${port}/?play&tour=${speed === "fast" ? "fast" : ""}${named.map((n) => `&station=${encodeURIComponent(n)}`).join("")}`;
-// --once: the tour's saved game (localStorage "beaver.build.tour*") and the build that wrote it
-const SAVE = join(root, "recordings", `tour-save${port === 5193 ? "" : `-${port}`}.json`);
+// --once: where the server keeps its worlds (WORLD_FILE; the tour's in KEPT, as server.ts names it), and beside it the
+// build that wrote them
+const WORLD_FILE = join(root, "recordings", `tour-world${port === 5193 ? "" : `-${port}`}.json`), KEPT = `${WORLD_FILE}.tour`, BUILD = `${WORLD_FILE}.build`;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 const git = (cwd: string, ...a: string[]) => {
@@ -63,8 +64,8 @@ if (repeat > 0) {
     const out = await new Response(child.stdout).text(), code = await child.exited;
     const fails = out.split("\n").filter((l) => l.startsWith("[tour] FAIL") || l.startsWith("[runner] the page")).map((l) => l.replace(/^\[\w+\] /, ""));
     if (code !== 0) failed++;
-    const save = out.includes("[runner] a fresh saved game") ? "fresh" : "continued", round = /\[tour\] round \d+: (\S+ ok)/.exec(out)?.[1] ?? "";
-    console.log(`[soak] run ${i}/${repeat}, ${save} save${beside ? ", a second tour beside" : ""}: ${code === 0 ? `ok, ${round}` : fails.join("; ") || `exit ${code}`}`);
+    const save = out.includes("[runner] a fresh world") ? "fresh" : "continued", round = /\[tour\] round \d+: (\S+ ok)/.exec(out)?.[1] ?? "";
+    console.log(`[soak] run ${i}/${repeat}, ${save} world${beside ? ", a second tour beside" : ""}: ${code === 0 ? `ok, ${round}` : fails.join("; ") || `exit ${code}`}`);
     appendFileSync("recordings/soak.log", `---- run ${i}/${repeat} ${new Date().toISOString()} exit ${code}\n${out}`); // every line, for a failure
   }
   beside?.kill();
@@ -90,7 +91,9 @@ let server: Subprocess | undefined;
 async function serve() {
   server?.kill();
   await server?.exited;
-  server = Bun.spawn(["bun", "server.ts"], { cwd: tree, env: { ...process.env, NODE_ENV: "production", PORT: String(port) }, stdin: "ignore", stdout: "ignore", stderr: "inherit" });
+  if (once) console.log(keptWorld() ? "[runner] the tour's world goes on" : "[runner] a fresh world");
+  const env = { ...process.env, NODE_ENV: "production", PORT: String(port), ...(once ? { WORLD_FILE } : {}) };
+  server = Bun.spawn(["bun", "server.ts"], { cwd: tree, env, stdin: "ignore", stdout: "ignore", stderr: "inherit" });
   for (let i = 0; i < 150; i++) {
     if (await fetch(`http://localhost:${port}/`).then((r) => r.ok, () => false)) return;
     await sleep(200);
@@ -111,19 +114,11 @@ async function open() {
     console.log(text);
     if (text.startsWith("[tour] FAIL")) failures++;
     if (/^\[tour\] (ok|FAIL|skipped) /.test(text)) kept.push(keep(p, text.startsWith("[tour] FAIL")));
-    if (once && text.startsWith("[tour] round ")) void done(p);
+    if (once && text.startsWith("[tour] round ")) void done();
   });
   p.on("Runtime.exceptionThrown", (e) => console.log("[exception]", e.exceptionDetails.exception?.description ?? e.exceptionDetails.text));
   p.on("Inspector.targetCrashed", () => { console.log("[runner] the page crashed"); heard = 0; });
   await p.send("Inspector.enable");
-  // --once: the saved game of the last run, put back before the game reads it (once a tab: not after the tour's reset).
-  if (once) {
-    const saved = savedGame();
-    console.log(saved ? "[runner] the saved game goes on" : "[runner] a fresh saved game");
-    if (saved) await p.send("Page.addScriptToEvaluateOnNewDocument", {
-      source: `if (!sessionStorage.tourSave) { sessionStorage.tourSave = 1; for (const [k, v] of Object.entries(${JSON.stringify(saved)})) localStorage.setItem(k, v); }`,
-    });
-  }
   await p.send("Page.navigate", { url });
   for (let t = 0; !/\bready\b/i.test(String(await p.evaluate("document.title"))); t += 200) {
     if (t > 60_000) { console.log("[runner] the page never got ready"); if (once) await stop(1); break; }
@@ -147,28 +142,29 @@ async function keep(p: Page, failed: boolean) {
   console.log(`[runner] ${picture}`);
 }
 
-/** Which game is played: the commit, and with --here a hash of the changes on top of it. A saved game is only
+/** Which game is played: the commit, and with --here a hash of the changes on top of it. A kept world is only
  *  continued by the build that wrote it; another's rules (or world) may not be able to go on from it. */
 function buildId() {
   if (!here) return sha;
   try { return `${git(root, "rev-parse", "HEAD")}+${Bun.hash(git(root, "diff", "HEAD")).toString(36)}`; } catch { return "here"; }
 }
 
-/** The saved game of the last run, if this build wrote it and something is in it. */
-function savedGame(): Record<string, string> | undefined {
-  try {
-    const { build, storage } = JSON.parse(readFileSync(SAVE, "utf8"));
-    if (build !== buildId()) { console.log("[runner] the saved game is from another build: thrown away"); return undefined; }
-    return Object.keys(storage ?? {}).length ? storage : undefined;
-  } catch { return undefined; } // none yet, or broken
+/** --once, before the server starts: whether it will find the tour's world of the last run, with something in it. One
+ *  that another build wrote is thrown away first. */
+function keptWorld(): boolean {
+  mkdirSync(dirname(WORLD_FILE), { recursive: true });
+  const wrote = existsSync(BUILD) ? readFileSync(BUILD, "utf8") : "";
+  if (wrote !== buildId()) {
+    if (existsSync(KEPT)) console.log("[runner] the tour's world is from another build: thrown away");
+    rmSync(KEPT, { force: true });
+    writeFileSync(BUILD, buildId());
+  }
+  try { return JSON.parse(readFileSync(KEPT, "utf8")).build.length > 0; } catch { return false; } // none yet, or broken
 }
 
-/** --once: the round is through; its saved game kept for the next run (empty when the tour started it anew). */
-async function done(p: Page) {
+/** --once: the round is through. The server keeps the tour's world as it ends (empty when the tour started it anew). */
+async function done() {
   await Promise.all(kept);
-  const save = await p.evaluate(`JSON.stringify(Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.startsWith("beaver.build.tour"))))`).catch(() => undefined);
-  mkdirSync(dirname(SAVE), { recursive: true });
-  writeFileSync(SAVE, JSON.stringify({ build: buildId(), storage: JSON.parse(typeof save === "string" ? save : "{}") }));
   await stop(failures ? 1 : 0);
 }
 

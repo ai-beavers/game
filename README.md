@@ -10,8 +10,8 @@ bun dev                      the game on port 5180, for everyone on the network 
 bun shot <url> --out shots/x.png      look at a page without a desktop: screenshot + console (tools/shot.ts)
 bun run check                typecheck and tests
 bun run tour --once --here   the whole tour once as a check, on the files as they are: one line per station, exit code 0 or 1;
-                             --station Name (repeatable) plays only those. The saved game is kept between runs
-                             (recordings/tour-save.json), so the second run reaches the lodge
+                             --station Name (repeatable) plays only those. The tour's world is kept between runs
+                             (its server's file, recordings/tour-world.json.tour), so the second run reaches the lodge
 bun run tour --once --here --repeat 30 [--beside]
                              the soak: that many whole tours in a row, exit code 1 if any failed (--beside: under load)
 /?mute                       the game with its sound off, without touching the saved settings (for stream tiles)

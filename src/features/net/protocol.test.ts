@@ -201,7 +201,8 @@ describe("build changes", () => {
       { type: "split", tree: 3 }, { type: "split", tree: 3, at: 1.7e12 }, { type: "grow", tree: 3 }, { type: "place", slot: 0, stick: "t3:4" }, { type: "place", slot: 1, stick: "w12" }];
     expect(build(all)).toEqual({ t: "build", c: all as BuildChange[] });
     expect(build([{ type: "bite", tree: 1, evil: 1 }])).toEqual({ t: "build", c: [{ type: "bite", tree: 1 }] });
-    expect(build([{ type: "find" }], "bring")?.t).toBe("bring");
+    expect(build([{ type: "find" }], "bring")).toBeUndefined(); // a page brings no world of its own
+    expect(parseClient(JSON.stringify({ t: "reset", evil: 1 }))).toEqual({ t: "reset" });
   });
 
   test("leaves out what is unknown, out of range or malformed", () => {
@@ -394,8 +395,8 @@ describe("build changes", () => {
     }
     for (let k = 0; k < STICKS; k++) take({ type: "place", slot: k, stick: `t${k % trees}:${k % 6}` });
     expect(world.dam.length).toBe(STICKS);
-    const bring = JSON.stringify({ t: "bring", c: changesOf(world) });
-    expect(bring.length).toBeLessThan(MAX_MESSAGE);
-    expect(parseClient(bring)).toEqual({ t: "bring", c: changesOf(world) });
+    const whole = JSON.stringify({ t: "build", c: changesOf(world) }); // all of it made while the connection was lost
+    expect(whole.length).toBeLessThan(MAX_MESSAGE);
+    expect(parseClient(whole)).toEqual({ t: "build", c: changesOf(world) });
   });
 });

@@ -7,6 +7,7 @@ import { holdInHand } from "../../player/grip.ts";
 //   things.setMode("host" | "guest" | "alone");
 //   host:  things.places(all) → Place[] to send;  things.push(id, nx, nz, speed, from) for a guest pushing a crate
 //   guest: things.receive(places) on each update; things.update() once a frame moves the copies
+//   host:  things.receive(places) puts them there at once (the server's, to a host that followed nobody)
 //   things.hold(id, holder) / things.release(place, velocity)   a stick in another player's hand, and where it went
 //   things.split(tree, state)   after a tree broke into wood (event treeSplits): the new things get their ids
 //   things.sync()               after anything may have taken a stick out of the world (into the dam, or traded)
@@ -175,6 +176,8 @@ export function createThings(game: Game, state?: BuildState) {
 
     /** Guest: the host says where things are. */
     receive(places: Place[], now = performance.now()) {
+      // To a host only the server speaks: where the things lay before this player came in as the first.
+      if (mode === "host") for (const p of places) { const thing = things.get(p[0]); if (thing?.body.isEnabled() && !held.has(p[0])) put(thing, p); }
       if (mode !== "guest") return;
       for (const p of places) tracks.get(p[0])?.push(now, p.slice(1));
     },

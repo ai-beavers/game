@@ -5,23 +5,26 @@
 //   createGame(canvas, [..., net])     nothing else to call; window.net holds the state for tools and tests
 //
 // Opened without server.ts (plain `bun ./index.html`) it finds no /net/info and only keeps the place over a reload.
-// It needs a name (settings.name): the HUD's start screen asks for it; without the HUD (lab/net) its own dialog
+// It needs a name (settings.name): the HUD's start screen asks for it; without the HUD its own dialog
 // (name.ts) does. Then it connects to /net and, about 20 times a second, sends where the beaver is, which way it faces
 // and its Motion; the others rebuild it from that (remote.ts), as a solid beaver. The loose things are simulated by
 // one player, the host (the one in longest), and followed by the rest (things.ts). When the connection drops it says
 // so quietly, plays on alone, and tries again; a full server says so and is tried only every 30 s. When the server
 // runs another build than the one that served this page (deployed since), the page reloads once on reconnecting.
 //
-// The world's work (src/features/build) is a list of changes the server keeps in order. Saved against shared: the
-// server's world counts. Before any feature is made, this module asks the server for its world; when the server has
-// one, it is written over the saved one in localStorage ("beaver.build", with ?tour "beaver.build.tour"), so the build feature starts in it (the
-// player's own saved world is kept once in "beaver.build.solo"). While the server's world is still empty, the first
-// player in with a saved world brings it ("bring"); one who comes later takes the server's, reloading the page when
-// the two differ. After that, every change made here (buildChange, remote false) goes to the server, which checks it
-// and passes it on to all; those from others come back as buildChange with remote true.
+// The world's work (src/features/build) is a list of changes the server keeps in order, and the server's world is
+// the only one: this page keeps none. Before any feature is made, this module asks the server for its world and hands
+// it to the build feature to start in (build `start`). After that, every change made here (buildChange, remote false)
+// goes to the server, which checks it and passes it on to all; those from others come back as buildChange with remote
+// true. When the server's world is another than the one here (it started again, or refused a change), the page loads
+// again and starts in the server's. Without a server the game is played alone in a fresh world that ends with the page.
+//
+// With ?tour the page plays in the tour's own world (protocol.ts TOUR_WORLD), which the server keeps beside the
+// players': there the tour may start the world afresh (window.net.reset()).
 //
 // The day is the server's too: on every welcome the sky follows the hour it sends (game.sky.follow), and when the
-// connection drops it goes on alone. A page opened with ?hour, ?clock or ?speed keeps its own day, for pictures.
+// connection drops it goes on alone. A page opened with ?hour, ?clock or ?speed keeps its own day, for pictures; so does the
+// tour, whose sky stations set the hour.
 //
 // The place (feet, facing, camera) is kept in sessionStorage, so a reload (the dev server's live reload, or the
 // player's) comes back where it was.
@@ -29,10 +32,11 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { RAPIER, STEP } from "../../engine.ts";
 import type { CreateFeature } from "../../game.ts";
 import { HEIGHT, RADIUS } from "../../player/index.ts";
-import { load, type BuildChange } from "../build/rules.ts";
+import { buildOf, start } from "../build/index.ts";
+import type { BuildChange } from "../build/rules.ts";
 import { askName } from "./name.ts";
 import {
-  changesOf, INFO_PATH, packMotion, PATH, replay, sameWorld, SEND_RATE, shouldReload, stickId, type ClientMessage, type Place, type ServerMessage,
+  INFO_PATH, packMotion, PATH, replay, sameWorld, SEND_RATE, shouldReload, stickId, TOUR_WORLD, type ClientMessage, type Place, type ServerMessage,
 } from "./protocol.ts";
 import { createRemote, type Remote } from "./remote.ts";
 import { createThings } from "./things.ts";
@@ -43,48 +47,39 @@ const FULL_EVERY = 2; // s: the host sends every thing this often, moving or not
 const PUSH_FOR = 0.2; // s a guest's push counts after its last state
 const PLACES = 120; // things per message
 const HEAD = 0.9; // m over the feet: where a name tag is looked for behind walls
-// Where src/features/build keeps its world, and where its loose wood lay (as it names them there).
-const BUILD_KEY = new URLSearchParams(location.search).has("tour") ? "beaver.build.tour" : "beaver.build", LOOSE_KEY = `${BUILD_KEY}.loose`;
-const OWN_DAY = ["hour", "clock", "speed"].some((key) => new URLSearchParams(location.search).has(key));
-const SOLO_KEY = `${BUILD_KEY}.solo`, PLACE_KEY = "beaver.place", RESET_KEY = "beaver.reset", VERSION_KEY = "beaver.reloadedFor";
+// The world this page plays in: the tour's own with ?tour (it never touches a game someone plays), else the players'.
+const WORLD = new URLSearchParams(location.search).has("tour") ? `world=${TOUR_WORLD}` : "";
+// A page that keeps its own day: one opened for a picture, and the tour, whose sky stations set the hour.
+const OWN_DAY = ["hour", "clock", "speed", "tour"].some((key) => new URLSearchParams(location.search).has(key));
+const PLACE_KEY = "beaver.place", VERSION_KEY = "beaver.reloadedFor";
 
-const read = (store: () => Storage, key: string) => { try { return store().getItem(key); } catch { return null; } };
-const write = (store: () => Storage, key: string, value: string | null) => {
-  try { if (value === null) store().removeItem(key); else store().setItem(key, value); } catch { /* not kept */ }
-};
-const local = () => localStorage, session = () => sessionStorage;
+const read = (key: string) => { try { return sessionStorage.getItem(key); } catch { return null; } };
+const write = (key: string, value: string) => { try { sessionStorage.setItem(key, value); } catch { /* not kept */ } };
 
-async function serverInfo(): Promise<{ addresses: string[]; epoch: string; build: BuildChange[]; version?: string } | undefined> {
+async function serverInfo(): Promise<{ addresses: string[]; epoch: string; build: BuildChange[]; now?: number; version?: string } | undefined> {
   try {
-    const response = await fetch(`${INFO_PATH}?build`, { signal: AbortSignal.timeout(2000), cache: "no-store" });
+    const response = await fetch(`${INFO_PATH}?build&${WORLD}`, { signal: AbortSignal.timeout(2000), cache: "no-store" });
     if (!response.ok || !response.headers.get("content-type")?.includes("json")) return;
     const info = await response.json();
     return Array.isArray(info?.addresses) && Array.isArray(info.build) && typeof info.epoch === "string" ? info : undefined;
   } catch { return; }
 }
 
-// ---- before any feature is made: the server's world becomes the saved one -------------------------------------------
-// A reset on the server forgets the saved world; the flag lives over the reload so a late save cannot bring it back.
-if (read(session, RESET_KEY)) { write(local, BUILD_KEY, null); write(local, LOOSE_KEY, null); write(session, RESET_KEY, null); }
-const info = new URLSearchParams(location.search).has("tour") ? undefined : await serverInfo(); // the tour plays alone (src/features/tour)
-/** The server's world this page holds: its epoch, how many of its changes; own: the saved world is the player's own. */
-const shared = { epoch: info?.epoch ?? "", have: 0, own: true };
-if (info?.build.length) {
-  const theirs = replay(info.build), saved = read(local, BUILD_KEY), mine = load(saved);
-  if (!sameWorld(mine, theirs)) {
-    if (changesOf(mine).length && read(local, SOLO_KEY) === null) write(local, SOLO_KEY, saved);
-    write(local, BUILD_KEY, JSON.stringify(theirs));
-    write(local, LOOSE_KEY, null); // where wood lay in another world
-  }
-  shared.have = info.build.length;
-  shared.own = false;
+// ---- before any feature is made: the server's world is the one the build feature starts in --------------------------
+const info = await serverInfo();
+/** The server's world this page holds: its epoch, and how many of its changes. */
+const shared = { epoch: info?.epoch ?? "", have: info?.build.length ?? 0 };
+if (info) {
+  // When wood went is the server's time: counted on from here by this page's clock, which may be set otherwise.
+  const ahead = Date.now() - (info.now ?? Date.now());
+  start.changes = info.build.map((c) => c.type === "split" && c.at !== undefined ? { ...c, at: c.at + ahead } : c);
 }
 
 export const create: CreateFeature = (game) => {
   const { stage, player, settings, world, events } = game;
 
   // ---- the place, kept over a reload ----
-  const kept = JSON.parse(read(session, PLACE_KEY) ?? "null") as number[] | null;
+  const kept = JSON.parse(read(PLACE_KEY) ?? "null") as number[] | null;
   if (Array.isArray(kept) && kept.length === 6 && kept.every(Number.isFinite)) {
     const [x, y, z, facing, yaw, pitch] = kept as [number, number, number, number, number, number];
     player.teleport(x, Math.max(y, world.heightAt(x, z) - 0.5), z, facing);
@@ -93,22 +88,24 @@ export const create: CreateFeature = (game) => {
   }
   const keepPlace = () => {
     const f = player.feet, r = (v: number) => Math.round(v * 1000) / 1000;
-    write(session, PLACE_KEY, JSON.stringify([f.x, f.y, f.z, player.facing, player.camera.yaw, player.camera.pitch].map(r)));
+    write(PLACE_KEY, JSON.stringify([f.x, f.y, f.z, player.facing, player.camera.yaw, player.camera.pitch].map(r)));
   };
   setInterval(keepPlace, 1000);
   addEventListener("pagehide", keepPlace);
   const reload = () => { keepPlace(); location.reload(); };
 
   if (!info) return {};
-  const building = !!player.actor; // the build feature runs (it is made before this one and takes the context key)
-  const things = createThings(game, building ? load(read(local, BUILD_KEY)) : undefined);
+  const built = buildOf(stage.scene)?.state, building = !!built; // the build feature runs (it is made before this one)
+  const things = createThings(game, built);
   const remotes = new Map<number, Remote & { holding: number; push?: { u: [number, number, number, number]; at: number } }>();
   let socket: WebSocket | undefined, me = -1, host = -1, tries = 0, connected = false, askingName = false, named = "";
   let carried = -1, pushing: [number, number, number, number] | undefined, sendAll = true, sinceFull = 0, time = 0;
   let address = info.addresses[0] ?? location.href, full = ""; // full: what the server said when it had no room
-  const pending: BuildChange[] = []; // made here while not connected: sent on the next welcome
+  const pending: BuildChange[] = []; // made here and not yet sent: at once, or while not connected on the next welcome
 
   const send = (m: ClientMessage) => { if (connected && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(m)); };
+  /** Changes made in one go (a tree's last bite, its fall and its rest) leave as one message. */
+  const flush = () => { if (connected && socket?.readyState === WebSocket.OPEN && pending.length) send({ t: "build", c: pending.splice(0) }); };
   const nameOf = (id: number) => remotes.get(id)?.name ?? "Someone";
 
   const ui = createUi(stage, {
@@ -167,30 +164,27 @@ export const create: CreateFeature = (game) => {
   };
   if (building) {
     events.on("buildChange", ({ change, remote }) => {
-      if (remote) return;
-      if (connected) send({ t: "build", c: [change] }); else pending.push(change);
+      if (!remote && pending.push(change) === 1) queueMicrotask(flush);
     });
-    events.on("treeSplits", ({ tree }) => things.split(tree, load(read(local, BUILD_KEY))));
+    events.on("treeSplits", ({ tree }) => things.split(tree, built));
   }
   /** Takes the server's world: nothing to do when it is the one here, otherwise the page starts again in it. */
   const adopt = (build: BuildChange[]) => {
-    if (!building || sameWorld(load(read(local, BUILD_KEY)), replay(build))) { shared.have = build.length; return; }
-    reload(); // the module above writes the server's world before the build feature reads it
+    if (!built || sameWorld(built, replay(build))) { shared.have = build.length; return; }
+    reload(); // the module above asks the server again and hands the build feature its world
   };
-  /** On welcome: catch up with the server's world, or settle whose world counts. */
+  /** On welcome: catch up with the server's world, or take it whole when it is another than the one here. */
   const join = (m: Extract<ServerMessage, { t: "welcome" }>) => {
-    const own = shared.own || m.epoch !== shared.epoch || m.from !== shared.have;
+    const same = m.epoch === shared.epoch && m.from === shared.have;
     shared.epoch = m.epoch;
-    shared.own = false;
-    if (!own) {
+    if (same) {
       for (const c of m.build) if (building) fromOthers(c);
       shared.have = m.from + m.build.length;
-      if (pending.length) send({ t: "build", c: pending.splice(0) });
+      flush();
       return;
     }
-    pending.length = 0; // in the saved world, which is brought or replaced as a whole
-    const mine = building ? changesOf(load(read(local, BUILD_KEY))) : [];
-    if (!m.build.length && mine.length) { shared.have = 0; send({ t: "bring", c: mine }); } else adopt(m.build);
+    pending.length = 0; // made in a world the server does not hold
+    adopt(m.build);
   };
 
   const history: string[] = []; // joins, leaves and host changes, for tests (window.net.history)
@@ -199,7 +193,7 @@ export const create: CreateFeature = (game) => {
     switch (m.t) {
       case "welcome":
         // The server was deployed again since this page loaded (its build differs): load the new page, once.
-        if (shouldReload(info?.version ?? "", m.version ?? "", read(session, VERSION_KEY))) { write(session, VERSION_KEY, m.version); reload(); return; }
+        if (shouldReload(info?.version ?? "", m.version ?? "", read(VERSION_KEY))) { write(VERSION_KEY, m.version); reload(); return; }
         me = m.id; host = m.host; connected = true; tries = 0; sendAll = true; away = false;
         if (!OWN_DAY && Number.isFinite(m.hour)) game.sky?.follow(m.hour);
         for (const p of m.players) addRemote(p.id, p.name);
@@ -245,13 +239,13 @@ export const create: CreateFeature = (game) => {
       case "world": shared.epoch = m.epoch; adopt(m.build); return;
       case "epoch": shared.epoch = m.epoch; shared.have = m.n; return; // the same world, its changes numbered anew
       case "full": full = `Server full (${m.players}/${m.max}), playing alone`; return;
-      case "reset": if (!building) return; write(local, BUILD_KEY, null); write(local, LOOSE_KEY, null); write(session, RESET_KEY, "1"); reload(); return;
+      case "reset": if (building) reload(); return;
     }
   }
 
   function connect() {
     if (!settings.values.name || socket) return;
-    const ws = socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${PATH}`);
+    const ws = socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${PATH}?${WORLD}`);
     ws.onopen = () => {
       named = settings.values.name;
       ws.send(JSON.stringify({ t: "hello", name: named, ...(shared.epoch ? { epoch: shared.epoch, have: shared.have } : {}) } satisfies ClientMessage));
@@ -291,7 +285,11 @@ export const create: CreateFeature = (game) => {
   let started = false;
   const collision = new Vector3(), eye = new Vector3(), ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
   const walls = RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
-  Object.assign(window, { net: { things, remotes, history, shared, get me() { return me; }, get host() { return host; }, get connected() { return connected; }, ui } });
+  Object.assign(window, { net: {
+    things, remotes, history, shared, get me() { return me; }, get host() { return host; }, get connected() { return connected; }, ui,
+    /** The tour's world only: starts it afresh for everyone in it (the server tells every page to load again). False: not connected. */
+    reset() { send({ t: "reset" }); return connected; },
+  } });
 
   return {
     step(dt) {

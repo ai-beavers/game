@@ -15,6 +15,11 @@ export { DAY_SECONDS, hourAt, START } from "../sky/day.ts";
 import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
+/** The worlds a server holds: the players' ("") and the tour's own, where the beaver that plays by itself
+ *  (src/features/tour) works without touching a game someone plays. A page names the tour's with ?world=tour on PATH
+ *  and INFO_PATH; any other address means the players' world. */
+export const TOUR_WORLD = "tour";
+export const worldOf = (search: URLSearchParams) => search.get("world") === TOUR_WORLD ? TOUR_WORLD : "";
 /** On Cloudflare only (worker.ts): POST with the reset token starts the world afresh. */
 export const RESET_PATH = "/net/reset";
 export const MAX_PLAYERS = 16;
@@ -98,8 +103,8 @@ export type ClientMessage =
   | { t: "drop"; s: Place; v: [number, number, number] }
   /** Changes the sender made to the build feature's world, in order. */
   | { t: "build"; c: BuildChange[] }
-  /** The sender's whole saved world, for a server whose world is still empty. */
-  | { t: "bring"; c: BuildChange[] };
+  /** In the tour's world only (room.ts, sandbox): start the world afresh. */
+  | { t: "reset" };
 
 export interface PlayerInfo { id: number; name: string }
 
@@ -124,11 +129,11 @@ export type ServerMessage =
   | { t: "need" }
   /** Build changes the server took, numbered from n in its list; to everyone, the sender (id) too. */
   | { t: "build"; id: number; n: number; c: BuildChange[] }
-  /** The server's whole world, to a player whose "bring" came too late or whose change it refused: take this one. */
+  /** The server's whole world, to a player whose change it refused: take this one. */
   | { t: "world"; epoch: string; build: BuildChange[] }
   /** The server shortened its list (compact): the same world, from now on n changes long under this epoch. */
   | { t: "epoch"; epoch: string; n: number }
-  /** The world was reset on the server: forget yours. */
+  /** The world was reset on the server: start again in the new one. */
   | { t: "reset" };
 
 // ---- checks -----------------------------------------------------------------------------------------------------
@@ -215,12 +220,13 @@ export function parseClient(text: unknown): ClientMessage | undefined {
       if (!place(m.s) || !(list(v, 3) && v.every((x) => num(x, -30, 30)))) return;
       return { t: "drop", s: m.s, v: v as [number, number, number] };
     }
-    case "build": case "bring": {
+    case "build": {
       // Each change checked alone: the good ones of a list pass, the rest are left out.
       if (!Array.isArray(m.c) || m.c.length > MAX_CHANGES) return;
       const c = m.c.map(parseChange).filter((x) => x !== undefined);
-      return c.length ? { t: m.t, c } : undefined;
+      return c.length ? { t: "build", c } : undefined;
     }
+    case "reset": return { t: "reset" };
   }
 }
 
@@ -233,14 +239,15 @@ export const MAX_BITES = bitesToFell(Infinity);
  *  twice, a stick not used twice: neither built in twice, traded twice, nor both), no tree takes more bites than any tree needs, and a tree grows back only REGROW
  *  s after its wood went by `now`, the server's clock (rules.ts, the rule). Applies it when it passes; a split it
  *  takes is stamped with now (change.at, whatever the sender wrote), so the log and its file keep when. The log
- *  stays bounded as trees grow back because the server compacts it. */
-export function admit(world: BuildState, change: BuildChange, now = Date.now()): boolean {
+ *  stays bounded as trees grow back because the server compacts it. anytime: a tree may grow back before its time
+ *  (the tour's world, where the tour does not wait REGROW s). */
+export function admit(world: BuildState, change: BuildChange, now = Date.now(), anytime = false): boolean {
   const t = "tree" in change ? world.trees[change.tree] : undefined;
   if (change.type === "bite") {
     const a = live(t);
     if (a && (a.fell === undefined ? a.bites >= MAX_BITES : a.splitBites >= BITES_TO_SPLIT)) return false;
   }
-  if (change.type === "grow" && !(t?.split && now >= (t.gone ?? Infinity) + REGROW * 1000)) return false;
+  if (change.type === "grow" && !(t?.split && (anytime || now >= (t.gone ?? Infinity) + REGROW * 1000))) return false;
   if (!apply(world, change, now)) return false;
   if (change.type === "split") change.at = now;
   return true;
