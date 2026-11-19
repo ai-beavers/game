@@ -3,10 +3,22 @@
 import { expect, test } from "bun:test";
 import { placeAll, SPAWN } from "../../world/place.ts";
 import { heightAt, pondRatio, RIM, SITE, slopeAt, WATER_LEVEL } from "../../world/terrain.ts";
-// Where the Shop stands (src/features/shop/index.ts SHOP; that file needs a browser).
-const SHOP = { x: -9.5, z: 8.5 };
+// Where the Shop stands (src/features/shop/index.ts SHOP; that file needs a browser), turned to face the Clearing.
+const SHOP = { x: -9.5, z: 8.5 }, FACING = Math.atan2(0 - SHOP.x, 2 - SHOP.z);
+/** A point in the Shop's frame (building.ts toWorld), in the world. */
+const shopToWorld = (x: number, z: number) => ({ x: SHOP.x + x * Math.cos(FACING) + z * Math.sin(FACING), z: SHOP.z - x * Math.sin(FACING) + z * Math.cos(FACING) });
+// In front of the Shop: the post of its sign (building.ts SIGN) and the Calendar board, 2.4 m wide, mirrored across
+// the path from the sign and turned the other way (calendar.ts AT).
+const SIGN_POST = shopToWorld(1.6, 2.7 + 1.6), BOARD = shopToWorld(-1.6 - 0.85, 2.7 + 1.6), BOARD_YAW = FACING + 0.35;
+const BOARD_ENDS = [-1.25, 1.25].map((t) => ({ x: BOARD.x + Math.cos(BOARD_YAW) * t, z: BOARD.z - Math.sin(BOARD_YAW) * t }));
+/** m from p to the Calendar board's face, end to end. */
+const toBoard = (p: { x: number; z: number }) => {
+  const [a, b] = BOARD_ENDS as [{ x: number; z: number }, { x: number; z: number }], dx = b.x - a.x, dz = b.z - a.z;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz)));
+  return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
+};
 import { POST } from "../trade/place.ts";
-import { done, FIND, FLOWER, GNAW, find, gnaw, HIDING, HOME, offered, pick, REACH, rows, take } from "./rules.ts";
+import { BENDS, done, FIND, FLOWER, GNAW, find, gnaw, HIDING, HOME, offered, pick, REACH, rows, take, wayHome } from "./rules.ts";
 
 test("each visit picks one of the three hiding places from the random number given, and starts on the flower step", () => {
   expect(HIDING).toHaveLength(3);
@@ -37,18 +49,31 @@ test("the pen stands clear of the trees, rocks, stumps, logs, bushes and sticks 
   for (const p of HIDING) for (const { s, r } of things) expect(Math.hypot(s.x - p.x, s.z - p.z)).toBeGreaterThan(r);
 });
 
-test("from every hiding place a straight way over dry land leads home, past nothing laid out solid", () => {
+test("from every hiding place a way of straight legs over dry land leads home, past nothing laid out solid", () => {
   const layout = placeAll();
   const solid = [...layout.tree.map((s) => ({ s, r: 0.8 })), ...layout.rock.map((s) => ({ s, r: 0.5 * s.scale + 0.3 })),
     ...layout.stump.map((s) => ({ s, r: 0.6 })), ...layout.log.map((s) => ({ s, r: 1.3 })), ...layout.crate.map((s) => ({ s, r: 0.5 })),
-    { s: SHOP, r: 3.5 }, { s: POST, r: 1.6 }];
+    { s: SHOP, r: 3.5 }, { s: POST, r: 1.6 }, { s: SIGN_POST, r: 0.4 }];
   expect(Math.hypot(HOME.x - SITE.x, HOME.z - SITE.z)).toBeLessThan(SITE.radius + 2);
-  for (const p of HIDING) for (let t = 0; t <= 1; t += 0.01) {
-    const x = p.x + (HOME.x - p.x) * t, z = p.z + (HOME.z - p.z) * t;
-    expect(heightAt(x, z)).toBeGreaterThan(WATER_LEVEL + 0.03);
-    expect(pondRatio(x, z)).toBeGreaterThan(1.2);
-    for (const { s, r } of solid) expect(Math.hypot(s.x - x, s.z - z)).toBeGreaterThan(r);
-  }
+  expect(BENDS).toHaveLength(HIDING.length);
+  HIDING.forEach((p, i) => {
+    const way = wayHome(i);
+    expect(way.at(-1)).toEqual(HOME);
+    expect(way.length).toBeLessThanOrEqual(2); // home straight, or round one bend
+    let from = p, walked = 0;
+    for (const to of way) {
+      for (let t = 0; t <= 1; t += 0.01) {
+        const x = from.x + (to.x - from.x) * t, z = from.z + (to.z - from.z) * t;
+        expect(heightAt(x, z)).toBeGreaterThan(WATER_LEVEL + 0.03);
+        expect(pondRatio(x, z)).toBeGreaterThan(1.2);
+        for (const { s, r } of solid) expect(Math.hypot(s.x - x, s.z - z)).toBeGreaterThan(r);
+        expect(toBoard({ x, z })).toBeGreaterThan(0.4); // she walks past the board, not through it
+      }
+      walked += Math.hypot(to.x - from.x, to.z - from.z);
+      from = to;
+    }
+    expect(walked).toBeLessThan(Math.hypot(HOME.x - p.x, HOME.z - p.z) + 1); // a bend is no long way round
+  });
 });
 
 test("every flower spot lies on dry land, clear of the pond, the site, the dam, the shop, the post and the spawn, about halfway to its hiding place", () => {

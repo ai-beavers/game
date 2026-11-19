@@ -24,7 +24,7 @@ import { RAPIER } from "../../engine.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import { buildDropped, buildPen, mrsBeaver, PEN } from "./creature.ts";
 import { questList } from "./panel.ts";
-import { done, find, FLOWER, gnaw, GNAW, HIDING, HOME, offered, pick, take, type Quest } from "./rules.ts";
+import { done, find, FLOWER, gnaw, GNAW, HIDING, HOME, offered, pick, take, wayHome, type Quest } from "./rules.ts";
 
 const NEAR = 28; // m: within this she moves (or while she walks home)
 const WALK = 1.1; // m/s on her way home
@@ -88,6 +88,8 @@ export const create: CreateFeature = (game) => {
   let her: Awaited<ReturnType<typeof mrsBeaver>> | undefined;
   /** standing in the pen, walking home, waiting out of sight to appear at home (no clear way), or at home. */
   let phase: "pen" | "walk" | "unseen" | "home" = "pen";
+  /** While she walks home: the point of her way home (wayHome) she walks to now. */
+  let leg = 0;
   const place = () => {
     if (!her) return;
     const root = her.beaver.root, p = phase === "home" ? HOME : where();
@@ -98,19 +100,25 @@ export const create: CreateFeature = (game) => {
   /** Her flower behind her ear once freed, not while she is missing. */
   const wear = () => { if (her) her.flower = quest.step === "freed"; };
 
-  /** A straight way over land from the pen home, past nothing solid (rules.test.ts checks the three; this is the
-   *  game's own check, for a world changed since). */
-  const clearWay = () => {
-    const p = where(), d = Math.hypot(HOME.x - p.x, HOME.z - p.z), dir = { x: (HOME.x - p.x) / d, y: 0, z: (HOME.z - p.z) / d }, STEP = 0.25;
+  /** A straight way over land from a to b, past nothing solid. */
+  const clearLeg = (a: { x: number; z: number }, b: { x: number; z: number }) => {
+    const d = Math.hypot(b.x - a.x, b.z - a.z), dir = { x: (b.x - a.x) / d, y: 0, z: (b.z - a.z) / d }, STEP = 0.25;
     const FLAGS = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS | RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC;
     const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, dir);
     for (let s = 0; s < d; s += STEP) {
-      const x = p.x + dir.x * s, z = p.z + dir.z * s;
+      const x = a.x + dir.x * s, z = a.z + dir.z * s;
       if (world.heightAt(x, z) < world.waterLevel + 0.03) return false;
       // Knee high over the ground here, one step on: a trunk, a rock, a wall (the ground itself rises less than that).
       ray.origin = { x, y: world.heightAt(x, z) + 0.4, z };
       if (stage.physics.castRay(ray, Math.min(STEP, d - s), true, FLAGS)) return false;
     }
+    return true;
+  };
+  /** Her way home from the pen, leg by leg, over land past nothing solid (rules.test.ts checks the three; this is the
+   *  game's own check, for a world changed since). */
+  const clearWay = () => {
+    let from = where();
+    for (const to of wayHome(quest.place)) { if (!clearLeg(from, to)) return false; from = to; }
     return true;
   };
 
@@ -130,6 +138,7 @@ export const create: CreateFeature = (game) => {
   const freeHer = () => {
     fall();
     phase = clearWay() ? "walk" : "unseen";
+    leg = 0;
     wear();
     say();
     events.emit("goalDone", { goal: "mrs-beaver", text: "Pen gnawed open" });
@@ -221,8 +230,9 @@ export const create: CreateFeature = (game) => {
       const near = Math.hypot(feet.x - root.position.x, feet.z - root.position.z) < NEAR;
       let speed = 0;
       if (phase === "walk" && moving > 0) {
-        const dx = HOME.x - root.position.x, dz = HOME.z - root.position.z, d = Math.hypot(dx, dz), step = Math.min(d, WALK * moving);
-        if (d < 0.05) { phase = "home"; place(); }
+        const way = wayHome(quest.place), to = way[leg]!;
+        const dx = to.x - root.position.x, dz = to.z - root.position.z, d = Math.hypot(dx, dz), step = Math.min(d, WALK * moving);
+        if (d < 0.05) { if (++leg >= way.length) { phase = "home"; place(); } }
         else {
           root.position.x += (dx / d) * step;
           root.position.z += (dz / d) * step;

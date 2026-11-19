@@ -9,6 +9,7 @@
 //   gnaw(quest, dt)                                  true once: gnawed GNAW s in all, the pen open (gnaw step → freed)
 //   done(quest)                                      how many steps are done, 0 … 3 (the checklist's ticks)
 //   rows(done, fits)                                 which step lines the checklist shows
+//   wayHome(place)                                   the points she walks to in turn once freed, the last one HOME
 //
 // Each change says whether it changed something, so the feature tells of each step exactly once. Nothing here is
 // kept: the quest lives in memory for one visit (no localStorage, no network).
@@ -24,6 +25,12 @@ export const HIDING: readonly XZ[] = [{ x: -13.3, z: -2.3 }, { x: 3.5, z: -13 },
 export const FLOWER: readonly XZ[] = [{ x: -7.9, z: 0 }, { x: 0.8, z: -6.1 }, { x: -4, z: 9.1 }];
 /** Where she waits once freed: beside the building site, on its south-west side away from the dam and the crates. */
 export const HOME: XZ = { x: -2.5, z: 2.3 };
+/** The bends of her way home from each hiding place (same order), walked in turn before HOME: from the north one the
+ *  straight way runs into the Calendar board beside the Shop, so it bends round the board's east end, short of the
+ *  crates by the site. Every leg is a straight way over dry land past nothing solid (rules.test.ts checks them). */
+export const BENDS: readonly (readonly XZ[])[] = [[], [], [{ x: -3.1, z: 9.5 }]];
+/** Her way home from a hiding place: the points she walks to in turn, the last one HOME. */
+export const wayHome = (place: number): XZ[] => [...(BENDS[place] ?? []), HOME];
 /** m from the middle of the pen to the player's feet within which the Use key offers to gnaw it open. */
 export const REACH = 1.3;
 /** m from the flower to the player's feet within which the Use key offers to pick it up. */
