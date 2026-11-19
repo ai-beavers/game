@@ -25,6 +25,8 @@ export const movement = (kit: Kit): Station[] => {
     ["Jump over a log", async () => {
       // The meadow log nearest the spawn (about 0.3 m high, under a jump's 0.6 m), crossed square to its length: its
       // template lies along z, turned about y. Up to it from the spawn's side, then straight over to as far past it.
+      // shortcut: the world does not tell where its meadow logs lie; same layout as createWorld uses. Upgrade when World
+      // in contracts.ts names them.
       const log = placeAll().log.reduce((a, b) => Math.hypot(a.x - world.spawn.x, a.z - world.spawn.z) < Math.hypot(b.x - world.spawn.x, b.z - world.spawn.z) ? a : b);
       let ax = Math.cos(log.turn), az = -Math.sin(log.turn);
       if (ax * (world.spawn.x - log.x) + az * (world.spawn.z - log.z) > 0) { ax = -ax; az = -az; } // from the spawn's side
