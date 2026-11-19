@@ -87,6 +87,9 @@ const BANDS: [low: number, high: number, names: string[]][] = [
 ];
 const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap", "underwater"];
 const chrome = existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+/** How long a measured render may take: about 20 s on an idle machine, over a minute on a busy one (builders and
+ *  their tours side by side). The limit ends a render that hangs; it says nothing about speed. */
+const LIMIT = 300_000;
 
 test.skipIf(!chrome)("every one-shot sits in its loudness band, ends in time, has no DC and never clips", async () => {
   const names = BANDS.flatMap(([, , n]) => n);
@@ -100,7 +103,7 @@ test.skipIf(!chrome)("every one-shot sits in its loudness band, ends in time, ha
     expect(Math.abs(m.dc), name).toBeLessThan(1e-3);
     expect(m.end, name).toBeGreaterThan(0.1); // silent before its window ends, reverb and all
   }
-}, 60_000);
+}, LIMIT);
 
 test.skipIf(!chrome)("the full mix: about -16 LUFS at the default volume, peaks under -1 dBFS at full volume, no loop heard", async () => {
   const jobs = SCENES.map((name) => ({ kind: "scene" as const, name }));
@@ -114,7 +117,7 @@ test.skipIf(!chrome)("the full mix: about -16 LUFS at the default volume, peaks 
     expect(Math.abs(m.dc), name).toBeLessThan(1e-3);
     expect(Math.abs(m.repeat), name).toBeLessThan(0.5); // the noise beds do not repeat every 2 s
   }
-}, 60_000);
+}, LIMIT);
 
 test("the meters: a full-scale 1 kHz sine at 48 kHz reads -3 LUFS and 0 dBFS", () => {
   const rate = 48000, left = new Float32Array(rate * 2).map((_, i) => Math.sin((2 * Math.PI * 1000 * i) / rate));
