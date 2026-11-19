@@ -4,8 +4,8 @@
 //   const { x, y } = deadZone(axes[0], axes[1]);    radial dead zone, rescaled so a push just past it starts at 0
 //   padInput(gamepad, input);                       fills input from a standard-mapping gamepad
 //
-// Standard mapping: left stick moves, A jumps (rises under water), X acts, B held sits (on land) or dives (swimming), RB slaps the tail, LB, a trigger or a click on the left
-// stick runs; the d-pad moves too.
+// Standard mapping: left stick moves, A jumps (rises under water), X acts, B held sits (on land) or dives (swimming), RB slaps the tail, Y flashes the lantern, LB, the right
+// trigger or a click on the left stick runs; the d-pad moves too. LT opens the map (src/features/hud).
 import type { Input } from "../../player/input.ts";
 
 export const INNER = 0.18; // a stick at rest drifts up to here
@@ -47,11 +47,12 @@ export function padInput(pad: PadLike, into: Input): Input {
   if (dx || dy) { const length = Math.hypot(dx, dy); x = dx / length; y = dy / length; }
   into.move.x = x;
   into.move.y = y;
-  into.run = [BUTTON.lb, BUTTON.lt, BUTTON.rt, BUTTON.l3].some((b) => down(pad, b)) ? 1 : dx || dy ? 0 : stick.run;
+  into.run = [BUTTON.lb, BUTTON.rt, BUTTON.l3].some((b) => down(pad, b)) ? 1 : dx || dy ? 0 : stick.run;
   into.jump = down(pad, BUTTON.a);
   into.act = down(pad, BUTTON.x);
   into.slap = down(pad, BUTTON.rb);
   into.dive = down(pad, BUTTON.b); // B: sits on land, dives swimming (src/player)
+  into.flash = down(pad, BUTTON.y);
   return into;
 }
 

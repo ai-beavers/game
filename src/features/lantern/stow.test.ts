@@ -2,7 +2,7 @@
 // the left paw has reached back (Motion.reachBack). Frames of 1/60 s.
 import { expect, test } from "bun:test";
 import { newMotion } from "../../player/state.ts";
-import { busy, newStow, stepStow } from "./stow.ts";
+import { busy, flash, newStow, stepStow } from "./stow.ts";
 
 const dt = 1 / 60;
 /** Runs `seconds` with the given dark and busy; returns the highest reach seen and whether it ended drawn. */
@@ -66,4 +66,34 @@ test("busy: an action, the tail slap, in the air, swimming, diving, sitting or c
   for (const m of [{ ...ground, action: "gnaw" as const }, { ...ground, actionProgress: 0.4 }, { ...ground, grounded: false },
     { ...ground, swimming: 1 }, { ...ground, low: "sit" as const }, { ...ground, low: "crawl" as const }]) expect(busy(m, false)).toBe(true);
   expect(busy(ground, true)).toBe(true);
+});
+
+test("a flash switches the lantern off and on while it is out, and does nothing while it is in the backpack", () => {
+  const night = newStow(0.9), day = newStow(0);
+  expect(night.off).toBe(false);
+  flash(night);
+  expect(night.off).toBe(true);
+  play(night, 3, 0.9);
+  expect(night.off).toBe(true); // off until pressed again
+  flash(night);
+  expect(night.off).toBe(false);
+  flash(day);
+  expect(day.off).toBe(false);
+});
+
+test("a lantern left off comes out lit at the next dusk", () => {
+  const s = newStow(0.9);
+  flash(s);
+  play(s, 2, 0.01); // dawn: into the backpack
+  expect(s.drawn).toBe(false);
+  play(s, 2, 0.3); // dusk
+  expect([s.drawn, s.off]).toEqual([true, false]);
+});
+
+test("a dive leaves a switched-off lantern off", () => {
+  const s = newStow(0.9);
+  flash(s);
+  play(s, 3, 0.9, true);
+  play(s, 3, 0.9);
+  expect([s.drawn, s.off]).toEqual([true, true]);
 });

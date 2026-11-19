@@ -117,6 +117,9 @@ export interface Motion {
   /** Sits in a canoe (with low "sit") and paddles it: the right arm strokes as the speed says, a paddle in the paw. Only
    *  the local player's own beaver tells it (src/features/canoe); left out: no paddle. */
   paddle?: boolean;
+  /** The player switched the lantern off (a flash): its glass and its light dark. The lantern feature writes it into
+   *  the local player's Motion; it travels to other players. Left out or false: on (bots never flash). */
+  lanternOff?: boolean;
 }
 
 export interface Animator {
