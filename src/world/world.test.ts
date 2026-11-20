@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { placeAll, SPAWN } from "./place.ts";
 import { dayAt } from "../features/sky/clock.ts";
-import { BASIN, FIRST_RIM, groundAt, groundColliders, heightAt, HILL, POND, pondRatio, RIM, SHELF, SITE, SIZE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
+import { BASIN, FIRST_RIM, groundAt, groundColliders, heightAt, HILL, POND, pondRatio, RIM, SHELF, SHORE_SLOPE, SITE, SIZE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
 import { SHOP } from "../features/shop/place.ts";
 import { POST } from "../features/trade/place.ts";
 
@@ -23,7 +23,7 @@ describe("heightAt", () => {
   test("the shore is shallow enough to walk in and out (< 30°)", () => {
     for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) for (let r = 2; r < 5.5; r += 0.25) {
       const x = POND.x + Math.cos(a) * r, z = POND.z + Math.sin(a) * r;
-      if (pondRatio(x, z) > SHELF + 0.05) expect(slopeAt(x, z)).toBeLessThan(Math.tan((30 * Math.PI) / 180));
+      if (pondRatio(x, z) > SHELF + 0.05) expect(slopeAt(x, z)).toBeLessThan(Math.tan(SHORE_SLOPE));
     }
   });
   test("a basin about 3 m deep on the south side, with room to dive; the shallows along the bank stay", () => {

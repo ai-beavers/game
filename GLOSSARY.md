@@ -18,6 +18,10 @@ _Avoid_: lake, river
 The deep part of the pond, where the beaver can dive.
 _Avoid_: deep end, pit
 
+**Shore**:
+Where the pond meets the land, all the way round; it moves out as the pond rises. The beaver goes into the water and out of it anywhere along it.
+_Avoid_: edge, side, hole, bank (the bank is the clearing's)
+
 **Building site**:
 The flat ground at the pond where the dam is built.
 _Avoid_: construction zone, build area
@@ -51,24 +55,36 @@ The small disco-like hut in the clearing with the sign HOUSE OF AI in front; ins
 _Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
 
 **Calendar board**:
-The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked and the hours of each day from morning to midnight, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
+The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked, the hours of each day from morning to midnight, Build Fridays and the House of AI events, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
 _Avoid_: billboard, calendar sign, schedule, week board
 
 **Build Fridays**:
 The weekly event on the Calendar board: every Friday from 16:00 to 23:00, by the viewer's own clock.
 _Avoid_: build day, Friday event
 
+**House of AI events**:
+The real events of the House of AI in Hamburg, the place the shop's sign is named after, as its public Luma calendar lists them; the Calendar board shows those of its week beside Build Fridays, each at its real moment on the viewer's own clock.
+_Avoid_: Luma events, meetups, shop events
+
 **Shopkeeper**:
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.
 _Avoid_: NPC, vendor, merchant
 
 **Mrs. Beaver**:
-The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places out in the meadow, where the clearing's first, smaller bank stood, and her flower lies dropped on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
+The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks under one of the brush piles at the hiding places out in the meadow, where the clearing's first, smaller bank stood, and she left clues on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
 _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
 
 **Quest**:
-A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her, gnaw her pen open. Nothing on the map marks where a step is.
+A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her tracks, find her, gnaw her pen open. Nothing on the map marks where a step is.
 _Avoid_: mission, task, goal (the build goals point the way; a quest does not)
+
+**Clue**:
+A sign Mrs. Beaver left on her way to where she is hidden, which tells the player where to look: first her dropped flower, then her tracks, a short trail of paw prints pointing towards her brush pile.
+_Avoid_: hint, marker, waypoint
+
+**Brush pile**:
+A heap of leafy branches at a hiding place. Each hiding place has one, and they all look alike from outside; only one hides Mrs. Beaver's pen, and only the clues tell which.
+_Avoid_: bush, decoy, hideout
 
 **Step**:
 One line of a quest, ticked when the player has done it.
