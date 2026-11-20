@@ -33,6 +33,8 @@ Everyone plays at <https://beaver.uq-dev.workers.dev/>, in one shared world of u
   (`wrangler deploy`). Players reconnect by themselves and load the new build once. The world's work stays.
 - **What runs there**: one Worker (`worker.ts`, `wrangler.jsonc`). Cloudflare serves the files of `dist/` itself. One
   Durable Object holds the world with the same rules as `server.ts`: both run `src/features/net/room.ts`.
+- **House of AI events**: both servers answer `/net/events` from the House of AI Hamburg's public Luma calendar
+  (`src/features/shop/events.ts`), one copy kept for an hour; the Calendar board asks it hourly (ADR 0006).
 - **Credentials**: the GitHub environment `production` holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and
   takes runs from `main` only.
 - **Starting the world afresh**: set the token once with `bunx wrangler secret put RESET_TOKEN`, then

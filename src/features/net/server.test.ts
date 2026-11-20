@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { apply, REGROW, type BuildChange } from "../build/rules.ts";
-import { DAY_SECONDS, HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, RESET_PATH, sameWorld, START, type Place, type ServerMessage } from "./protocol.ts";
+import { DAY_SECONDS, EVENTS_PATH, HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, RESET_PATH, sameWorld, START, type Place, type ServerMessage } from "./protocol.ts";
 import { SAVE_AFTER } from "./room.ts";
 
 const root = join(import.meta.dir, "../../..");
@@ -34,7 +34,7 @@ async function startWorker(env: Record<string, string>) {
   mkdirSync(join(root, "dist"), { recursive: true }); // wrangler wants the folder of the game's files; these tests ask for none
   const free = Bun.serve({ port: 0, fetch: () => new Response() }), port = free.port!;
   await free.stop(true);
-  const vars = ["GIT_SHA", "RESET_TOKEN"].flatMap((key) => env[key] ? ["--var", `${key}:${env[key]}`] : []);
+  const vars = ["GIT_SHA", "RESET_TOKEN", "HOUSE_OF_AI_FEED"].flatMap((key) => env[key] ? ["--var", `${key}:${env[key]}`] : []);
   const kept = env.WORLD_FILE ? dirname(env.WORLD_FILE) : mkdtempSync(join(tmpdir(), "beaver-"));
   const server = running = Bun.spawn(["bun", "x", "wrangler", "dev", "--port", String(port), "--inspector-port", "0", "--persist-to", kept, ...vars], {
     cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: "false" }, stdin: "ignore", stdout: "ignore", stderr: "inherit",
@@ -71,8 +71,46 @@ const info = async (port: number, query = "?build") => {
   return rest;
 };
 
+/** A stand-in for Luma's iCal feed on a free port: one House of AI event two days from now, or (down) an error.
+ *  Counts how often it is asked. */
+function feedFixture(down = false) {
+  const at = (h: number) => new Date(Date.now() + h * 3600_000).toISOString().replace(/[-:]|\.\d+/g, "");
+  const text = ["BEGIN:VCALENDAR", "VERSION:2.0", "BEGIN:VEVENT", `DTSTART:${at(48)}`, `DTEND:${at(50)}`, "SUMMARY:Community Lunch",
+    "END:VEVENT", "BEGIN:VEVENT", "DTSTART;VALUE=DATE:20261121", "SUMMARY:All day", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  const fixture = { asked: 0, url: "", stop: () => server.stop(true) };
+  const server = Bun.serve({ port: 0, fetch: () => { fixture.asked++; return down ? new Response("oops", { status: 503 }) : new Response(text, { headers: { "Content-Type": "text/calendar" } }); } });
+  fixture.url = `http://localhost:${server.port}/ics`;
+  return fixture;
+}
+
 for (const kind of ["server.ts", "worker.ts"] as const) describe(kind, () => {
   const bun = kind === "server.ts", start = (env: Record<string, string> = {}) => bun ? startBun(env) : startWorker(env);
+
+  test("answers the House of AI events from the calendar's feed as JSON, asking the feed once for many players", async () => {
+    const feed = feedFixture();
+    try {
+      const { port } = await start({ HOUSE_OF_AI_FEED: feed.url });
+      const ask = () => fetch(`http://localhost:${port}${EVENTS_PATH}`);
+      const res = await ask();
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toStartWith("application/json");
+      const events = await res.json() as { name: string; start: string; end: string }[];
+      expect(events.map((e) => e.name)).toEqual(["Community Lunch"]);
+      expect(Date.parse(events[0]!.end) - Date.parse(events[0]!.start)).toBe(2 * 3600_000);
+      await Promise.all([ask(), ask(), ask()]);
+      expect(feed.asked).toBe(1);
+    } finally { feed.stop(); }
+  }, 60000);
+
+  test("answers no House of AI events, not an error, when the feed is down", async () => {
+    const feed = feedFixture(true);
+    try {
+      const { port } = await start({ HOUSE_OF_AI_FEED: feed.url });
+      const res = await fetch(`http://localhost:${port}${EVENTS_PATH}`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual([]);
+    } finally { feed.stop(); }
+  }, 60000);
 
   test("lets one address hold only so many sockets, and closes those that never say hello", async () => {
     const { port } = await start({ TRUST_PROXY: "fly" });

@@ -38,6 +38,7 @@ import { askName } from "./name.ts";
 import {
   INFO_PATH, packMotion, PATH, replay, sameWorld, SEND_RATE, shouldReload, stickId, TOUR_WORLD, type ClientMessage, type Place, type ServerMessage,
 } from "./protocol.ts";
+import { remoteLanterns } from "../lantern/remote.ts";
 import { createRemote, type Remote } from "./remote.ts";
 import { createThings } from "./things.ts";
 import { createUi } from "./ui.ts";
@@ -131,9 +132,10 @@ export const create: CreateFeature = (game) => {
   }
 
   // ---- other players ----
+  const lanterns = remoteLanterns(game);
   const addRemote = (id: number, name: string) => {
     if (remotes.has(id) || id === me) return;
-    const remote = Object.assign(createRemote(stage, id, name), { holding: -1 });
+    const remote = Object.assign(createRemote(stage, id, name, lanterns), { holding: -1 });
     remotes.set(id, remote);
     ui.tag(id, name, remote.node);
   };

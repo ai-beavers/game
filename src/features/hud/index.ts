@@ -370,7 +370,7 @@ export const create: CreateFeature = game => {
       if (pad) {
         const pressed = pad.buttons.map((_,i) => down(pad,i));
         if (pressed.some((v,i) => v && !padWas[i]) || pad.axes.some(a => Math.abs(a) > 0.5)) use("pad");
-        if (pressed[BUTTON.y] && !padWas[BUTTON.y] && !stage.paused && started) toggleMap();
+        if (pressed[BUTTON.lt] && !padWas[BUTTON.lt] && !stage.paused && started) toggleMap();
         padWas = pressed;
       } else padWas = [];
       hud.show(started && !photo());

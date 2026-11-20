@@ -82,6 +82,20 @@ describe("motion", () => {
     }
     expect(unpackMotion(packMotion(newMotion()), into).low).toBeUndefined();
   });
+  test("a lantern switched off is seen dark by others, and lit again after", () => {
+    const into = newMotion();
+    const off = { ...newMotion(), lanternOff: true };
+    expect(unpackMotion(packMotion(off), into).lanternOff).toBe(true);
+    expect(parseClient(state({ m: packMotion(off) }))).toBeDefined();
+    expect(unpackMotion(packMotion(newMotion()), into).lanternOff).toBeFalsy();
+    expect(unpackMotion(packMotion({ ...newMotion(), lanternOff: false }), into).lanternOff).toBeFalsy();
+  });
+  test("the server drops a state whose lantern switch is not 0 or 1", () => {
+    const m = packMotion(newMotion()), last = m.length - 1;
+    for (const v of [0, 1]) expect(parseClient(state({ m: m.map((x, i) => i === last ? v : x) }))).toBeDefined();
+    for (const v of [2, -1, 0.5]) expect(parseClient(state({ m: m.map((x, i) => i === last ? v : x) }))).toBeUndefined();
+    expect(parseClient(state({ m: m.slice(0, last) }))).toBeUndefined(); // an old page's Motion, without it
+  });
 });
 
 describe("hourAt", () => {

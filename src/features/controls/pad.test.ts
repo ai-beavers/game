@@ -39,7 +39,7 @@ test("stick speed: walk grows to full at WALK_PUSH, then run grows to 1, directi
   expect(stickSpeed(0, -1).run).toBeCloseTo(1);
 });
 
-test("buttons: A jumps, X uses, B dives, RB slaps, LB and triggers run, d-pad moves", () => {
+test("buttons: A jumps, X uses, B dives, RB slaps, LB and the right trigger run, d-pad moves", () => {
   expect(padInput(pad([0, 0], [BUTTON.a]), newInput()).jump).toBe(true);
   expect(padInput(pad([0, 0], [BUTTON.x]), newInput()).act).toBe(true);
   const dive = padInput(pad([0, 0], [BUTTON.b]), newInput());
@@ -55,6 +55,11 @@ test("buttons: A jumps, X uses, B dives, RB slaps, LB and triggers run, d-pad mo
   expect(padInput(pad([0, 0], [BUTTON.up]), newInput()).run).toBe(0); // the d-pad walks
   expect(padInput(pad([0, 0], [BUTTON.left]), newInput()).move).toEqual({ x: -1, y: 0 });
   expect(padInput(pad([0, 0]), newInput())).toEqual(newInput());
+});
+
+test("Y flashes the lantern, and no other button does", () => {
+  expect(padInput(pad([0, 0], [BUTTON.y]), newInput()).flash).toBe(true);
+  for (const b of Object.values(BUTTON)) if (b !== BUTTON.y) expect(padInput(pad([0, 0], [b]), newInput()).flash).toBe(false);
 });
 
 test("first connected pad", () => {

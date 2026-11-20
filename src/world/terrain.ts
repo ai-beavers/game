@@ -92,6 +92,8 @@ function shapedHeight(x: number, z: number, rim: number): number {
  *  frogs are and the beaver wades), the shoreline and everything placed on land stay as they were. */
 export const BASIN = { x: 4.1, z: 2.85, depth: 3, along: 2.4, across: 1.1 };
 export const SHELF = 0.84;
+/** rad: the steepest the shore rises anywhere round the pond (world.test.ts holds it to that). */
+export const SHORE_SLOPE = 30 * Math.PI / 180;
 const basinAlong = new Vector2(1, -0.25).normalize(); // roughly along the south bank
 export function basinHeight(x: number, z: number) {
   const dx = x - BASIN.x, dz = z - BASIN.z;
@@ -204,7 +206,11 @@ export function groundColliders(physics: RAPIER.World) {
   }
   physics.createCollider(RAPIER.ColliderDesc.heightfield(n - 1, n - 1, heights, { x: SIZE, y: 1, z: SIZE }));
   const patch = surface(fine, false);
-  physics.createCollider(RAPIER.ColliderDesc.trimesh(patch.positions, new Uint32Array(patch.indices), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES));
+  // Its triangles turned to face up (surface() winds them facing down, x × z): on triangles facing
+  // down Rapier's character controller never counts a beaver as standing (measured), so it could not leave the water
+  // where the shore lies on the patch, nor jump there. The same points: nothing moves.
+  const up = patch.indices.map((_, k, all) => all[k - (k % 3) + [0, 2, 1][k % 3]!]!);
+  physics.createCollider(RAPIER.ColliderDesc.trimesh(patch.positions, new Uint32Array(up), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES));
 }
 
 /** The ground mesh and its collider, from the same samples (groundGrids). */
