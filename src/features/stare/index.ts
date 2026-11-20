@@ -9,6 +9,7 @@
 // (Motion.stare, drawn by the animator). The game runs without it.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
+import { modalOpen } from "../hud/overlay.ts";
 import { newStare, stepStare } from "./stare.ts";
 
 /** rad/s the body turns at most while it comes round to the camera, and 1/s: slower as it gets there, so it arrives
@@ -18,7 +19,7 @@ const TURN_RATE = 1.3, SETTLE = 2;
 export const create: CreateFeature = (game) => {
   const { stage, player, beaver } = game, motion = player.motion, stare = newStare();
   let seen = player.touched;
-  const covered = () => stage.paused || document.body.classList.contains("photo") || !!document.querySelector("dialog.game-dialog[open]");
+  const covered = () => stage.paused || document.body.classList.contains("photo") || modalOpen();
   /** Whether a stare may happen now: standing on land, behind the beaver, nothing in hand to finish, nothing over the game. */
   const allowed = () => !covered() && player.camera.view === "third-person" && motion.grounded && !player.afloat && !player.diving
     && !player.riding && motion.swimming === 0 && motion.action === "none" && motion.actionProgress === 0;

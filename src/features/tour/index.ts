@@ -27,6 +27,7 @@
 // station for a feature that has a file goes into that file, where it belongs in the order; a new feature adds one
 // file and one entry in STATIONS. Live, a station with an activity joins that activity; one without is its own.
 import { Overlay, onViewport, box, hudLayout } from "../hud/overlay.ts";
+import { fitType } from "../hud/style.ts";
 import type { CreateFeature } from "../../game.ts";
 import { bodyPoints, enter, inside, KEEP_OUT, liveDirector, reason, sight, type Moment, type Volume, type XYZ } from "./live.ts";
 import { fader, occluders } from "./clearview.ts";
@@ -108,13 +109,9 @@ export const create: CreateFeature = (game) => {
   label.fontWeight = "bold";
   label.outlineWidth = 3;
   label.outlineColor = "#182723";
-  // Live: a reason too long for the row gets smaller type, so it stays on the one row its backing has (a bold
-  // character is about WIDE of the type wide, with some room to spare at the ends).
-  const WIDE = 0.58;
+  // Live: a reason too long for the row gets smaller type, so it stays on the one row its backing has (hud/style.ts).
   let type = 14, across = 0;
-  // Never below SMALLEST of the type: on a small screen a long line wraps instead, as before.
-  const SMALLEST = 0.7;
-  const fit = () => { if (backing) label.fontSize = Math.floor(Math.max(SMALLEST * type, Math.min(type, (across - type) / (WIDE * Math.max(1, label.text.length))))); };
+  const fit = () => { if (backing) label.fontSize = fitType(type, across, label.text.length); };
   label.onTextChangedObservable.add(fit);
   onViewport(stage,(w,h) => {
     if (!backing) return overlay.move(label,hudLayout(stage).caption);

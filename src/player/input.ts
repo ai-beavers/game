@@ -4,7 +4,8 @@
 //   keys.read(input);               once per physics step: fills input, forgets presses already seen
 //   keys.hold(["KeyW"]);            tests and labs: pretend these keys are held (empty array: back to real keys)
 //   keys.add(source);               another device (gamepad, touch): source.read(into) fills its own Input each step
-//   keys.touched                    rises with every step something is held on any device and every key pressed
+//   keys.touched                    rises with every step something is held on any device (the sit key alone: only the
+//                                   step it starts) and every key pressed
 //
 // WASD or arrows move (x to the right, y forward, relative to the camera), Shift runs, Space jumps (rises under water),
 // E acts, Q slaps the tail, C held dives (swimming) or sits (on land), Y held crawls, L flashes the lantern
@@ -53,7 +54,7 @@ const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown
 
 export function keyboard(target: Window = window) {
   const held = new Set<string>(), pressed = new Set<string>();
-  let forced: Set<string> | undefined, tick = 0, touched = 0;
+  let forced: Set<string> | undefined, tick = 0, touched = 0, sat = false; // sat: last step held only the sit key
   const own = newReading(), others: { source: Source; reading: Reading }[] = [];
   const down = (e: KeyboardEvent) => {
     if (!e.repeat) touched++; // any key: V, Escape, P and the rest count as the player being there too
@@ -76,10 +77,14 @@ export function keyboard(target: Window = window) {
         for (const { source, reading } of others) { source.read(reading.input); notice(reading, tick); }
         merge(into, [own, ...others.map((o) => o.reading)]);
       }
-      if (!idle(into)) touched++;
+      // C held on land sits, and sitting is no reason to stop a Stare: only the step it starts counts.
+      const sitting = !!into.dive && idle({ ...into, dive: false });
+      if (!idle(into) && !(sitting && sat)) touched++;
+      sat = sitting;
       return into;
     },
-    /** How many times the player has touched the controls: a step with anything held, a key pressed. Only rises. */
+    /** How many times the player has touched the controls: a step with anything held (the sit key alone only as it
+     *  starts), a key pressed. Only rises. */
     get touched() { return touched; },
     add(source: Source) {
       const entry = { source, reading: newReading() };
