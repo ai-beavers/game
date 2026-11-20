@@ -17,7 +17,7 @@ import { SHORE_SLOPE } from "../world/terrain.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { keyboard, newInput, type Input, type Keyboard } from "./input.ts";
-import { BREATH, CRAWL_SPEED, RIDE_SPEED, SLOPE, SWIM_SPEED, rideKeys, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
+import { BREATH, CRAWL_SPEED, RIDE_SPEED, SLOPE, SWIM_SPEED, rideKeys, turnTowards, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
 export const HEIGHT = 1.0, RADIUS = 0.225;
@@ -84,6 +84,13 @@ export interface PlayerControls extends Player {
    *  it stops at the shore. undefined: the ride is over, it stands where it is (teleport it out). teleport ends it too. */
   ride(ride: Ride | undefined): void;
   readonly riding: boolean;
+  /** How many times the player has touched any control: a step with a key, button, stick or finger held, a key
+   *  pressed, a camera turn or zoom, a press on the picture. Only rises (src/features/stare watches it). */
+  readonly touched: number;
+  /** A slow turn on the spot another part asks for (src/features/stare): each step while nothing steers it, no action
+   *  runs and it stands on land, the facing turns towards heading (radians, as facing) by at most rate rad/s. It is not
+   *  told as turning in the Motion, so the feet stay planted. undefined: none. */
+  turnTo: { heading: number; rate: number } | undefined;
 }
 
 /** How a ride sits on the water, m: the feet above the level, the least water under them, how far ahead the bow is
@@ -133,6 +140,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   const lift = new Vector3(); // m the picture still lags behind the last steps up (and a climb out of the water)
   let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false, under = false;
   let actor: Actor | undefined, aim: number | undefined, ride: Ride | undefined; // aim: where a lasting action turns the beaver
+  let turnTo: PlayerControls["turnTo"], turned = 0; // turned: rad turnTo turned this step
   const desired = new Vector3(), forward = new Vector3();
 
   // The live level: the pond rises with the dam (src/world/water.ts); options.waterLevel alone where there is no pond.
@@ -299,6 +307,12 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     steering.facing = facing; steering.speed = speed;
     steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
     facing = steering.facing; speed = steering.speed;
+    turned = 0;
+    if (turnTo && !wants && !busy && !ride && grounded && !afloat) {
+      const was = facing;
+      facing = steering.facing = turnTowards(facing, turnTo.heading, turnTo.rate * dt);
+      turned = facing - was;
+    }
     if (low === "sit" && !ride) speed = 0; // sitting, it does not slide on: it stops where it sat down
 
     // Up and down: jump, gravity, or floating at the surface.
@@ -371,7 +385,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
 
     trackMotion(motion, dt, {
       moved: Math.hypot(moved.x - inX, moved.z - inZ), vertical: (moved.y - stepped) / dt, // a step up is not a leap
-      turning: (facing - facingBefore) / dt, grounded, afloat, act, slap: slap.progress, diving, low, ride: !!ride,
+      turning: (facing - facingBefore - turned) / dt, grounded, afloat, act, slap: slap.progress, diving, low, ride: !!ride,
     });
   };
 
@@ -436,5 +450,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       if (value) { afloat = false; under = false; }
     },
     get riding() { return !!ride; },
+    get touched() { return keys.touched + camera.touched; },
+    get turnTo() { return turnTo; },
+    set turnTo(value) { turnTo = value; },
   };
 }

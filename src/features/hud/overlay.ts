@@ -15,6 +15,9 @@ export const BUTTON_BACK = "#324540";
 const left = Control.HORIZONTAL_ALIGNMENT_LEFT, top = Control.VERTICAL_ALIGNMENT_TOP;
 type Action = HTMLButtonElement | HTMLInputElement;
 
+/** Whether a modal overlay (a menu or a page) is open over the game now. */
+export const modalOpen = () => !!document.querySelector("dialog.game-dialog[open]");
+
 export class Overlay {
   readonly group: Container;
   readonly dom: HTMLElement;

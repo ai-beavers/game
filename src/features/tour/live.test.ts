@@ -131,3 +131,11 @@ test("canoeing: new on the day it came, then a reason of its own that fits the w
   expect(reason("Canoeing", at({ day: later, hour: 23, weather: "fair" }))).toContain("Lantern");
   expect(reason("Canoeing", at({ day: later, hour: 12.5, weather: "rain" }))).toContain("Rain");
 });
+
+test("left alone: the beaver gives its reason in its own words, and is curious about it for its first week", () => {
+  expect(reason("Left alone", at({}))).toBe("Nobody's touching the controls. I'll just… look at you.");
+  expect(fresh("Left alone", at({ day: Date.parse("2026-11-19") }))).toBe(true);
+  expect(fresh("Left alone", at({ day: Date.parse("2026-11-26") }))).toBe(false);
+  // after its week a real minute of standing still comes round less often than the rest
+  expect(weight("Left alone", at({ day: Date.parse("2026-12-20") }))).toBeLessThan(weight("Around the clearing", at({})));
+});

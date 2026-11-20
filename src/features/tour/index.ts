@@ -28,6 +28,7 @@
 // station for a feature that has a file goes into that file, where it belongs in the order; a new feature adds one
 // file and one entry in STATIONS. Live, a station with an activity joins that activity; one without is its own.
 import { Overlay, onViewport, box, hudLayout } from "../hud/overlay.ts";
+import { fitType } from "../hud/style.ts";
 import type { CreateFeature } from "../../game.ts";
 import { bodyPoints, enter, inside, KEEP_OUT, liveDirector, reason, sight, type Moment, type Volume, type XYZ } from "./live.ts";
 import { fader, occluders } from "./clearview.ts";
@@ -50,9 +51,10 @@ import { shopping } from "./stations/shop.ts";
 import { canoeing } from "./stations/canoe.ts";
 import { mrsBeaver } from "./stations/mrs-beaver.ts";
 import { flag } from "./stations/flag.ts";
+import { stare } from "./stations/stare.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, dam, trading, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, flag, mrsBeaver, skyWatch, hud, controls, views, firstSteps];
+const STATIONS = [movement, dam, trading, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, flag, mrsBeaver, stare, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
@@ -109,10 +111,15 @@ export const create: CreateFeature = (game) => {
   label.fontWeight = "bold";
   label.outlineWidth = 3;
   label.outlineColor = "#182723";
+  // Live: a reason too long for the row gets smaller type, so it stays on the one row its backing has (hud/style.ts).
+  let type = 14, across = 0;
+  const fit = () => { if (backing) label.fontSize = fitType(type, across, label.text.length); };
+  label.onTextChangedObservable.add(fit);
   onViewport(stage,(w,h) => {
     if (!backing) return overlay.move(label,hudLayout(stage).caption);
     const { caption: at, u: size } = hudLayout(stage); // the HUD's top centre and its type (hud/style.ts)
-    label.fontSize = size;
+    type = size; across = at.w;
+    fit();
     overlay.move(backing, at);
     overlay.move(label, at);
   });
