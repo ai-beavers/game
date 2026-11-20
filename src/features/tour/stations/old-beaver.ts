@@ -2,8 +2,9 @@
 // up to him; within a few metres on land he begins a Lore: its first line under his name in the speech box, his
 // murmur started (or, where the page's sound is still locked, the line sent to the audio feature), and he turns to
 // face the beaver. Then the beaver walks off mid-lore: he breaks off with his closing word, and the speech box clears.
-// Live, the beaver hears the whole lore out before it goes. Only the reset and where he sits come from the feature's
-// debug handle.
+// Live, the beaver hears the whole lore out before it goes. What the speech box reads and whether the murmur started
+// come from the HUD and the game's events; his state, lore and facing come from the feature's debug handle
+// (window.oldBeaver), which the issue made for the tour: the HUD shows no state or facing to check.
 import { BREAK, CLOSING, LORES, START, type XZ } from "../../old-beaver/rules.ts";
 import { NAME } from "../../old-beaver/panel.ts";
 import { skip, type Kit } from "../kit.ts";

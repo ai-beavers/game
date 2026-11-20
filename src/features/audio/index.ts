@@ -20,7 +20,6 @@ import type { CreateFeature } from "../../game.ts";
 import { findWater, groundAt } from "./ground.ts";
 import { createLapping, createMix, createMusic, createNight, createRain, createWind } from "./mix.ts";
 import { rand, SOUNDS, type SoundName } from "./sounds.ts";
-import { SYLLABLE } from "../old-beaver/rules.ts";
 
 export const played: Partial<Record<string, number>> = {};
 
@@ -122,8 +121,8 @@ export const create: CreateFeature = (game) => {
   // The Old Beaver murmurs a line from where he sits, one slow syllable a word (src/features/old-beaver). Counted in
   // physics steps, so it stops with the pause; a new line (his closing word, when the beaver walks off) cuts the rest
   // of the one before.
-  let murmur: { place: Vector3; left: number; next: number } | undefined;
-  events.on("oldBeaverSpeaks", ({ place, words }) => { murmur = { place, left: words, next: 0 }; });
+  let murmur: { place: Vector3; left: number; next: number; syllable: number } | undefined;
+  events.on("oldBeaverSpeaks", ({ place, words, syllable }) => { murmur = words > 0 ? { place, left: words, next: 0, syllable } : undefined; });
 
   // Lasting sounds: paddling, counted in physics steps so it stops with the pause.
   let stroke = 0;
@@ -159,7 +158,7 @@ export const create: CreateFeature = (game) => {
     step(dt) {
       if (murmur && (murmur.next -= dt) <= 0) {
         play("murmur", murmur.place, Math.random(), "sfx", rand(0, 0.06));
-        murmur.next += SYLLABLE;
+        murmur.next += murmur.syllable;
         if (--murmur.left <= 0) murmur = undefined;
       }
       if (motion.swimming >= 0.5) {

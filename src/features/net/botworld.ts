@@ -153,7 +153,7 @@ export async function loadWorld() {
     ...layout.stump.map((s) => ({ x: s.x, z: s.z, r: 0.4 })),
     ...layout.log.flatMap((s) => [-0.8, 0, 0.8].map((d) => ({ x: s.x + Math.sin(s.turn) * d, z: s.z + Math.cos(s.turn) * d, r: 0.45 }))),
     ...tradingPost(), // the trading post's counter (src/features/trade)
-    { x: OLD_BEAVER.x, z: OLD_BEAVER.z, r: OLD_BEAVER_R }, // the Old Beaver (src/features/old-beaver)
+    { x: OLD_BEAVER.x, z: OLD_BEAVER.z, r: OLD_BEAVER_R }, // the Old Beaver (src/features/old-beaver): bots run headless, with no game to ask where he sits
   ];
   const obstacles = (state: BuildState, crates?: Map<number, [number, number, number]>): Circle[] => {
     const out = [...fixed];

@@ -3,7 +3,8 @@
 // comes within a few metres on land he turns to it and tells a Lore, line by line: each line murmured from where he
 // sits (the oldBeaverSpeaks event; the audio feature plays it, one slow syllable a word) and shown in a speech box in
 // the HUD under his name (panel.ts). Coming back after walking off, he tells the next lore, and after the last the
-// first again. Walking off mid-lore he stops with a closing word and turns back.
+// first again. Walking off mid-lore he stops with a closing word and turns back; going into the water near him
+// mid-lore, he only falls quiet.
 //
 //   import { create as oldBeaver } from "./features/old-beaver/index.ts";
 //
@@ -20,7 +21,7 @@ import type { CreateFeature } from "../../game.ts";
 import { RAPIER } from "../../engine.ts";
 import { oldBeaver } from "./creature.ts";
 import { speechBox } from "./panel.ts";
-import { CLOSING, COLLIDER, lineTime, newVisit, PLACE, REST, tell, words, type Happening } from "./rules.ts";
+import { CLOSING, COLLIDER, lineTime, newVisit, PLACE, REST, SYLLABLE, tell, words, type Happening } from "./rules.ts";
 
 const NEAR = 30; // m: within this he breathes and moves (his fur thins with distance by itself)
 const TURN = 2.2; // how fast he turns, 1/s (eased)
@@ -49,11 +50,19 @@ export const create: CreateFeature = (game) => {
   const speak = (text: string) => {
     box.say(text);
     spoken++;
-    events.emit("oldBeaverSpeaks", { place: place.clone(), words: words(text) });
+    events.emit("oldBeaverSpeaks", { place: place.clone(), words: words(text), syllable: SYLLABLE });
   };
-  const act = (h: Happening) => {
+  /** He falls silent: the speech box clears and the murmur stops mid-line. */
+  const hush = () => {
+    closing = 0;
+    box.say("");
+    events.emit("oldBeaverSpeaks", { place: place.clone(), words: 0, syllable: SYLLABLE });
+  };
+  const act = (h: Happening, land: boolean) => {
     if (h.kind === "line") { closing = 0; speak(h.text); }
-    else if (h.kind === "broke") { closing = lineTime(CLOSING); speak(CLOSING); }
+    // Walked off, his closing word; gone into the water or the canoe near him, he only falls quiet (and his box
+    // never sits on the breath's, which shares its place).
+    else if (h.kind === "broke") { if (land) { closing = lineTime(CLOSING); speak(CLOSING); } else hush(); }
     else if (h.kind === "ended") box.say("");
   };
   const away = () => Math.hypot(player.feet.x - PLACE.x, player.feet.z - PLACE.z);
@@ -76,7 +85,8 @@ export const create: CreateFeature = (game) => {
 
   return {
     step(dt) {
-      for (const h of tell(visit, { distance: away(), land: !player.afloat && !player.riding }, dt)) act(h);
+      const land = !player.afloat && !player.riding;
+      for (const h of tell(visit, { distance: away(), land }, dt)) act(h, land);
       if (closing > 0 && (closing -= dt) <= 0) box.say("");
     },
     update(dt) {
