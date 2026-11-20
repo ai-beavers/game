@@ -14,7 +14,7 @@ import { MapDisplay } from "./map-display.ts";
 import { menuNav } from "./nav.ts";
 import { EXTENT, type MapView } from "./map.ts";
 import { place } from "../net/tags.ts";
-import { box, floating, GOLD, hudLayout, measure, onViewport, Overlay, PANEL, safeArea, underGoals } from "./overlay.ts";
+import { box, floating, GOLD, hudLayout, measure, onViewport, Overlay, PANEL, goalsPanel, safeArea, underGoals } from "./overlay.ts";
 import { skyLabel } from "./sky.ts";
 import { FAINT, PAPER, PLAYERS, QUIET, RADIUS, STICKS, TRACK, TRACKER } from "./style.ts";
 import { isEnabled } from "../../physics.ts";
@@ -67,8 +67,8 @@ export const create: CreateFeature = game => {
   /** The quest tracker's parts (redrawHud); `summary` is the whole list in words, for screen readers and the tour. */
   let tracker: { panel: Rect; summary: TextBlock; head: TextBlock; done: TextBlock; title: TextBlock; track: Rect; fill: Rect; count: TextBlock;
     hintIcon: ReturnType<Overlay["icon"]>; hint: TextBlock; cap: ReturnType<Overlay["cap"]>; shown: string };
-  /** The map card's header and its card. */
-  let sky: { card: Rect; time: TextBlock; kind: TextBlock; icons: Map<string, ReturnType<Overlay["icon"]>>; shown: string };
+  /** The map card's header and its card; `timeX` and `timeSize` as laid out (the controls' getters scale by the device ratio). */
+  let sky: { card: Rect; time: TextBlock; kind: TextBlock; icons: Map<string, ReturnType<Overlay["icon"]>>; shown: string; timeX: number; timeSize: number };
   let markerY = [0, 0];
   // The first minute: each step's hint shows when it is of use and goes once done; done steps are remembered.
   let taught = new Set<Step>();
@@ -108,7 +108,8 @@ export const create: CreateFeature = game => {
     const card = hud.rect("map-card",large ? at.status : at.card,PANEL,RADIUS);
     const iconSize = Math.round(u*1.05), headY = at.status.y+(at.status.h-iconSize)/2;
     const icons = new Map((["sun","moon","cloud","rain","fog"] as const).map(k => [k as string,hud.icon("sky-"+k,k,box(at.status.x+pad,headY,iconSize,iconSize),GOLD)]));
-    const time = hud.text("weather","",box(at.status.x+pad+iconSize+gap*.7,at.status.y,u*3.2,at.status.h),Math.round(u*.95));
+    const timeX = at.status.x+pad+iconSize+gap*.7, timeSize = Math.round(u*.95);
+    const time = hud.text("weather","",box(timeX,at.status.y,u*3.2,at.status.h),timeSize);
     time.fontWeight = "800";
     const kind = hud.text("weather-kind","",box(at.status.x+pad+iconSize+gap*.7+u*3,at.status.y,at.status.w-iconSize-u*3-2*pad,at.status.h),small);
     kind.color = QUIET;
@@ -117,7 +118,7 @@ export const create: CreateFeature = game => {
       const place = hud.text("map-place",spaced(PLACE),box(at.status.x+pad,at.status.y,at.status.w-2*pad,at.status.h),Math.round(small*.85));
       place.fontWeight = "800"; place.color = FAINT; place.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     }
-    sky = { card, time, kind, icons, shown: "" };
+    sky = { card, time, kind, icons, shown: "", timeX, timeSize };
     if (at.legend.h && !large) {
       // The legend: what the dots are; the key that opens the large map.
       const dot = Math.round(small*.55), cy = at.legend.y+at.legend.h/2, type = Math.round(small*.85), capSize = Math.round(small*1.25);
@@ -223,7 +224,7 @@ export const create: CreateFeature = game => {
       cy += rowH;
     }
     const tall = Math.min(cy+pad-y, at.goals.h);
-    quest.move(t.panel,box(x,y,w,tall));
+    quest.move(t.panel,goalsPanel.box = box(x,y,w,tall));
     markerY[0] = Math.max(at.middle.top, y+tall+gap); // the marker stays below the goals
   }
 
@@ -483,6 +484,7 @@ export const create: CreateFeature = game => {
       if (!hud.group.isVisible) return;
       const trackerOn = goals.length > 0 && !large;
       quest.show(trackerOn); tracker.panel.isVisible = trackerOn; // mrs-beaver/panel.ts hangs under it while it shows
+      if (!trackerOn) { goalsPanel.box = undefined; tracker.shown = ""; } // placed (and published) anew when it shows again
       // The goal at hand, large, with its count and what to do for it; all done, the world going on.
       const doing = current(), goal = doing ? goals.find(g => g.id === doing)! : undefined, parts = goal && split(goal.text);
       const how = !doing ? "Trees grow back, and others keep building." : live ? "" : howText(doing, device);
@@ -515,7 +517,7 @@ export const create: CreateFeature = game => {
       if (sayingSky !== sky.shown) {
         sky.shown = sayingSky;
         sky.time.text = s?.time ?? ""; sky.kind.text = s?.text ?? "";
-        sky.kind.left = Math.round(parseFloat(sky.time.left as string)+measure(sky.time.text,sky.time.fontSizeInPixels,"800")+layoutNow.gap*.7)+"px";
+        sky.kind.left = Math.round(sky.timeX+measure(sky.time.text,sky.timeSize,"800")+layoutNow.gap*.7)+"px";
         for (const [k,image] of sky.icons) image.isVisible = k === s?.icon;
       }
       const now = performance.now();
