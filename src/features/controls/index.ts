@@ -2,7 +2,7 @@
 //
 //   createGame(canvas, [create])      the feature alone; in the game it is in FEATURES
 //
-// Gamepad (standard mapping): left stick or d-pad moves, as fast as it is pushed (half way walks, all the way runs;
+// Gamepad (standard mapping): left stick or the d-pad's up and down move (its left and right step through the hotbar), as fast as it is pushed (half way walks, all the way runs;
 // LB, the right trigger or a click on the stick runs too; LT opens the map), right stick turns the camera (settings.invertY
 // flips up and down, for the mouse as well),
 // A jumps (rises under water), X uses, B held dives, RB slaps the tail, Y flashes the lantern, a click on the right stick zooms out a step (from the farthest back in),
