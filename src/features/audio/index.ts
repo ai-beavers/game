@@ -1,7 +1,7 @@
 // Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
-// that src/features/life shows, calling from where they are; the steps and splashes of other players
+// that src/features/life shows, calling from where they are; the Bear's growl and its grunt at a tail slap (src/features/bear); the steps and splashes of other players
 // (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
@@ -102,12 +102,14 @@ export const create: CreateFeature = (game) => {
   events.on("enterWater", ({ place, speed }) => play("splash", place, clamp(0.3 + speed / 5)));
   events.on("leaveWater", ({ place }) => play("shake", place, 1, "sfx", 0.2));
   // A tail slap, this beaver's or another player's (src/features/net/remote.ts emits theirs).
-  events.on("tailSlap", ({ place, water }) => play(water ? "slap" : "thump", place));
+  // Struck in the air (the leap at the Bear) it meets no ground: silent unless it lands on the Bear (the smack below).
+  events.on("tailSlap", ({ place, water, air }) => { if (!air) play(water ? "slap" : "thump", place); });
   events.on("pickup", ({ place }) => play("pickup", place));
   events.on("drop", ({ place }) => play("drop", place));
 
   // The beaver's work, as the build feature tells it (src/features/build).
   events.on("gnaw", ({ place, progress }) => play("bite", place, progress));
+  events.on("munch", ({ place }) => { for (const delay of [0.15, 0.5, 0.85]) play("bite", place, 0, "sfx", delay); }); // munching a mushroom: three soft bites
   events.on("treeFalls", ({ place }) => play("creak", place.add(new Vector3(0, 2, 0))));
   events.on("treeLands", ({ place, speed }) => play("crash", place, clamp(speed / 12)));
   events.on("treeSplits", ({ place }) => play("crack", place));
@@ -117,6 +119,10 @@ export const create: CreateFeature = (game) => {
   events.on("goalDone", () => play("chime", undefined, 1, "sfx", 0.1));
   // Half the dam: a chime on the way, so the long middle of the work has a moment too.
   events.on("stickPlaced", ({ count, total }) => { if (count * 2 === total) play("chime", undefined, 1, "sfx", 0.25); });
+
+  // The Bear growls as it notices the beaver, and grunts when a tail slap lands (src/features/bear).
+  events.on("bearNotices", ({ place }) => play("growl", place));
+  events.on("bearSlapped", ({ place }) => { play("smack", place); play("grunt", place); });
 
   // A burning Flag crackles until it is burnt down (src/features/flag).
   let fire: Vector3 | undefined, crackle = 0;

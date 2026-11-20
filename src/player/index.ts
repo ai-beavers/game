@@ -38,6 +38,10 @@ const GRAVITY = 18, CUT = 3.5; // m/s², and how much harder it pulls once Space
 export const JUMP_HEIGHT = 0.6;
 const JUMP_SPEED = Math.sqrt(2 * GRAVITY * JUMP_HEIGHT) + GRAVITY / 120; // the half step the fixed steps lose
 const MAX_FALL = 20;
+// The leaping tail slap at a foe (PlayerControls.foe): m/s up, so it is in the air for about 0.8 s, nearly the whole
+// slap, 1.3 m high; rad/s it turns to face the foe as it leaps.
+export const LEAP_SPEED = 7;
+const LEAP_TURN = 12;
 // Water: afloat once the feet are FLOAT_DEPTH deep, then held at HOLD_DEPTH, where the animator's swimming pose
 // has head and back above the surface; back on foot when it touches ground there.
 const FLOAT_DEPTH = 0.45, HOLD_DEPTH = 0.3;
@@ -71,6 +75,13 @@ export interface PlayerControls extends Player {
   readonly carrying: Stick | undefined;
   /** Lets go of the stick at once, without the drop motion (someone else got it first). */
   drop(): void;
+  /** Throws the beaver (src/features/bear: a Swipe): along the ground at x, z m/s on top of its own walking, and up
+   *  at `up` m/s, until it lands; a lasting action (gnaw, build) ends. Nothing happens in a canoe. */
+  toss(x: number, z: number, up: number): void;
+  /** What a tail slap on land goes for, or undefined (src/features/bear: the Bear while they fight). With one, the
+   *  slap is a leap: the beaver jumps, faces it and turns once round in the air, so its back is turned and the tail
+   *  comes down on the foe as the slap strikes; it lands facing it again. Only where it is counts (x, z, read live). */
+  foe: { x: number; z: number } | undefined;
   /** Puts the carried stick down with the drop motion, as E does; false when it cannot now (nothing carried, another
    *  action under way, in the air, in the canoe). */
   putDown(): boolean;
@@ -95,8 +106,10 @@ export interface PlayerControls extends Player {
   readonly touched: number;
   /** A slow turn on the spot another part asks for (src/features/stare): each step while nothing steers it, no action
    *  runs and it stands on land, the facing turns towards heading (radians, as facing) by at most rate rad/s. It is not
-   *  told as turning in the Motion, so the feet stay planted. undefined: none. */
-  turnTo: { heading: number; rate: number } | undefined;
+   *  told as turning in the Motion, so the feet stay planted. With a speed (m/s) it also walks forward along its facing
+   *  at that speed, under its normal movement and physics, told in the Motion as an ordinary slow walk; it stops where
+   *  a step would take it into the water. undefined: none. */
+  turnTo: { heading: number; rate: number; speed?: number } | undefined;
 }
 
 /** How a ride sits on the water, m: the feet above the level, the least water under them, how far ahead the bow is
@@ -144,7 +157,9 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   const node = new TransformNode("player", stage.scene);
   const feet = options.spawn.clone(), before = feet.clone(), velocity = new Vector3();
   const lift = new Vector3(); // m the picture still lags behind the last steps up (and a climb out of the water)
+  const push = new Vector3(); // m/s a toss still carries it over the ground, until it lands (toss())
   let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false, under = false;
+  let foe: PlayerControls["foe"], leaping = false, spin = 0, spinBefore = 0; // the leaping slap, and how far round it has turned, radians
   let actor: Actor | undefined, aim: number | undefined, ride: Ride | undefined; // aim: where a lasting action turns the beaver
   let hold: PlayerControls["hold"], freeing = false; // freeing: a pickup waits for the paws to be free
   let turnTo: PlayerControls["turnTo"], turned = 0; // turned: rad turnTo turned this step
@@ -179,6 +194,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   /** Whether a ride may be at x, z facing (dx, dz) (unit): deep enough at the seat, the bow in the water and clear. */
   const floats = (r: Ride, x: number, z: number, dx: number, dz: number, level: number) =>
     depthAt(x, z, level) > r.depth && depthAt(x + dx * r.bow, z + dz * r.bow, level, solid) > r.draft;
+
+  // Whether the ground a step ahead along the facing lies under the water (a walk asked for by turnTo stops there).
+  const wetAhead = () => {
+    const level = waterLevel();
+    if (level === undefined) return false;
+    const x = feet.x + Math.sin(facing) * (RADIUS + 0.15), z = feet.z + Math.cos(facing) * (RADIUS + 0.15), top = Math.max(level, feet.y) + 1;
+    return top - depthAt(x, z, top) < level;
+  };
 
   const steep = () => {
     down.origin = { x: feet.x, y: feet.y + 0.3, z: feet.z };
@@ -280,10 +303,15 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     facingBefore = facing;
     keys.read(input);
     if (ride) Object.assign(input, rideKeys(input));
+    const tossed = push.lengthSquared() > 0;
+    if (tossed) input.act = false; // thrown, it lets go of what it was at: a gnaw or a build ends by itself
     // Under water: no tail slap (it is the alarm on the surface); pickup and drop work, and the actor offers only what
     // can be done there (build/index.ts: wedging a stick into the food cache, no gnawing).
+    const slapping = slap.progress > 0;
     stepSlap(slap, dt, !!input.slap && !slapHeld, (grounded || afloat) && act.action === "none" && !under);
     slapHeld = !!input.slap;
+    const leaps = !slapping && slap.progress > 0 && !!foe && grounded && !afloat && !ride;
+    if (leaps) leaping = true; else if (slap.progress === 0) leaping = false;
     const pressed = input.act && !actHeld && slap.progress === 0; // E waits while the tail is up
     actHeld = input.act;
 
@@ -318,6 +346,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const { low, slow } = stepLow(!!input.dive, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: !!ride });
     const top = ride ? RIDE_SPEED : afloat ? SWIM_SPEED : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
     const [accel, brake] = ride ? [RIDE_ACCEL, RIDE_BRAKE] : afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
+    const going = speed; // m/s before steering brakes it: a walk asked for by turnTo keeps it
     steering.facing = facing; steering.speed = speed;
     steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
     facing = steering.facing; speed = steering.speed;
@@ -326,8 +355,18 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       const was = facing;
       facing = steering.facing = turnTowards(facing, turnTo.heading, turnTo.rate * dt);
       turned = facing - was;
+      if (turnTo.speed) speed = wetAhead() ? 0 : Math.min(turnTo.speed, going + ACCEL * dt);
     }
     if (low === "sit" && !ride) speed = 0; // sitting, it does not slide on: it stops where it sat down
+    if (leaping && foe) {
+      const was = facing;
+      facing = steering.facing = turnTowards(facing, Math.atan2(foe.x - feet.x, foe.z - feet.z), LEAP_TURN * dt);
+      turned += facing - was;
+    }
+    // Once round over the whole slap, slow at both ends: half round, the tail towards the foe, as it strikes (SLAP_HIT 0.5).
+    spinBefore = spin;
+    spin = leaping ? 2 * Math.PI * slap.progress * slap.progress * (3 - 2 * slap.progress) : 0;
+    if (spin < spinBefore) spinBefore = spin; // over: full round is where it began
 
     // Up and down: jump, gravity, or floating at the surface.
     const level = waterLevel();
@@ -339,6 +378,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     else if (!afloat && (depth > FLOAT_DEPTH || overDeep)) { afloat = true; vy = Math.max(vy, -DIVE_SPEED); } // the water stops a fall: off the basin's drop-off it would sink a metre
     else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02 && !overDeep) afloat = false;
     if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
+    if (leaps) { vy = LEAP_SPEED; grounded = false; }
     const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && (act.action !== "build" || under) && slap.progress === 0, afloat, under);
     if (ride) { /* no gravity: the canoe holds it */ }
     else if (afloat) {
@@ -349,12 +389,12 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       // On walkable ground snap-to-ground keeps it down; pressing into the floor would make the controller stall.
       // On ground steeper than it can climb gravity stays on, and the controller lets it slide.
       if (grounded && vy <= 0 && !steep()) vy = 0;
-      else vy = Math.max(-MAX_FALL, vy - GRAVITY * (vy > 0 && !input.jump ? CUT : 1) * dt);
+      else vy = Math.max(-MAX_FALL, vy - GRAVITY * (vy > 0 && !input.jump && !tossed && !leaping ? CUT : 1) * dt); // a toss and a leap rise their whole arc
     }
 
     // Move the capsule through the world.
     if (afloat || vy > 0 || ride) controller.disableSnapToGround(); else controller.enableSnapToGround(0.2);
-    const wish = { x: Math.sin(facing) * speed * dt, y: ride && level !== undefined ? level + ride.seat - feet.y : vy * dt, z: Math.cos(facing) * speed * dt };
+    const wish = { x: (Math.sin(facing) * speed + push.x) * dt, y: ride && level !== undefined ? level + ride.seat - feet.y : vy * dt, z: (Math.cos(facing) * speed + push.z) * dt };
     controller.computeColliderMovement(collider, wish, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, notCarried);
     const moved = controller.computedMovement();
     // Diving down onto the sloping bed, the controller slides the push down along it: no further sideways than wished,
@@ -392,6 +432,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     body.setNextKinematicTranslation({ x: at.x + moved.x, y: at.y + moved.y, z: at.z + moved.z });
     feet.set(at.x + moved.x, at.y + moved.y - HEIGHT / 2 - OFFSET, at.z + moved.z);
     grounded = ride ? true : controller.computedGrounded(); // the canoe holds it up
+    if (grounded || afloat) push.setAll(0); // a toss ends where it comes down
     if (vy > 0 && moved.y < wish.y * 0.5) vy = 0; // bumped the head
     velocity.set((moved.x - inX) / dt, 0, (moved.z - inZ) / dt); // a climb's way in is not a dash
 
@@ -408,7 +449,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     Vector3.LerpToRef(before, feet, alpha, node.position);
     lift.scaleInPlace(Math.exp(-LIFT_EASE * dt)); // a step up shows as a quick rise, not a jump of the whole body
     node.position.addInPlace(lift);
-    node.rotation.set(0, facingBefore + Math.atan2(Math.sin(facing - facingBefore), Math.cos(facing - facingBefore)) * alpha, 0);
+    node.rotation.set(0, facingBefore + Math.atan2(Math.sin(facing - facingBefore), Math.cos(facing - facingBefore)) * alpha + spinBefore + (spin - spinBefore) * alpha, 0);
     camera.update(dt, show.copyFrom(node.position), { velocity, facing, afloat, busy: act.action === "gnaw" || act.action === "build", level: waterLevel(), diving: dive.diving });
     if (carried && options.hand) {
       // The first-person view's eyes look the camera's way: its yaw looks from +z round to -z (see camera.gaze).
@@ -426,6 +467,13 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     get waterLevel() { return waterLevel(); },
     get carrying() { return carried?.stick; },
     drop() { if (carried) { release(); act.carrying = false; } },
+    toss(x, z, up) {
+      if (ride) return;
+      push.set(x, 0, z);
+      vy = up; speed = 0; grounded = false;
+    },
+    get foe() { return foe; },
+    set foe(value) { foe = value; },
     putDown() {
       if (!act.carrying || act.action !== "none" || !(grounded || afloat) || ride) return false;
       act.action = "drop";
@@ -463,7 +511,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       feet.set(x, at.y - HEIGHT / 2 - OFFSET, z); before.copyFrom(feet);
       facing = facingBefore = turnTo;
       speed = vy = steering.spin = 0;
-      lift.setAll(0);
+      lift.setAll(0); push.setAll(0);
       ride = undefined;
     },
     ride(value) {

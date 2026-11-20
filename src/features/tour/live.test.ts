@@ -42,7 +42,7 @@ test("the beaver says why it does what it does, by the hour, the weather and wha
   expect(reason("Dam work", at({ carrying: true }))).toContain("stick");
   expect(reason("A new thing", at({}))).toBe("A new thing"); // no line of its own: its name
   expect(reason("Trading", at({ day: Date.parse("2026-12-20") }))).toBe("Wood to spare. Let's go shopping!");
-  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping", "Canoeing", "Find Mrs. Beaver", "Burn the flag", "Visit the Old Beaver"];
+  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping", "Canoeing", "Find Mrs. Beaver", "Burn the flag", "Visit the Old Beaver", "Drive off the bear", "Mushrooms"];
   for (const hour of [3, 9, 12.5, 19.5, 23]) for (const weather of ["fair", "rain", "fog"]) for (const activity of activities)
     for (const day of [undefined, Date.parse("2026-11-19")]) // one row of the caption, new or not
       expect(reason(activity, at({ hour, weather, day })).length).toBeLessThanOrEqual(40);
@@ -132,6 +132,16 @@ test("canoeing: new on the day it came, then a reason of its own that fits the w
   expect(reason("Canoeing", at({ day: later, hour: 12.5, weather: "rain" }))).toContain("Rain");
 });
 
+test("mushrooms: a reason of its own, tried often in their first week and only rarely after", () => {
+  const later = at({ day: Date.parse("2026-12-20") });
+  expect(reason("Mushrooms", later)).toBe("Mushrooms! Just one more…");
+  expect(fresh("Mushrooms", at({ day: Date.parse("2026-11-19") }))).toBe(true);
+  expect(fresh("Mushrooms", at({ day: Date.parse("2026-11-26") }))).toBe(false);
+  expect(weight("Mushrooms", at({ day: Date.parse("2026-11-20") }))).toBeGreaterThan(weight("Dam work", at({ day: Date.parse("2026-11-20") })));
+  expect(weight("Mushrooms", later)).toBe(0.6);
+  expect(weight("Mushrooms", later)).toBeLessThan(weight("Around the clearing", later));
+});
+
 test("visiting the Old Beaver: a reason of its own, new for a week from the day he came", () => {
   expect(reason("Visit the Old Beaver", at({}))).toBe("Who mutters in the thicket?");
   expect(reason("Visit the Old Beaver", at({})).length).toBeLessThan(40);
@@ -145,4 +155,10 @@ test("left alone: the beaver gives its reason in its own words, and is curious a
   expect(fresh("Left alone", at({ day: Date.parse("2026-11-26") }))).toBe(false);
   // after its week a real minute of standing still comes round less often than the rest
   expect(weight("Left alone", at({ day: Date.parse("2026-12-20") }))).toBeLessThan(weight("Around the clearing", at({})));
+});
+
+test("driving off the bear: a reason of its own, new on the day it came", () => {
+  expect(reason("Drive off the bear", at({}))).toBe("A bear! Not in my clearing.");
+  expect(fresh("Drive off the bear", at({ day: Date.parse("2026-11-20") }))).toBe(true);
+  expect(fresh("Drive off the bear", at({ day: Date.parse("2026-11-27") }))).toBe(false);
 });

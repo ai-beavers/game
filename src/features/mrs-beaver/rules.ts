@@ -13,6 +13,7 @@
 //   done(quest)                                      how many steps are done, 0 … 4 (the checklist's ticks)
 //   rows(done, fits)                                 which step lines the checklist shows
 //   wayHome(place)                                   the points she walks to in turn once freed, the last one HOME
+//   wayOut(place, from, to, short)                   the points from one spot towards another along her way out from HOME
 //
 // Each change says whether it changed something, so the feature tells of each step exactly once. Nothing here is
 // kept: the quest lives in memory for one visit (no localStorage, no network).
@@ -50,6 +51,39 @@ export const BENDS: readonly (readonly XZ[])[] = [
 ];
 /** Her way home from a hiding place: the points she walks to in turn, the last one HOME. */
 export const wayHome = (place: number): XZ[] => [...(BENDS[place] ?? []), HOME];
+/** A way from `from` towards `to` for one who follows her way out from HOME (HOME, her bends back to front, her
+ *  hiding place): onto that way at its point nearest `from`, along it round its bends, the last point `short` m before
+ *  its point nearest `to`. So from her flower to her tracks each leg is straight, past nothing solid (rules.test.ts
+ *  checks it), where a straight line is not: from the north flower it runs through the Calendar board. */
+export function wayOut(place: number, from: XZ, to: XZ, short = 0): XZ[] {
+  const points = [HOME, ...[...(BENDS[place] ?? [])].reverse(), HIDING[place]!];
+  const legs = points.slice(1).map((b, k) => ({ a: points[k]!, b, len: Math.hypot(b.x - points[k]!.x, b.z - points[k]!.z) }));
+  /** How far along the way p lies: the m walked from HOME to the point of the way nearest it. */
+  const along = (p: XZ) => {
+    let walked = 0, at = 0, nearest = Infinity;
+    for (const { a, b, len } of legs) {
+      const dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (len * len)));
+      const away = Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
+      if (away < nearest) { nearest = away; at = walked + len * t; }
+      walked += len;
+    }
+    return at;
+  };
+  /** The point of the way m walked from HOME. */
+  const point = (m: number): XZ => {
+    for (const { a, b, len } of legs) {
+      if (m <= len) return { x: a.x + ((b.x - a.x) * m) / len, z: a.z + ((b.z - a.z) * m) / len };
+      m -= len;
+    }
+    return HIDING[place]!;
+  };
+  const start = along(from), end = Math.max(0, along(to) - short);
+  if (end <= start) return [point(end)]; // no further out than where it starts: straight there
+  const bends: XZ[] = [];
+  let walked = 0;
+  for (const { b, len } of legs) { walked += len; if (walked > start && walked < end) bends.push(b); }
+  return [point(start), ...bends, point(end)];
+}
 /** m from the middle of the pen to the player's feet within which the Use key offers to gnaw it open. */
 export const REACH = 1.3;
 /** m from the flower to the player's feet within which the Use key offers to pick it up. */
