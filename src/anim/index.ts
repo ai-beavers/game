@@ -9,6 +9,8 @@
 //            around, flexing when angry), turning lean, the dip after a landing, anger
 //   low      sit (on its haunches, trunk upright, tail flat on the ground, paws at the chest, still breathing and
 //            looking round) or crawl (low on all fours, the front paws stepping with the hind feet), by motion.low
+//   bound    running: down on all fours, long and low, the hind feet and the front paws each landing nearly together,
+//            the back humping and stretching (the crawl's pose, by speed; not carrying, low or afloat)
 //   action   pickup, drop, gnaw, build, by actionProgress; feet stay planted
 //   air      stretched while rising, legs forward while falling
 //   swim     level in the water, hind legs paddle, tail steers; pitched nose down sinking, up rising (motion.vertical)
@@ -24,7 +26,7 @@ import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
 import { foot, gait, type FootPlan, type Gait } from "./gait.ts";
 import { ANKLE, REACH, aimArm, onChest, placeLeg, reachArm } from "./ik.ts";
-import { add, axisAngle, clamp, inv, lerp, mul, rotate, smooth, type Quat, type Vec } from "./quat.ts";
+import { add, axisAngle, clamp, inv, lerp, mul, rotate, slerp, smooth, type Quat, type Vec } from "./quat.ts";
 import { REST } from "./rest.ts";
 
 export { gait, foot } from "./gait.ts";
@@ -96,13 +98,16 @@ const STAND_ARM: ArmParams = [0.5, 0, 0, 0.1, 0.3, 0, 0];
 // Turning on the spot the feet step round: the stride runs on as if the feet walked PIVOT m per radian turned, and a
 // planted foot turns back against the body as it moves under it, so it stands still on the ground.
 const PIVOT = 0.15;
+/** Into a turn the upper body leans (roll) and twists (lead), more the faster it goes: rad, from speed and turn rate. */
+const intoTurn = (speed: number, turning: number) => [soft(0.13 * speed * turning, 0.3), soft(0.04 * turning, 0.25)] as const;
 /** stepping: the pace the feet step at, m/s, walking plus pivoting; pivot: rad/s turned on the ground. */
 /** A foot as the stride plans it, plus yaw: turned about the middle, for pivoting. */
 type Step = FootPlan & { yaw: number };
 interface Ground { speed: number; pivot: number; feet: [Step, Step]; phase: number; anger: number; turning: number; dip: number; time: number; flex: number }
 
-/** On its feet: from standing through walking to running, all one function of speed, so it blends by itself. */
-function ground(body: Body, d: Ground, g: Gait) {
+/** On its feet: from standing through walking to running, all one function of speed, so it blends by itself. Gives
+ *  back where it put the feet. */
+function ground(body: Body, d: Ground, g: Gait): Record<Side, Plant> {
   const { run } = g, a = d.anger, t = d.time;
   const moving = smooth(0.02, 0.4, d.speed + abs(d.pivot) * PIVOT), still = 1 - moving;
   const [L, R] = d.feet;
@@ -114,7 +119,7 @@ function ground(body: Body, d: Ground, g: Gait) {
   const glance = (hash(glanceAt) < 0.6 ? (hash(glanceAt + 0.5) - 0.5) * 1.6 : 0) * smooth(0.4, 1.0, into) * (1 - smooth(2.6, 3.3, into)) * still;
   const dipN = d.dip / 0.08;
   const lean = lerp(lerp(0.04, -0.12, a), 0.5, run) - 0.05 * still + 0.015 * breath * still + 0.5 * dipN;
-  const roll = soft(0.13 * d.speed * d.turning, 0.3);
+  const [roll, lead] = intoTurn(d.speed, d.turning);
   const trunkParams: Trunk = {
     lean,
     sway: lerp(0.09, 0.035, run) * (1 + 0.7 * a) * load + 0.035 * shift * still,
@@ -127,7 +132,6 @@ function ground(body: Body, d: Ground, g: Gait) {
   trunk(body, trunkParams);
   // into a turn the upper body leans in; the hips stay level, so the legs keep their reach
   // and twists into it from the chest up, so the head looks round first and the hips follow
-  const lead = soft(0.04 * d.turning, 0.25);
   body.turns.spine = mul(axisAngle(Y, 0.6 * roll), mul(axisAngle(Z, 0.4 * lead), body.turns.spine));
   body.turns.chest = mul(axisAngle(Y, 0.4 * roll), mul(axisAngle(Z, 0.6 * lead), body.turns.chest));
   // the head leads into a turn and keeps looking where it goes
@@ -136,8 +140,8 @@ function ground(body: Body, d: Ground, g: Gait) {
 
   const width = lerp(0.015, 0.0, run) + 0.05 * a + 0.025 * still;
   const plan = (f: Step, sign: number): Plant => {
-    const q = axisAngle(UP, f.yaw);
-    return { at: rotate(q, [sign * (FOOT_X + width), ANKLE + f.lift, f.z]), turn: mul(q, footTurn(sign, lerp(0.12, 0.25, a) * (1 - run), f.pitch)) };
+    const q = axisAngle(UP, f.yaw), out = lerp(0.12, 0.25, a) * (1 - run), t = onToes(f, run, out);
+    return { at: rotate(q, [sign * (FOOT_X + width + t.side), ANKLE + f.lift + t.rise, f.z + t.ahead]), turn: mul(q, footTurn(sign, out, f.pitch + t.roll)) };
   };
   const compress = (f: typeof L) => (f.planted ? 1 - f.forward * f.forward : 0);
   // the hips ride as low as the longest reach of the stride needs, so they need not dip at every step; walking
@@ -145,7 +149,8 @@ function ground(body: Body, d: Ground, g: Gait) {
   const low = HIP - (ANKLE + sqrt(REACH * REACH - g.reach * g.reach));
   const bob = moving * (1 - run) * 0.005 * cos(2 * TAU * (d.phase - g.duty / 2));
   const drop = low - bob + run * (0.006 + 0.015 * max(compress(L), compress(R))) + d.dip + 0.01 * a * max(compress(L), compress(R));
-  plantLegs(body, { L: plan(L, 1), R: plan(R, -1) }, drop, [0.012 * load * (1 - run) + 0.02 * shift * still, 0, 0]);
+  const feet = { L: plan(L, 1), R: plan(R, -1) };
+  plantLegs(body, feet, drop, [0.012 * load * (1 - run) + 0.02 * shift * still, 0, 0]);
 
   // arms swing against the legs; furious they are carried wide; running they pump, bent at the elbow
   const swinging = mixArm(WALK_ARM, RAGE_ARM, a);
@@ -169,6 +174,7 @@ function ground(body: Body, d: Ground, g: Gait) {
     flexArms(next, FLEXES[i % 4]!, pump);
     body.blend(poses.blend(next, blendIn), d.flex, ARMS);
   }
+  return feet;
 }
 
 /** In the air: no crouch before, the body follows its vertical speed. Rising it stretches, arms up; falling the
@@ -180,6 +186,16 @@ function air(body: Body, vertical: number) {
   const placed = body.fk();
   for (const [sign, lr] of SIDES)
     aimArm(body, placed, lr, [sign * lerp(0.8, 0.3, up), lerp(0.35, 0.85, up), lerp(0.35, 0.45, up)], [sign * lerp(0.4, 0.05, up), lerp(0.75, 0.95, up), lerp(0.5, 0.3, up)], lr === "R" ? 1 : 0.3);
+}
+
+/** A jump out of a bound: the trunk as the bound has it, long and low; the front paws stretched forward and down
+ *  for the landing, the hind legs trailing out behind while rising and coming in under the body while falling. */
+function leap(body: Body, vertical: number) {
+  const up = smooth(-2.5, 2.5, vertical); // 1 rising … 0 falling
+  for (const [sign, lr] of SIDES) leg(body, sign, lr, lerp(0.9, -0.5, up), lerp(1.2, 0.4, up), lerp(-0.6, 0.6, up), 0.15);
+  const placed = body.fk();
+  // the chest's frame lies down with the trunk: its up is ahead, its forward is down
+  for (const [sign, lr] of SIDES) aimArm(body, placed, lr, [sign * 0.25, 0.75, lerp(0.6, 0.4, up)], [sign * 0.1, 0.85, lerp(0.5, 0.3, up)], 0.3);
 }
 
 /** Bent down to the ground in front: b 0 (upright) … 1 (right finger tips at `spot`, on the ground). */
@@ -219,26 +235,93 @@ const STROKE = 0.9; // m the canoe goes per stroke
 
 const SIT_DROP = 0.1, SIT_FEET = 0.12, SIT_TAIL = -0.2, SIT_TIP = -0.2; // m, m, rad, rad
 
-/** Crawling: the trunk pitched forward and low, the head up to look ahead, the hind feet on the stride as walking,
- *  the front paws stepping on the ground with them: each paw with the hind foot of the other side, on the same plan
- *  (so on the same distance walked), so neither slides. */
-function crawl(body: Body, feet: [Step, Step], turning: number) {
-  trunk(body, { lean: CRAWL_LEAN, tail_up: 0.4, tail_sway: soft(-0.06 * turning, 0.35) + 0.15 * feet[0].forward });
-  body.turn("head", [X, -0.85 * CRAWL_LEAN], [Z, soft(0.12 * turning, 0.6)]);
+/** On all fours: the trunk pitched forward and low, the head up to look ahead, the hind feet on their plans, the front
+ *  paws on the ground on theirs (each on the distance walked, so none slides). b 0 crawls: each paw steps with the hind
+ *  foot of the other side. b 1 bounds, as a beaver runs: the hind feet push off nearly together and the front paws land
+ *  between, the back arching as the hind feet swing in under it and stretching as the paws reach out, the rump rising
+ *  in the flight. roll and lead: how the trunk leans and twists into a turn, as standing. */
+function allFours(body: Body, hind: [Step, Step], paws: [Step, Step], g: Gait, turning: number, b: number, roll: number, lead: number): Record<Side, Plant> {
+  const under = (hind[0].forward + hind[1].forward) / 2; // 1 with the hind feet forward under the belly, -1 pushed back
+  // Pitch of the pelvis, the back and the chest, each from the one before (rad, forward): crawling as trunk() leans
+  // them, the chest up; bounding the back long and level, as low as the rump. The tail is turned back down by what
+  // the pelvis pitches, so it trails behind a little below level, bobbing only a little as the back humps.
+  const pitch = [0.4, 0.35, 0.25].map((share, k) => lerp(share * CRAWL_LEAN, BOUND_PITCH[k]!, b));
+  const back = pitch[0]! + pitch[1]! + pitch[2]!;
+  trunk(body, { tail_up: lerp(0.4, pitch[0]! - BOUND_TAIL, b) - 0.15 * b * under, tail_sway: soft(-0.06 * turning, 0.35) + lerp(0.15, 0.05, b) * hind[0].forward });
+  // The back flexes with the hind legs: humped (the middle of the back up, rump and chest staying) as they swing in
+  // under the belly, long as they push off behind.
+  const arch = BOUND_ARCH * b * under;
+  body.turns.hips = mul(axisAngle(X, pitch[0]! - arch), body.turns.hips);
+  body.turns.spine = mul(axisAngle(Y, 0.6 * roll), mul(axisAngle(Z, 0.4 * lead), mul(axisAngle(X, pitch[1]! + 2 * arch), body.turns.spine)));
+  body.turns.chest = mul(axisAngle(Y, 0.4 * roll), mul(axisAngle(Z, 0.6 * lead), mul(axisAngle(X, pitch[2]! - arch), body.turns.chest)));
+  // crawling the head comes up to look ahead; bounding it stays in line with the back, the nose a little down
+  body.turn("head", [X, lerp(0.15 * CRAWL_LEAN, BOUND_NOSE, b) - back], [Z, soft(0.12 * turning, 0.6)], [[0, 0, 1], -0.25 * roll]);
+  // Bounding the body is drawn out long along the back and the neck: longest as the hind feet push off behind, shorter
+  // as it humps with them under the belly.
+  const long = b * (BOUND_LONG - BOUND_LONG_FLEX * under);
+  body.move("spine", [0, 0.4 * long, 0]);
+  body.move("chest", [0, 0.4 * long, 0]);
+  body.move("head", [0, 0.2 * long, 0]);
+  // Airtime: once both hind feet have pushed off the body rises, sails over the front paws as they land and carry it,
+  // and comes down as the hind feet reach the ground again. Only while both hind feet are up (their lifts are 0 on the
+  // ground and at lift-off and touchdown, so it eases in and out): a hind leg on the ground is too short to follow.
+  // Feet in the air rise with the body, feet on the ground stay there.
+  const up = (f: Step) => (g.lift > 1e-6 ? f.lift / g.lift : 0), hop = BOUND_HOP * b * up(hind[0]) * up(hind[1]);
   const plan = (f: Step, sign: number): Plant => {
     const q = axisAngle(UP, f.yaw);
-    return { at: rotate(q, [sign * (FOOT_X + 0.03), ANKLE + f.lift, f.z]), turn: mul(q, footTurn(sign, 0.2, f.pitch)) };
+    // the swing's kick back is short (a hind leg under the low body cannot reach as far back as an upright one): what
+    // it is cut short by goes up instead, so the foot flicks up off the ground rather than sliding forward along it
+    // and so is its reach forward before touchdown: the foot comes down onto the ground from above instead
+    const behind = -g.reach - f.z, ahead = f.z - g.reach;
+    const z = f.planted ? f.z : behind > 0 ? lerp(f.z, -g.reach - KICK * Math.tanh(behind / KICK), b) : ahead > 0 ? lerp(f.z, g.reach + REACH_ON * Math.tanh(ahead / REACH_ON), b) : f.z;
+    const out = 0.2 * (1 - g.run), t = onToes(f, g.run, out); // toed out as standing at a run, so they blend
+    const y = ANKLE + f.lift + FLICK * Math.abs(z - f.z) + hop * up(f) + t.rise;
+    return { at: rotate(q, [sign * (FOOT_X + 0.03 + t.side), y, z + t.ahead]), turn: mul(q, footTurn(sign, out, f.pitch + t.roll)) };
   };
-  plantLegs(body, { L: plan(feet[0], 1), R: plan(feet[1], -1) }, CRAWL_DROP, [0, 0, -0.04]);
-  const placed = body.fk();
+  const pressed = (f: Step) => (f.planted ? 1 - f.forward * f.forward : 0);
+  const feet = { L: plan(hind[0], 1), R: plan(hind[1], -1) };
+  plantLegs(body, feet, lerp(CRAWL_DROP, BOUND_DROP, b) + b * BOUND_SINK * max(pressed(hind[0]), pressed(hind[1])) - hop, [0, 0, -0.04 * (1 - b)]);
+  const placed = body.fk(), pawZ = lerp(PAW_Z, BOUND_PAW_Z, b);
   for (const [sign, lr] of SIDES) {
-    const f = feet[sign > 0 ? 1 : 0], q = axisAngle(UP, f.yaw);
-    reachArm(body, placed, lr, rotate(q, [sign * PAW_X, PAW_Y + 1.5 * f.lift, PAW_Z + f.z]), [sign * 0.4, 0.2, -1], 0.2);
+    const f = paws[sign > 0 ? 0 : 1], q = axisAngle(UP, f.yaw);
+    reachArm(body, placed, lr, rotate(q, [sign * PAW_X, PAW_Y + 1.5 * f.lift + hop * up(f), pawZ + f.z]), [sign * 0.4, 0.2, -1], 0.2);
   }
+  return feet;
+}
+/** Running (run 0 … 1) a foot pushes off rolling onto its toes: the heel comes up through the second half of the
+ *  stance while the toes stay where they stand, and the foot stays stretched out behind into the swing, then curls
+ *  forward (smooth at lift-off). How far it rolls (rad, toes down), and how far that moves the ankle: turned about the
+ *  toes (TOE ahead of it along the foot, toed out by `out` rad; ANKLE above the sole) up, ahead and out to its side. */
+function onToes(f: Step, run: number, out: number) {
+  const s = Math.acos(clamp(f.planted ? f.forward : -f.forward, -1, 1)) / PI;
+  const roll = run * TOE_OFF * (f.planted ? smooth(0.5, 1, s) : 1 - smooth(0, 0.4, s));
+  const along = TOE * (1 - cos(roll)) + ANKLE * sin(roll);
+  return { roll, rise: ANKLE * (cos(roll) - 1) + TOE * sin(roll), ahead: cos(out) * along, side: sin(out) * along };
+}
+/** Between two poses that each stood on their feet, a blend of them does not: blended joint turns put the feet
+ *  somewhere between. The feet go back onto the blend of where each pose put them, the hips lower only if they must. */
+function replant(body: Body, a: Record<Side, Plant>, b: Record<Side, Plant>, t: number) {
+  const mix = (lr: Side): Plant => ({ at: a[lr].at.map((x, k) => lerp(x, b[lr].at[k]!, t)) as Vec, turn: slerp(a[lr].turn, b[lr].turn, t) });
+  plantLegs(body, { L: mix("L"), R: mix("R") }, 0);
 }
 /** rad the trunk leans, m the hips go down, and where the finger tips of a front paw stand at the middle of its step. */
 const CRAWL_LEAN = 1.25, CRAWL_DROP = 0.08;
 export const PAW_X = 0.13, PAW_Y = 0.015, PAW_Z = 0.36;
+/** Bounding: the pitch of the pelvis, the back and the chest (rad, each from the one before: the back long, round and
+ *  level, the rump low), how far the tail is turned up from trailing straight behind the pelvis (rad), the nose below
+ *  level (rad), the most the back humps (rad), m the rump sinks into a stance and the hips ride lower than crawling,
+ *  and where the paws stand at the middle of their step (reaching ahead under the chin); KICK: m the hind feet swing back past the stance, at most,
+ *  and FLICK: m they lift per m that cuts off. */
+const BOUND_LONG = 0.08, BOUND_LONG_FLEX = 0.03; // m the back and neck are drawn out bounding, and how much more or less as the back stretches or humps
+const BOUND_PITCH = [0.7, 0.9, 0], BOUND_TAIL = 0.2, BOUND_NOSE = 0.3, BOUND_ARCH = 0.25, BOUND_SINK = 0.015, BOUND_DROP = 0.04, BOUND_PAW_Z = 0.56, KICK = 0.07, FLICK = 1.5, BOUND_HOP = 0.04, REACH_ON = 0.02, TOE_OFF = 0.4, TOE = 0.12;
+/** How far behind the left foot (or paw) the right one comes down, in strides: walking and crawling they take turns
+ *  (0.5); bounding the hind feet land nearly together and the paws a little apart, half a stride after them. */
+export const SPLIT = { hind: [0.5, 0.08], paws: [0.5, 0.12] } as const;
+/** Strides the front paws come down after the hind feet: walking and crawling half a stride; bounding later, after
+ *  the flight that follows the push-off. */
+const PAWS_AFTER = [0.5, 0.6] as const;
+const LEAP_EASE = 0.3; // s a jump out of a bound takes to go over into the leap
+const RETIME = 0.8;
 
 /** Where the right hand picks a thing up and puts it down: on the ground ahead of the feet, a little to the right. */
 export const PICKUP_SPOT: Vec = [-0.1, 0.02, 0.3], DROP_SPOT: Vec = [-0.1, 0.03, 0.36];
@@ -328,11 +411,12 @@ function tailSlap(body: Body, p: number, wet: number) {
 
 export const createAnimator: CreateAnimator = (): Animator => {
   const body = new Body(), layer = new Body(), extra = new Body();
-  const holds = [0, 1].map(() => ({ planted: false, z: 0, yaw: 0, dz: 0, dyaw: 0 }));
-  let phase = 0, lastDistance: number | undefined, swimPhase = 0, strokePhase = 0;
+  const holds = [0, 1, 2, 3].map(() => ({ planted: false, z: 0, yaw: 0, dz: 0, dyaw: 0 }));
+  let phase = 0, lastSpin = 0, lastDistance: number | undefined, swimPhase = 0, strokePhase = 0;
+  const offsets = [0, 0.5, 0.5, 1]; // in strides behind the left hind foot: right hind foot, left and right front paw
   let speed = 0, anger = 0, first = true, wasGrounded = true;
   const turning$ = new Ease(-Infinity, Infinity); // eased, not damped: a damped rate jumps in its first frame
-  const sit$ = new Ease(), crawl$ = new Ease(), air$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease(), paddle$ = new Ease();
+  const sit$ = new Ease(), crawl$ = new Ease(), bound$ = new Ease(), air$ = new Ease(), leap$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease(), paddle$ = new Ease();
   const pitch$ = new Ease(-Infinity, Infinity);
   let shown: Action = "none", progress = 0, vertical = 0;
   return {
@@ -343,7 +427,8 @@ export const createAnimator: CreateAnimator = (): Animator => {
       anger = set(anger, clamp(m.anger), 0.3);
       const ease = (weight: Ease, target: number, seconds: number) => (first ? (weight.value = target) : weight.to(target, seconds, dt));
       const turning = ease(turning$, m.turning, 0.25);
-      const inAir = ease(air$, m.grounded || m.swimming > 0.5 ? 0 : 1, 0.15);
+      const airborne = m.grounded || m.swimming > 0.5 ? 0 : 1;
+      const upright = ease(air$, airborne, 0.15), leaping = ease(leap$, airborne, LEAP_EASE);
       const swimming = ease(swimming$, clamp(m.swimming), 0.5);
       const carrying = ease(carrying$, m.carrying ? 1 : 0, 0.35);
       const diving = ease(diving$, m.diving && m.swimming > 0.5 ? 1 : 0, 0.6);
@@ -355,10 +440,16 @@ export const createAnimator: CreateAnimator = (): Animator => {
       const sitting = ease(sit$, m.low === "sit" ? 1 : 0, 0.45), crawling = ease(crawl$, m.low === "crawl" ? 1 : 0, 0.35);
       const pivot = m.grounded ? m.turning : 0, stepping = speed + abs(pivot) * PIVOT;
       const g = gait(Math.min(stepping, max(speed, WALK_SPEED)), anger); // pivoting it walks, quicker, never runs
+      // running it drops onto all fours and bounds; not with a stick in the paw, low, or afloat (others' beavers too)
+      const bounding = ease(bound$, m.low || m.carrying ? 0 : g.run * (1 - clamp(m.swimming)), 0.4);
       // the stride follows the ground walked, not the clock
       const walked = lastDistance === undefined ? m.distance : clamp(m.distance - lastDistance, -0.5, 0.5);
-      phase = lastDistance === undefined ? m.distance / g.cycle : phase + (walked + (m.grounded ? abs(m.turning) * PIVOT * dt : 0)) / g.cycle;
+      const advanced = lastDistance === undefined ? 0 : (walked + (m.grounded ? abs(m.turning) * PIVOT * dt : 0)) / g.cycle;
+      phase = lastDistance === undefined ? m.distance / g.cycle : phase + advanced;
       phase -= Math.floor(phase);
+      // standing still the stride does not show (no reach, no lift): it settles where both feet stand, so moving off
+      // never starts with a foot caught in the middle of a swing
+      if (stepping < 0.005) phase = phase < 0.3 || phase >= 0.8 ? 0.05 : 0.55;
       // touching down the stride goes on where it was: restarting it with a foot just landing (as it once did) made
       // the legs jump, and the air pose fades out over them anyway
       swimPhase = lastDistance === undefined ? m.distance / 0.6 + m.time * 0.5 : swimPhase + walked / 0.6 + dt * 0.5;
@@ -369,28 +460,56 @@ export const createAnimator: CreateAnimator = (): Animator => {
       // then held where it stood, moved back by what was walked and turned against the body: the plan alone would
       // let it slide whenever the stride changes under it (speeding up, slowing down, turning harder). The
       // difference fades out in the swing, or slowly when it stands still and should come back beside the other.
-      const along = stepping > 1e-4 ? speed / stepping : 1, spin = stepping > 1e-4 ? pivot / stepping : 0;
-      const feet = [foot(phase, g), foot(phase + 0.5, g)].map((f, k): Step => {
+      // shares of walking and turning, from the turn whether or not on the ground: leaving the ground they would change
+      // at once, and the feet with them (the paws, far ahead, sideways)
+      const turned = speed + abs(m.turning) * PIVOT, along = turned > 1e-4 ? speed / turned : 1, spin = turned > 1e-4 ? m.turning / turned : 0;
+      // Hind feet, then front paws. Walking they take turns; bounding they come down in pairs. A foot changes its
+      // timing only in the air, so none is ever pulled along the ground: its swing runs up to RETIME faster or slower
+      // than the stride, most in the middle of the swing and not at all at lift-off and touchdown, easing off as it
+      // comes to the new timing, so the foot never jerks. Standing, the timing does not show and it changes at once.
+      const split = (s: readonly [number, number]) => lerp(s[0], s[1], bounding);
+      const timing = [0, split(SPLIT.hind), split(PAWS_AFTER), split(PAWS_AFTER) + split(SPLIT.paws)];
+      for (let k = 1; k < 4; k++) {
+        const swing = foot(phase + offsets[k]!, g), up = g.lift > 1e-6 ? swing.lift / g.lift : 0;
+        if (stepping < 0.02 || first) offsets[k] = timing[k]!;
+        else if (!swing.planted) offsets[k]! += RETIME * Math.tanh((timing[k]! - offsets[k]!) / 0.05) * up * abs(advanced);
+      }
+      const plans = offsets.map((o) => foot(phase + o, g));
+      const [L, R, pawL, pawR] = plans.map((f, k): Step => {
         const held = holds[k]!, z = f.z * along, yaw = spin * f.z;
         // held no further than a little past the stride's reach: a foot left far behind would pull the hips down
         if (f.planted && held.planted && m.grounded && wasGrounded) { held.dz = clamp(held.z - walked, -g.reach - 0.02, g.reach + 0.02) - z; held.dyaw = held.yaw - pivot * dt - yaw; }
+        else if (!f.planted) held.dyaw -= (spin - lastSpin) * f.z; // in the air a sudden change of turn (it can stop at once) eases in
         const fade = exp(-dt / (f.planted && stepping > 0.05 ? Infinity : f.planted ? 0.3 : 0.06));
         held.dz *= fade; held.dyaw *= fade;
         held.z = z + held.dz; held.yaw = yaw + held.dyaw; held.planted = f.planted;
         return { ...f, z: held.z, yaw: held.yaw };
-      }) as [Step, Step];
+      });
+      const feet: [Step, Step] = [L!, R!];
       wasGrounded = m.grounded;
+      lastSpin = spin;
       const flexing = ease(flexing$, smooth(0.35, 0.75, anger) * (1 - smooth(0.02, 0.3, speed)) * (1 - acting), 0.6);
       first = false;
 
       // the dip after a touchdown: eases in, deepest after 0.07 s, then fades
       const since = max(0, m.sinceLanding) / 0.07, dip = clamp(0.014 * m.landingSpeed, 0, 0.08) * since * since * exp(2 - 2 * since);
       body.reset();
-      ground(body, { speed, pivot, feet, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
+      const standOn = ground(body, { speed, pivot, feet, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
       if (sitting > 0.001) { sit(layer.copy(body), m.time); body.blend(layer, sitting); }
-      if (crawling > 0.001) { crawl(layer.copy(body), feet, turning); body.blend(layer, crawling); }
+      const fours = max(crawling, bounding);
+      if (fours > 0.001) {
+        const fourOn = allFours(layer.copy(body), feet, [pawL!, pawR!], g, turning, bounding / (crawling + bounding), ...intoTurn(speed, turning));
+        body.blend(layer, fours);
+        if (fours < 0.999) replant(body, standOn, fourOn, fours);
+      }
       if (acting > 0.001) { action(layer.reset(), shown, progress, m.time); body.blend(layer, acting); }
-      if (inAir > 0.001) { air(layer.reset(), vertical); body.blend(layer, inAir); }
+      // out of a bound the limbs go over into the leap more slowly: they are in the middle of a fast stride
+      const inAir = lerp(upright, leaping, bounding);
+      if (inAir > 0.001) {
+        air(layer.reset(), vertical);
+        if (bounding > 0.001) { leap(extra.copy(body), vertical); layer.blend(extra, bounding); } // the trunk stays long
+        body.blend(layer, inAir);
+      }
       if (swimming > 0.001) {
         swim(layer.reset(), swimPhase, turning);
         if (diving > 0.001) { dive(extra.reset(), swimPhase, turning); layer.blend(extra, diving); }

@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { RUN_SPEED, WALK_SPEED } from "../contracts.ts";
-import { FOV, REST_DISTANCE, REST_PITCH, beneath, lens, newRig, orbit, spring, stepRig, underWater, view } from "./camera.ts";
+import { FOV, REST_DISTANCE, REST_PITCH, beneath, follow, lens, newRig, orbit, spring, stepRig, underWater, view } from "./camera.ts";
 import { newSteering, steer } from "./state.ts";
 
 const GRAVITY = 18, JUMP_SPEED = Math.sqrt(2 * GRAVITY * 0.6) + GRAVITY / 120; // as src/player
@@ -132,12 +132,11 @@ describe("framing", () => {
     return { shot, beaver: { x: screenX(new Vector3(0, 0.4, 0)), y: screenY(new Vector3(0, 0.4, 0)) }, horizon: Math.tan(-elevation(look)) / half };
   };
   for (const [what, aspect] of [["desktop", 16 / 9], ["phone landscape", 844 / 390], ["phone portrait", 390 / 844]] as const) {
-    test(`${what}: beaver in the lower third, a little off the middle, horizon in the picture`, () => {
+    test(`${what}: beaver in the lower third, centred across, horizon in the picture`, () => {
       const { beaver, horizon } = rest(aspect);
       expect(beaver.y).toBeLessThan(-1 / 3); // below the lower third line
       expect(beaver.y).toBeGreaterThan(-0.75);
-      expect(Math.abs(beaver.x)).toBeGreaterThan(0.04);
-      expect(Math.abs(beaver.x)).toBeLessThan(0.25);
+      expect(Math.abs(beaver.x)).toBeLessThan(0.01);
       expect(horizon).toBeGreaterThan(0);
       expect(horizon).toBeLessThan(0.8);
     });
@@ -190,4 +189,20 @@ test("spring: exact for any step, critically damped (never past the goal)", () =
   b = spring(0, 0, 1, 6, 1);
   expect(a[0]).toBeCloseTo(b[0], 9);
   expect(peak).toBeLessThanOrEqual(1);
+});
+
+test("follow: going away or sideways it swings round behind, towards it the look stays, standing it holds", () => {
+  const away = (yaw: number) => ({ x: -Math.sin(yaw) * WALK_SPEED, z: -Math.cos(yaw) * WALK_SPEED }); // the camera's forward
+  const run = (yaw: number, velocity: { x: number; z: number }, idle = 5, pitch = 1) => {
+    for (let t = 0; t < 4; t += 1 / 60) [yaw, pitch] = follow(yaw, pitch, velocity, idle, 1 / 60);
+    return [yaw, pitch] as const;
+  };
+  // the player dragged 0.6 rad round, the beaver walks on the old way: the camera comes back behind it
+  const [yaw, pitch] = run(Math.PI + 0.6, away(Math.PI));
+  expect(Math.abs(yaw - Math.PI)).toBeLessThan(0.05);
+  expect(Math.abs(pitch - REST_PITCH)).toBeLessThan(0.05);
+  expect(run(1, { x: 0, z: 0 })).toEqual([1, 1]); // standing: the player's look holds
+  expect(run(1, away(1), 0.2)).toEqual([1, 1]); // just looked round: it holds
+  expect(Math.abs(run(1, away(1 + Math.PI / 2), 5, 1)[0] - 1)).toBeGreaterThan(0.3); // sideways: it swings round too (A and D circle)
+  expect(run(1, away(1 + Math.PI))[0]).toBeCloseTo(1, 6); // towards the camera: no swing
 });

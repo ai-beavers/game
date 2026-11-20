@@ -65,6 +65,9 @@ function scatterBackdrop(templates: TransformNode[], spots: Spot[], sink: number
       placements.forEach((place, i) => local.multiply(place).copyToArray(all, i * 16));
       const data = all.slice(); // the batch keeps this array and draws its first thinInstanceCount matrices
       batch.thinInstanceSetBuffer("matrix", data, 16, false);
+      // Babylon would otherwise shrink the bounds to the instances `cull` left, whenever the world matrix is computed,
+      // and then cull the whole batch once the camera turns away from that subset: bushes and far trees vanished.
+      batch.doNotSyncBoundingInfo = true;
       batch.receiveShadows = true;
       return { batch, all, data };
     }) : [];

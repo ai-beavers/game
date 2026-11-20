@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 
 const FILE = new URL("../../assets/props.glb", import.meta.url);
-const VARIANTS = { tree: 3, stump: 2, log: 2, stick: 3, rock: 3, crate: 1, reed: 2, bush: 3 };
+const VARIANTS = { tree: 4, stump: 2, log: 2, stick: 3, rock: 3, crate: 1, reed: 2, bush: 3 };
 const BUDGET: Partial<Record<keyof typeof VARIANTS, number>> = { tree: 15_000, rock: 1_500, stick: 300, bush: 1_000 };
 const MAX_BYTES = 6 * 1024 * 1024;
 
