@@ -72,7 +72,7 @@ if (mode > 0.5 && mode < 2.5) {          // flat on water or ground
   fxPos = centre + camRight * q.x + camUp * q.y + toCam * sz * 0.4;
   objectNormal = normalize(mix(vec3(0.0, 1.0, 0.0), toCam, 0.45));
   if (kind > 5.5 && kind < 6.5) objectNormal = sunTowards;   // motes: lit when the sun reaches them
-  if (kind > 2.5 && kind < 5.5 || kind > 7.5) vSoft = 0.01;  // chips, blades, leaves, seeds: small, hardly soft
+  if (kind > 2.5 && kind < 5.5 || kind > 7.5 && kind < 8.5) vSoft = 0.01;  // chips, blades, leaves, seeds: small, hardly soft
 }
 vWorld = fxPos;
 `;
@@ -120,7 +120,15 @@ float fxShape(float kind, vec2 p, float seed) {
   if (kind < 7.5) {                      // foam: flat, broken up
     return pow(max(0.0, 1.0 - r), 1.5) * smoothstep(0.25, 0.75, fxNoise(p * 3.5 + seed * 23.0));
   }
-  return smoothstep(1.0, 0.5, r);        // seed
+  if (kind < 8.5) return smoothstep(1.0, 0.5, r);   // seed
+  if (kind < 9.5) {                      // flame: a tongue, wide at the foot, licking up to a point
+    float y = p.y * 0.5 + 0.5;
+    float lick = (fxNoise(vec2(p.y * 3.0 - seed * 31.0, seed * 7.0)) - 0.5) * 0.35 * y;
+    float half_ = 0.62 * pow(max(0.0, 1.0 - y), 0.7) * (0.85 + 0.3 * fxNoise(p * 4.0 + seed * 11.0));
+    return (1.0 - smoothstep(half_ * 0.35, half_, abs(p.x - lick))) * smoothstep(-1.0, -0.55, p.y);
+  }
+  float lumps = fxNoise(p * 1.8 + seed * 17.0) * 0.6 + fxNoise(p * 4.0 - seed * 9.0) * 0.4;   // smoke: a soft, loose cloud
+  return pow(max(0.0, 1.0 - r * r), 2.2) * smoothstep(0.1, 0.7, lumps);
 }
 `;
 
@@ -160,7 +168,7 @@ export function createParticles({ scene }: Stage, world: World, capacity: number
       ${VERTEX_HEAD}
       void main() {
         ${VERTEX_PLACE}
-        vColor.rgb *= skylight + sunColor * max(0.,dot(objectNormal,sunTowards));
+        if (kind < 8.5 || kind > 9.5) vColor.rgb *= skylight + sunColor * max(0.,dot(objectNormal,sunTowards)); // flames light themselves
         gl_Position = viewProjection * vec4(fxPos, 1.);
       }`,
     fragmentSource: `precision highp float;
