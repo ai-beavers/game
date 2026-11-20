@@ -29,7 +29,7 @@
 // The place (feet, facing, camera) is kept in sessionStorage, so a reload (the dev server's live reload, or the
 // player's) comes back where it was.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { RAPIER, STEP } from "../../engine.ts";
+import { STEP } from "../../engine.ts";
 import type { CreateFeature } from "../../game.ts";
 import { HEIGHT, RADIUS } from "../../player/index.ts";
 import { buildOf, start } from "../build/index.ts";
@@ -43,6 +43,7 @@ import { VOICE_RATE } from "../old-beaver/rules.ts";
 import { createRemote, type Remote } from "./remote.ts";
 import { createThings } from "./things.ts";
 import { createUi } from "./ui.ts";
+import { enable, GROUND, isEnabled, SOLID } from "../../physics.ts";
 
 const RETRY = [1000, 2000, 4000, 8000], FULL_RETRY = 30_000; // ms between tries to connect again
 const FULL_EVERY = 2; // s: the host sends every thing this often, moving or not
@@ -297,8 +298,7 @@ export const create: CreateFeature = (game) => {
   }, 1000 / SEND_RATE);
 
   let started = false;
-  const collision = new Vector3(), eye = new Vector3(), ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
-  const walls = RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC | RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
+  const collision = new Vector3(), eye = new Vector3();
   Object.assign(window, { net: {
     things, remotes, history, shared, get me() { return me; }, get host() { return host; }, get connected() { return connected; }, ui,
     /** The tour's world only: starts it afresh for everyone in it (the server tells every page to load again). False: not connected. */
@@ -316,8 +316,8 @@ export const create: CreateFeature = (game) => {
         // Only a stick really put down (body back in the world); one built into the dam left the world (sync forgot
         // it), and the others see it go from the hand into the dam with the build change.
         const thing = things.get(carried);
-        if (carried >= 0 && now < 0 && connected && thing?.body.isEnabled()) {
-          const body = thing.body, at = body.translation(), q = body.rotation(), v = player.velocity;
+        if (carried >= 0 && now < 0 && connected && thing && isEnabled(thing.body)) {
+          const node = thing.body.transformNode, at = node.position, q = node.rotationQuaternion!, v = player.velocity;
           const place: Place = [carried, at.x, at.y, at.z, q.x, q.y, q.z, q.w];
           send({ t: "drop", s: place, v: [v.x, 0, v.z] });
           if (things.mode === "guest") things.release(place);
@@ -326,13 +326,11 @@ export const create: CreateFeature = (game) => {
       }
       // A guest walking into a crate or a log: it is only a copy here, so the push goes to the host.
       if (things.mode === "guest") {
-        const controller = player.controller;
-        for (let i = 0; i < controller.numComputedCollisions(); i++) {
-          const hit = controller.computedCollision(i), id = things.idOfBody(hit?.collider?.parent());
-          if (!hit || id < 0) continue;
-          const wish = collision.set(hit.translationDeltaApplied.x + hit.translationDeltaRemaining.x, 0, hit.translationDeltaApplied.z + hit.translationDeltaRemaining.z);
-          const speed = wish.length() / STEP, n = Math.hypot(hit.normal1.x, hit.normal1.z);
-          if (speed > 0.05 && n > 0.3) pushing = [id, -hit.normal1.x / n, -hit.normal1.z / n, Math.min(5, speed)];
+        for (const hit of player.collisions) {
+          const id = things.idOfBody(hit.body);
+          if (id < 0) continue;
+          const speed = collision.set(hit.wish.x, 0, hit.wish.z).length() / STEP, n = Math.hypot(hit.normal.x, hit.normal.z);
+          if (speed > 0.05 && n > 0.3) pushing = [id, -hit.normal.x / n, -hit.normal.z / n, Math.min(5, speed)];
         }
       }
       // The host pushes crates for the guests.
@@ -361,12 +359,11 @@ export const create: CreateFeature = (game) => {
         // Solid, except while it overlaps the local beaver (both just came in at the spawn, or it jumped into it):
         // then it lets it walk out instead of shoving it.
         const feet = player.feet, at = r.feet;
-        r.body?.collider(0).setEnabled(!(Math.hypot(at.x - feet.x, at.z - feet.z) < 2 * RADIUS && Math.abs(at.y - feet.y) < HEIGHT));
+        const solid = !(Math.hypot(at.x - feet.x, at.z - feet.z) < 2 * RADIUS && Math.abs(at.y - feet.y) < HEIGHT);
+        if (r.body && isEnabled(r.body) !== solid) enable(r.body, solid);
         // Its name fades while something solid (ground, trunk, rock) stands between it and the camera.
         const to = r.node.position, dx = to.x - eye.x, dy = to.y + HEAD - eye.y, dz = to.z - eye.z, length = Math.hypot(dx, dy, dz);
-        ray.origin = eye;
-        ray.dir = { x: dx / length, y: dy / length, z: dz / length };
-        ui.behind(r.id, length > 0.5 && !!stage.physics.castRay(ray, length - 0.3, true, walls));
+        ui.behind(r.id, length > 0.5 && !!stage.physics.ray(eye, { x: dx / length, y: dy / length, z: dz / length }, length - 0.3, GROUND | SOLID));
         ui.doing(r.id, r.doing);
       }
       things.update();

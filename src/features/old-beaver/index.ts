@@ -23,7 +23,7 @@
 // page's to start anew).
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
-import { RAPIER } from "../../engine.ts";
+import { cylinder } from "../../physics.ts";
 import { oldBeaver } from "./creature.ts";
 import { speechBox } from "./panel.ts";
 import { CLOSING, CLOSING_LINE, COLLIDER, EARSHOT, lineTime, LORES, nearOf, NEARS, newVisit, PLACE, REST, SYLLABLE, tell, words, type Happening, type Told } from "./rules.ts";
@@ -43,7 +43,7 @@ const turnBetween = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.c
 export const create: CreateFeature = (game) => {
   const { stage, world, player, events } = game;
   const ground = world.heightAt(PLACE.x, PLACE.z), place = new Vector3(PLACE.x, ground + SEAT, PLACE.z), head = new Vector3(PLACE.x, ground + HEAD, PLACE.z);
-  stage.physics.createCollider(RAPIER.ColliderDesc.cylinder(SEAT, COLLIDER).setTranslation(PLACE.x, ground + SEAT, PLACE.z));
+  stage.physics.fixed(cylinder(stage.scene, SEAT, COLLIDER, { x: PLACE.x, y: ground + SEAT, z: PLACE.z }));
 
   let him: Awaited<ReturnType<typeof oldBeaver>> | undefined, facing = REST;
   void oldBeaver(stage).then((h) => {

@@ -65,7 +65,7 @@ export async function createGame(canvas: HTMLCanvasElement, features: CreateFeat
 
   // Half a second of standing still before anything else, so the beaver stands on the ground (and not in the
   // air it was put into) when a start screen holds the world.
-  for (let step = 0; step < 30; step++) { player.step(STEP); stage.physics.step(); }
+  for (let step = 0; step < 30; step++) { player.step(STEP); stage.physics.step(STEP); }
 
   const game: Game = { stage, world, beaver, animator: createAnimator(), player, events: createEvents(), settings: createSettings() };
   game.animator.pose(player.motion, 1);

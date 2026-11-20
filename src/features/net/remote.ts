@@ -14,7 +14,9 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { createAnimator } from "../../anim/index.ts";
 import { loadBeaver } from "../../beaver/index.ts";
 import type { Beaver } from "../../contracts.ts";
-import { RAPIER, type Stage } from "../../engine.ts";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import type { Stage } from "../../engine.ts";
+import { CREATURE, capsule, PhysicsMotionType, type PhysicsBody } from "../../physics.ts";
 import { HEIGHT, RADIUS } from "../../player/index.ts";
 import { newMotion, slapHits } from "../../player/state.ts";
 import type { Game } from "../../game.ts";
@@ -29,8 +31,6 @@ import { DELAY, Track } from "./track.ts";
 const FACING = 3, MOTION_AT = 4;
 const STEPS = [3, 9, 11, 14, 15].map((i) => i + MOTION_AT), FOLLOWS = { [10 + MOTION_AT]: 9 + MOTION_AT };
 const LIFT = HEIGHT / 2 + 0.02; // feet to the capsule's middle, with the player's gap to the ground
-/** Collision groups of a solid thing the beaver walks against but which pushes nothing (the Bear uses them too). */
-export const NO_CONTACTS = 0x0002_0000; // member of group 1, takes contacts with no group
 const CLOCK = 13, HOLD = 1500; // the Motion's time in the packed list; ms a short action (a build) stays on its tag
 
 export function createRemote(stage: Stage, id: number, name: string, lanterns: RemoteLanterns) {
@@ -40,7 +40,7 @@ export function createRemote(stage: Stage, id: number, name: string, lanterns: R
   const sample: number[] = [], motionValues: number[] = [];
   let before = { ...motion };
   let lantern: ReturnType<RemoteLanterns["carry"]> | undefined;
-  let beaver: Beaver | undefined, disposed = false, carry = -1, body: RAPIER.RigidBody | undefined;
+  let beaver: Beaver | undefined, disposed = false, carry = -1, body: PhysicsBody | undefined;
   let clock = -1, ticked = performance.now(), doing = "", since = 0;
   const ready = loadBeaver(stage.scene).then((b) => {
     if (disposed) { b.root.dispose(false, true); return undefined; }
@@ -72,11 +72,13 @@ export function createRemote(stage: Stage, id: number, name: string, lanterns: R
       node.setEnabled(true);
       node.position.set(sample[0]!, sample[1]!, sample[2]!);
       node.rotation.set(0, sample[FACING]!, 0);
-      const middle = { x: sample[0]!, y: sample[1]! + LIFT, z: sample[2]! };
+      const middle = new Vector3(sample[0]!, sample[1]! + LIFT, sample[2]!);
       if (!body) {
-        body = stage.physics.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(middle.x, middle.y, middle.z));
-        stage.physics.createCollider(RAPIER.ColliderDesc.capsule(HEIGHT / 2 - RADIUS, RADIUS).setCollisionGroups(NO_CONTACTS), body);
-      } else body.setNextKinematicTranslation(middle);
+        const holder = new TransformNode("remote body", stage.scene);
+        holder.position.copyFrom(middle);
+        // Solid to the beaver's movement and the camera, CREATURE: it pushes nothing.
+        body = stage.physics.body(holder, PhysicsMotionType.ANIMATED, capsule(stage.scene, HEIGHT / 2 - RADIUS, RADIUS), CREATURE);
+      } else body.setTargetTransform(middle, Quaternion.Identity());
       for (let i = MOTION_AT; i < sample.length; i++) motionValues[i - MOTION_AT] = sample[i]!;
       unpackMotion(motionValues, motion);
       // Its tail slap is heard and seen here too: sound, splash and animals listen to the same event as for our own.
@@ -98,7 +100,7 @@ export function createRemote(stage: Stage, id: number, name: string, lanterns: R
     dispose() {
       disposed = true;
       lantern?.dispose();
-      if (body) stage.physics.removeRigidBody(body);
+      if (body) { const holder = body.transformNode; stage.physics.remove(body); holder.dispose(); }
       body = undefined;
       node.dispose(false, true);
     },

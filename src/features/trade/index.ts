@@ -32,6 +32,7 @@ import { createHotbar, type SlotView } from "./hotbar.ts";
 import { GOODS, load, offerText, pay } from "./ledger.ts";
 import { FACING, spotFor, standAt } from "./place.ts";
 import { createPost } from "./post.ts";
+import { isEnabled, place } from "../../physics.ts";
 
 const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.trade.tour" : "beaver.trade";
 const FLIGHT = 0.45; // s from the hand onto the pile
@@ -134,9 +135,9 @@ export const create: CreateFeature = (game) => {
         player.teleport(s.x, world.heightAt(s.x, s.z), s.z, FACING);
         player.camera.yaw = FACING + Math.PI + 0.5;
         if (!player.carrying) {
-          const stick = world.sticks.filter((w) => w.body.isEnabled()).sort((a, b) => Vector3.Distance(a.mesh.position, feet) - Vector3.Distance(b.mesh.position, feet))[0];
+          const stick = world.sticks.filter((w) => isEnabled(w.body)).sort((a, b) => Vector3.Distance(a.mesh.position, feet) - Vector3.Distance(b.mesh.position, feet))[0];
           const x = s.x + Math.sin(FACING) * 0.3 + Math.cos(FACING) * 0.3, z = s.z + Math.cos(FACING) * 0.3 - Math.sin(FACING) * 0.3;
-          stick?.body.setTranslation({ x, y: world.heightAt(x, z) + 0.05, z }, true);
+          if (stick) place(stick.body, { x, y: world.heightAt(x, z) + 0.05, z });
         }
         return { good, at: [+s.x.toFixed(2), +s.z.toFixed(2)] };
       },

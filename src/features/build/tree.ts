@@ -1,6 +1,6 @@
 import { meshes, vertices, instance, material } from "../../world/models.ts";
 // One tree the build feature has taken over from the world: drawn by itself, with the bite growing into the
-// hourglass a beaver leaves, then falling as a Rapier body (hinged on the cut at first, so it tips slowly, then
+// hourglass a beaver leaves, then falling as a Havok body (hinged on the cut at first, so it tips slowly, then
 // free), lying, and at last gone into wood. The stump that stays is the props' gnawed stump (stump_1). A tree grown
 // back on that stump is another view of the same tree (regrown): a sapling scaled up to the full tree, then as before.
 //
@@ -18,7 +18,10 @@ import { Quaternion, Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector.
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { World, WorldTree } from "../../contracts.ts";
-import { RAPIER, type Stage } from "../../engine.ts";
+import { HingeConstraint } from "@babylonjs/core/Physics/v2/physicsConstraint.js";
+import { PhysicsActivationControl } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin.js";
+import type { Stage } from "../../engine.ts";
+import { ball, compound, cylinder, HEAVY, place, PhysicsMotionType, regroup, SOLID, type PhysicsBody } from "../../physics.ts";
 
 /** Height of the bite's narrowest point above the ground, and half the height of the finished hourglass, m. */
 export const BITE_HEIGHT = 0.5, BITE_HALF = 0.28;
@@ -270,31 +273,44 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
   const { update: updateBite, report: biteReport } = bite(root, tree, m), center = m.centerAt(m.bite);
   const cutPoint = new Vector3(center.x, m.bite, center.y);
   const waist = () => Vector3.TransformCoordinates(cutPoint, root.computeWorldMatrix(true));
-  let holder: TransformNode | undefined, body: RAPIER.RigidBody | undefined, hinge: { joint: RAPIER.ImpulseJoint; anchor: RAPIER.RigidBody } | undefined;
+  let holder: TransformNode | undefined, body: PhysicsBody | undefined, hinge: { joint: HingeConstraint; anchor: PhysicsBody } | undefined;
   let spin = 0, since = 0, still = 0, landed = false, resting = false;
-  let stump: TransformNode | undefined, stumpCollider: RAPIER.Collider | undefined;
+  let stump: TransformNode | undefined, stumpCollider: PhysicsBody | undefined;
   // The world's trunk collider is gone for a tree grown back: it gets one like it once fully grown.
-  let trunk: RAPIER.Collider | undefined, size = regrown ? -1 : 1;
+  let trunk: PhysicsBody | undefined, size = regrown ? -1 : 1;
   const clear = () => {
     tree.clear();
-    if (trunk) physics.removeCollider(trunk, true);
+    if (trunk) physics.remove(trunk);
     trunk = undefined;
   };
 
-  /** Moves root under a body at the waist, which carries the trunk and crown colliders. */
-  const makeBody = (kind: RAPIER.RigidBodyDesc, at: Vector3, turn: Quaternion) => {
+  /** Moves root under a body at the waist, which carries the trunk and crown shapes. HEAVY while it falls, SOLID
+   *  once it lies. */
+  const makeBody = (motion: PhysicsMotionType, at: Vector3, turn: Quaternion) => {
     const w = waist();
     holder = new TransformNode("falling tree", scene);
     root.position.subtractInPlace(w);
     root.parent = holder;
     holder.position.copyFrom(at);
     holder.rotationQuaternion = turn.clone();
-    body = physics.createRigidBody(kind.setTranslation(at.x, at.y, at.z).setRotation(turn));
-    physics.createCollider(RAPIER.ColliderDesc.cylinder(m.trunk / 2, m.radius).setTranslation(0, m.trunk / 2, 0).setDensity(500).setFriction(0.8), body);
-    const crown = new Vector3(0, m.crownHeight - BITE_HEIGHT, 0);
-    physics.createCollider(RAPIER.ColliderDesc.ball(m.crownRadius * 0.45).setTranslation(crown.x, crown.y, crown.z).setDensity(40).setFriction(1), body);
+    const wood = cylinder(scene, m.trunk / 2, m.radius, { x: 0, y: m.trunk / 2, z: 0 });
+    const crown = ball(scene, m.crownRadius * 0.45, { x: 0, y: m.crownHeight - BITE_HEIGHT, z: 0 });
+    wood.density = 500; wood.material = { friction: 0.8, restitution: 0 };
+    crown.density = 40; crown.material = { friction: 1, restitution: 0 };
+    body = physics.body(holder, motion, compound(scene, [wood, crown]), motion === PhysicsMotionType.DYNAMIC ? HEAVY : SOLID);
     stage.bind(holder, body);
     return w;
+  };
+  const unhinge = () => {
+    if (!hinge) return;
+    hinge.joint.dispose();
+    physics.remove(hinge.anchor);
+    hinge = undefined;
+  };
+  /** From here on it lies where it is. */
+  const fix = () => {
+    body!.setMotionType(PhysicsMotionType.STATIC);
+    regroup(body!, SOLID);
   };
 
   const addStump = () => {
@@ -308,8 +324,7 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
   };
   const solidStump = () => {
     if (stumpCollider) return;
-    stumpCollider = physics.createCollider(RAPIER.ColliderDesc.cylinder(0.14, m.radius * 1.1)
-      .setTranslation(tree.place.x, tree.place.y + 0.12, tree.place.z).setFriction(0.9));
+    stumpCollider = physics.fixed(cylinder(scene, 0.14, m.radius * 1.1, { x: tree.place.x, y: tree.place.y + 0.12, z: tree.place.z }), SOLID, 0.9);
   };
 
   return {
@@ -325,38 +340,40 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
     fall(direction: Vector3) {
       if (body) return;
       const w = waist();
-      makeBody(RAPIER.RigidBodyDesc.dynamic().setCanSleep(false).setCcdEnabled(true).setLinearDamping(0.05).setAngularDamping(0.3), w, new Quaternion());
+      makeBody(PhysicsMotionType.DYNAMIC, w, new Quaternion());
+      physics.plugin.setActivationControl(body!, PhysicsActivationControl.ALWAYS_ACTIVE); // never asleep mid-fall
+      body!.setLinearDamping(0.05);
+      body!.setAngularDamping(0.3);
       clear();
       addStump();
       updateBite(1, true);
       const axis = new Vector3(0, 1, 0).cross(direction).normalize();
-      const anchor = physics.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(w.x, w.y, w.z));
-      const joint = physics.createImpulseJoint(RAPIER.JointData.revolute({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, axis), anchor, body!, true);
+      // The hinge: from a still point at the cut, in no group, to the body, round the axis of the fall.
+      const anchor = physics.fixed(ball(scene, 0.01), 0, 0.5, w);
+      const joint = new HingeConstraint(Vector3.Zero(), Vector3.Zero(), axis, axis, scene);
+      anchor.addConstraint(body!, joint);
       hinge = { joint, anchor };
-      body!.setAngvel(axis.scaleInPlace(0.12), true);
+      body!.setAngularVelocity(axis.scaleInPlace(0.12));
     },
     /** Once per physics step while it falls: "landed" when the crown hits the ground (once), "rest" when it lies
      *  still (once; it is fixed from then on). */
     step(dt: number): "landed" | "rest" | undefined {
       if (!body || resting) return;
       since += dt;
-      const turn = body.rotation(), up = Vector3.Up().applyRotationQuaternion(new Quaternion(turn.x, turn.y, turn.z, turn.w));
-      const tilt = Math.acos(Math.min(1, up.y)), w = body.angvel(), now = Math.hypot(w.x, w.y, w.z);
+      const up = Vector3.Up().applyRotationQuaternion(holder!.rotationQuaternion!);
+      const tilt = Math.acos(Math.min(1, up.y)), now = body.getAngularVelocity().length();
       if (hinge && tilt > 1.1) { // off the stump: from here on it falls free
-        physics.removeImpulseJoint(hinge.joint, true);
-        physics.removeRigidBody(hinge.anchor);
-        hinge = undefined;
+        unhinge();
         solidStump();
       }
       let event: "landed" | "rest" | undefined;
       if (!landed && tilt > 0.9 && spin > 0.3 && now < spin * 0.6) { landed = true; event = "landed"; }
       if (!landed) spin = Math.max(spin, now);
-      const v = body.linvel();
-      still = landed && Math.hypot(v.x, v.y, v.z) < 0.15 && now < 0.15 ? still + dt : 0;
+      still = landed && body.getLinearVelocity().length() < 0.15 && now < 0.15 ? still + dt : 0;
       if (!event && (still > 0.6 || since > 10)) {
         resting = true;
         if (!landed) landed = true;
-        body.setBodyType(RAPIER.RigidBodyType.Fixed, true);
+        fix();
         solidStump();
         return "rest";
       }
@@ -367,12 +384,12 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
       clear();
       addStump();
       solidStump();
-      if (hinge) { physics.removeImpulseJoint(hinge.joint, true); physics.removeRigidBody(hinge.anchor); hinge = undefined; }
+      unhinge();
       if (body) {
-        body.setBodyType(RAPIER.RigidBodyType.Fixed, true);
-        body.setTranslation(at, true); body.setRotation(turn, true);
+        fix();
+        place(body, at, turn);
       } else {
-        makeBody(RAPIER.RigidBodyDesc.fixed(), at, turn);
+        makeBody(PhysicsMotionType.STATIC, at, turn);
         updateBite(1, true);
       }
       landed = resting = true;
@@ -384,8 +401,7 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
     /** The trunk as a line from the cut to the crown, in the world (only once it has a body). */
     trunkLine() {
       if (!body) return undefined;
-      const t = body.translation(), q = body.rotation(), from = new Vector3(t.x, t.y, t.z);
-      const along = Vector3.Up().applyRotationQuaternion(new Quaternion(q.x, q.y, q.z, q.w));
+      const from = holder!.position.clone(), along = Vector3.Up().applyRotationQuaternion(holder!.rotationQuaternion!);
       return { from, along, to: from.add(along.scale(m.trunk)) };
     },
     /** A tree grown back, standing: this much of its full size (0 … 1), scaled about its foot; solid when full. */
@@ -394,22 +410,21 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
       size = scale;
       root.scaling.setAll(m.scale * scale);
       root.position.copyFrom(tree.place).addInPlace(m.position.subtract(tree.place).scaleInPlace(scale));
-      if (scale >= 1 && !trunk) trunk = physics.createCollider(RAPIER.ColliderDesc.cylinder(1.5, tree.radius)
-        .setTranslation(tree.place.x, tree.place.y + 1.3, tree.place.z).setFriction(0.9)); // as the world's (src/world)
+      if (scale >= 1 && !trunk) trunk = physics.fixed(cylinder(scene, 1.5, tree.radius, { x: tree.place.x, y: tree.place.y + 1.3, z: tree.place.z }), SOLID, 0.9); // as the world's (src/world)
     },
     /** The stump goes: a tree grown back stands on it. */
     unstump() {
       stump?.dispose();
-      if (stumpCollider) physics.removeCollider(stumpCollider, true);
+      if (stumpCollider) physics.remove(stumpCollider);
       stump = stumpCollider = undefined;
     },
     /** Only the stump: the trunk and crown are gone (into wood). */
     dispose() {
       addStump();
       solidStump();
-      if (hinge) { physics.removeImpulseJoint(hinge.joint, true); physics.removeRigidBody(hinge.anchor); hinge = undefined; }
+      unhinge();
       clear();
-      if (body) physics.removeRigidBody(body);
+      if (body) physics.remove(body);
       if (holder) { stage.unbind(holder); holder.dispose(); } else root.dispose();
       body = undefined;
     },

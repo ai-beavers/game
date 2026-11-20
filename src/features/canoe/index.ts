@@ -17,7 +17,8 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Node } from "@babylonjs/core/node.js";
-import { RAPIER, type Stage } from "../../engine.ts";
+import type { Stage } from "../../engine.ts";
+import { box, enable, place, PhysicsMotionType, SOLID } from "../../physics.ts";
 import type { CreateFeature } from "../../game.ts";
 import { OWN_LAYER } from "../../player/camera.ts";
 import type { Actor, Offer } from "../../player/index.ts";
@@ -38,14 +39,13 @@ export const create: CreateFeature = (game) => {
 
   // Solid while it lies there (one box over the hull), so the beaver walks and swims round it; out of the way while
   // the beaver sits in it.
-  const body = stage.physics.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-  stage.physics.createCollider(RAPIER.ColliderDesc.cuboid(HULL.beam / 2 - 0.02, 0.12, HULL.length / 2 - 0.1), body);
+  const body = stage.physics.body(new TransformNode("canoe body", stage.scene), PhysicsMotionType.STATIC,
+    box(stage.scene, HULL.beam / 2 - 0.02, 0.12, HULL.length / 2 - 0.1), SOLID);
   let settled = NaN; // the water level it was last put down at
   const settle = () => {
     settled = level();
     lie(hull, left, world.heightAt, settled);
-    body.setTranslation({ x: hull.position.x, y: hull.position.y + 0.02, z: hull.position.z }, false);
-    body.setRotation(Quaternion.FromEulerAngles(hull.rotation.x, hull.rotation.y, 0), false);
+    place(body, { x: hull.position.x, y: hull.position.y + 0.02, z: hull.position.z }, Quaternion.FromEulerAngles(hull.rotation.x, hull.rotation.y, 0));
   };
   settle();
 
@@ -69,7 +69,7 @@ export const create: CreateFeature = (game) => {
     if (!feet) return;
     player.teleport(feet.x, level() + SEAT.height, feet.z, left.heading);
     player.ride({ seat: SEAT.height, depth: DEPTH, bow: BOW, draft: DRAFT });
-    body.setEnabled(false);
+    enable(body, false);
     riding = true;
     events.emit("canoeIn", { place: player.feet.clone() });
   };
@@ -81,7 +81,7 @@ export const create: CreateFeature = (game) => {
   /** Leaves the canoe where it was last with the beaver in it. */
   const leave = () => {
     riding = false;
-    body.setEnabled(true);
+    enable(body, true);
     settle();
   };
   const getOut = () => {

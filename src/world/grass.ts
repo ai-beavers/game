@@ -1,3 +1,4 @@
+import "@babylonjs/core/Meshes/thinInstanceMesh.js"; // its tiles are thin instances
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";

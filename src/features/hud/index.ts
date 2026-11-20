@@ -17,6 +17,7 @@ import { place } from "../net/tags.ts";
 import { box, floating, GOLD, hudLayout, measure, onViewport, Overlay, PANEL, safeArea, underGoals } from "./overlay.ts";
 import { skyLabel } from "./sky.ts";
 import { FAINT, PAPER, PLAYERS, QUIET, RADIUS, STICKS, TRACK, TRACKER } from "./style.ts";
+import { isEnabled } from "../../physics.ts";
 
 interface NetView { connected: boolean; me: number; host: number; remotes: Map<number, Remote> }
 interface BuildView {
@@ -422,7 +423,7 @@ export const create: CreateFeature = game => {
     const at = player.node.position, b = build();
     const nearest = (places: Vector3[]) => places.reduce<Vector3 | undefined>((best,p) => !best || Vector3.DistanceSquared(p,at) < Vector3.DistanceSquared(best,at) ? p : best, undefined);
     if (!taught.has("use")) {
-      const stick = nearest(world.sticks.filter(s => s.body.isEnabled()).map(s => s.mesh.position));
+      const stick = nearest(world.sticks.filter(s => isEnabled(s.body)).map(s => s.mesh.position));
       return stick && { at: stick.add(new Vector3(0,0.3,0)), label: "Stick" };
     }
     const goal = current(), standing = goal === "fell";
@@ -530,7 +531,7 @@ export const create: CreateFeature = game => {
         if (place) objective = {...place,label:`${doing === "dam" ? "Dam" : "Lodge"} · ${Math.round(Math.hypot(place.x-at.x,place.z-at.z))} m`};
       }
       map.paint({centre:large ? {x:0,z:0} : at, span:large ? 2*EXTENT : 26, beaver:at, facing:player.facing, yaw:player.camera.yaw,
-        sticks:world.sticks.filter(s => s.body.isEnabled()).map(s => s.mesh.position), trees:world.trees?.filter((_,i) => b?.state.trees[i]?.fell===undefined).map(t => t.place),
+        sticks:world.sticks.filter(s => isEnabled(s.body)).map(s => s.mesh.position), trees:world.trees?.filter((_,i) => b?.state.trees[i]?.fell===undefined).map(t => t.place),
         dam, objective, level:world.waterLevel, lodge:b && b.state.dam.length>=SLOTS ? b.dam.lodgeAt : undefined, shop:shop()?.place,
         players:n ? [...n.remotes.values()].filter(r => r.node.isEnabled()).map(r => ({x:r.feet.x,z:r.feet.z,name:r.name})) : [] },mapSize);
     },

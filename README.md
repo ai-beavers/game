@@ -1,6 +1,6 @@
 # Beaver
 
-A beaver you steer through a small world in the browser, in third person. Babylon.js and Babylon GUI with Rapier
+A beaver you steer through a small world in the browser, in third person. Babylon.js and Babylon GUI with Havok
 physics, TypeScript, built and served by Bun. In multiplayer, the server synchronizes players and dam progress over
 WebSocket: the Bun server on a local network, a Worker on Cloudflare for everyone (see "On Cloudflare").
 
@@ -50,12 +50,13 @@ Everyone plays at <https://beaver.uq-dev.workers.dev/>, in one shared world of u
 
 ```
 src/contracts.ts   what the parts promise each other; read this first
-src/engine.ts      starts Babylon.js, the HUD and Rapier; steps physics and renders frames
+src/engine.ts      starts Babylon.js, the HUD and Havok; steps physics and renders frames
+src/physics.ts     Havok: collision groups, shapes, rays and shape casts
 src/light.ts       daylight: the one light everything is tuned for
 src/main.ts        the game: where the parts meet
 src/beaver/        the animal: mesh, fur, shirt, hat
 src/anim/          how it moves: Motion in, Pose out, pure maths
-src/player/        input, Rapier character, camera
+src/player/        input, the capsule and its mover, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
 src/features/      dam building, the trading post, the shop, the canoe, its race, multiplayer, controls, HUD, wildlife, the bear, weather, audio, effects, photo mode and tour

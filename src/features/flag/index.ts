@@ -24,7 +24,7 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import logoPng from "../../../assets/logo.png" with { type: "file" };
 import { SHIRT_CREAM } from "../../contracts.ts";
-import { RAPIER } from "../../engine.ts";
+import { cylinder } from "../../physics.ts";
 import type { CreateFeature } from "../../game.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import { material } from "../../world/models.ts";
@@ -56,8 +56,7 @@ export const create: CreateFeature = (game) => {
   const knob = MeshBuilder.CreateSphere("flag knob", { diameter: 0.08, segments: 6 }, scene);
   knob.position.set(POLE.x, ground + POLE.height - 0.03, POLE.z);
   for (const m of [pole, knob]) { m.material = wood; m.receiveShadows = true; m.isPickable = false; }
-  const body = stage.physics.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(POLE.x, ground + POLE.height / 2, POLE.z));
-  stage.physics.createCollider(RAPIER.ColliderDesc.cylinder(POLE.height / 2, POLE.radius + 0.03), body);
+  stage.physics.fixed(cylinder(stage.scene, POLE.height / 2, POLE.radius + 0.03, { x: POLE.x, y: ground + POLE.height / 2, z: POLE.z }));
 
   // ---- the cloth: a grid moved by the wind, its picture redrawn while it burns ------------------------------------
   const art = drawCloth(scene);

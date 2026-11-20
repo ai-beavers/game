@@ -1,6 +1,6 @@
 import { hex } from "./color.ts";
 import { material } from "./models.ts";
-// The ground: one height function for the whole place, and the mesh and Rapier collider made from the same samples.
+// The ground: one height function for the whole place, and the mesh and physics colliders made from the same samples.
 //
 //   heightAt(x, z)                 ground height; pure, also used by the tests and the placement rules
 //   shape(rim)                     heightAt and slopeAt for a bank starting rim m out: shape(FIRST_RIM) is the ground
@@ -18,7 +18,9 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { Vector2 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
-import { RAPIER, type Stage } from "../engine.ts";
+import type { Scene } from "@babylonjs/core/scene.js";
+import type { Stage } from "../engine.ts";
+import { GROUND, heightfield, type Physics } from "../physics.ts";
 import { fbm, mix, noise, seeded, smoothstep } from "./noise.ts";
 
 export const WATER_LEVEL = 0;
@@ -145,7 +147,7 @@ export const FINE = { x0: 2, z0: 1.5, x1: 6.5, z1: 4.5, split: 8 };
 /** A grid of samples: heights[j * nx + i] at (x0 + i * cell, z0 + j * cell). */
 interface Grid { x0: number; z0: number; cell: number; nx: number; nz: number; heights: Float32Array }
 
-/** Height over a grid's triangles: two a cell, split from (i + 1, j) to (i, j + 1), as the mesh and Rapier's
+/** Height over a grid's triangles: two a cell, split from (i + 1, j) to (i, j + 1), as the mesh and Havok's
  *  heightfield split them. */
 function overGrid(g: Grid, x: number, z: number) {
   const u = Math.min(Math.max((x - g.x0) / g.cell, 0), g.nx - 1), v = Math.min(Math.max((z - g.z0) / g.cell, 0), g.nz - 1);
@@ -193,24 +195,22 @@ function surface(g: Grid, coarse: boolean, first = 0) {
   return { positions, indices };
 }
 
-/** The ground's colliders over the same samples and triangles. The coarse grid is a Rapier heightfield: rows run
- *  along z, columns along x, stored column by column, centred on the collider (checked with ray casts, see
- *  world.test.ts); smoother contacts than a trimesh, thin sticks come to rest on it. Under the FINE patch it is sunk
- *  out of the way, and the patch is a trimesh: a level ball or capsule cast passes through a heightfield whose cells
- *  are smaller than the ball (Rapier 0.21, measured), and the camera and a swimming beaver cast level. */
-export function groundColliders(physics: RAPIER.World) {
+/** The ground's colliders over the same samples and triangles, both heightfields in the GROUND group (Havok splits
+ *  their cells as the mesh does; a triangle mesh it stores compressed, a centimetre off). The coarse grid's is sunk
+ *  out of the way under the FINE patch. The patch's is square (src/physics.ts: heightfield), so it runs on past the
+ *  patch over the coarse ground: there its samples lie on the coarse grid's triangles, and it is the same surface. */
+export function groundColliders(physics: Physics, scene: Scene) {
   const { coarse, fine } = groundGrids(), n = coarse.nx, heights = new Float32Array(n * n);
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = coarse.x0 + i * CELL, z = coarse.z0 + j * CELL, h = coarse.heights[j * n + i]!;
-    heights[j + i * n] = x > FINE.x0 && x < FINE.x1 && z > FINE.z0 && z < FINE.z1 ? h - 10 : h;
+    heights[i + j * n] = x > FINE.x0 && x < FINE.x1 && z > FINE.z0 && z < FINE.z1 ? h - 10 : h;
   }
-  physics.createCollider(RAPIER.ColliderDesc.heightfield(n - 1, n - 1, heights, { x: SIZE, y: 1, z: SIZE }));
-  const patch = surface(fine, false);
-  // Its triangles turned to face up (surface() winds them facing down, x × z): on triangles facing
-  // down Rapier's character controller never counts a beaver as standing (measured), so it could not leave the water
-  // where the shore lies on the patch, nor jump there. The same points: nothing moves.
-  const up = patch.indices.map((_, k, all) => all[k - (k % 3) + [0, 2, 1][k % 3]!]!);
-  physics.createCollider(RAPIER.ColliderDesc.trimesh(patch.positions, new Uint32Array(up), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES));
+  physics.fixed(heightfield(scene, n, SIZE, heights), GROUND, 0.9);
+  const side = Math.max(fine.nx, fine.nz), patch = new Float32Array(side * side), size = (side - 1) * fine.cell;
+  for (let m = 0; m < side; m++) for (let k = 0; k < side; k++) {
+    patch[k + m * side] = k < fine.nx && m < fine.nz ? fine.heights[m * fine.nx + k]! : overGrid(coarse, fine.x0 + k * fine.cell, fine.z0 + m * fine.cell);
+  }
+  physics.fixed(heightfield(scene, side, size, patch), GROUND, 0.9, { x: fine.x0 + size / 2, y: 0, z: fine.z0 + size / 2 });
 }
 
 /** The ground mesh and its collider, from the same samples (groundGrids). */
@@ -274,6 +274,6 @@ export function buildTerrain({ scene, physics }: Stage) {
   fine.update();
   soil.ambientTexture = fine;
   mesh.material = soil;
-  groundColliders(physics);
+  groundColliders(physics, scene);
   return mesh;
 }
