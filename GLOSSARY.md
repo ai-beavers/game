@@ -110,6 +110,10 @@ _Avoid_: skin, costume, clothes
 The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
 _Avoid_: boat, raft, kayak
 
+**Mushroom**:
+A small red-capped mushroom growing at the foot of a tree in the clearing, which the beaver can eat. One eaten is gone until the next day's dawn. Each player has their own, and no one else sees them.
+_Avoid_: shroom, fungus, food, item
+
 **Race**:
 Three laps in the canoe round the ring of buoys on the pond, against the clock. The clock starts when the canoe crosses the start line and stops when it crosses it after the third lap; each buoy must be passed in order. Getting out of the canoe abandons the race. The player's best time is kept for the visit. Each player races alone, and no one else sees their race.
 _Avoid_: kart race, time trial, grand prix, track, circuit
@@ -139,6 +143,10 @@ _Avoid_: crouch, rest, kneel
 **Crawl**:
 The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
 _Avoid_: crouch, sneak, prone
+
+**Dizzy**:
+What a player's view becomes for a while after the beaver eats too many mushrooms too quickly: colours slowly drift and the picture gently sways and waves, with no flashing. Only that player's own screen changes; steering does not, and the HUD stays steady.
+_Avoid_: trip, high, drunk, poisoned
 
 **Flash**:
 The player switching the lantern off and on with one button while it is dark, so that other players see it blink. A flash means what the players agree it means; the game gives it no meaning.
