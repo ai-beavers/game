@@ -1,13 +1,14 @@
 // Tests for the rules the room keeps toward strangers, against both servers that run it, each on a free port: the Bun
 // server (server.ts) and the Worker (worker.ts) in wrangler's local runtime, which needs no account and no network.
 // Sockets per client address, the hello timeout, a full server, the same hour, the world kept over a restart, the
-// build id, the origin of a socket. Only server.ts has a file to break or to age; only the Worker has /net/reset.
+// build id, the origin of a socket, the tour's world beside the players'. Only server.ts has a file to break or to
+// age; only the Worker has /net/reset.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { apply, REGROW, type BuildChange } from "../build/rules.ts";
-import { DAY_SECONDS, EVENTS_PATH, HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, RESET_PATH, sameWorld, START, type ServerMessage } from "./protocol.ts";
+import { DAY_SECONDS, EVENTS_PATH, HELLO_TIME, MAX_PLAYERS, PER_ADDRESS, replay, RESET_PATH, sameWorld, START, type Place, type ServerMessage } from "./protocol.ts";
 import { SAVE_AFTER } from "./room.ts";
 
 const root = join(import.meta.dir, "../../..");
@@ -52,10 +53,10 @@ async function stop() {
 afterEach(stop);
 
 /** A raw client: from `ip` (as Fly would say, for TRUST_PROXY=fly, and as Cloudflare says to the Worker), its
- *  messages, and how it ended. */
-function client(port: number, ip?: string) {
+ *  messages, and how it ended. world: "?world=tour" for the tour's. */
+function client(port: number, ip?: string, world = "") {
   const options = ip ? { headers: { "Fly-Client-IP": ip, "CF-Connecting-IP": ip } } : undefined; // Bun's WebSocket takes headers; the DOM type does not say so
-  const ws = new WebSocket(`ws://localhost:${port}/net`, options as unknown as string[]);
+  const ws = new WebSocket(`ws://localhost:${port}/net${world}`, options as unknown as string[]);
   const messages: ServerMessage[] = [];
   const opened = new Promise<boolean>((resolve) => { ws.onopen = () => resolve(true); ws.onerror = () => resolve(false); });
   const closed = new Promise<number>((resolve) => { ws.onclose = (e) => resolve(e.code); });
@@ -64,7 +65,11 @@ function client(port: number, ip?: string) {
   const hello = () => ws.send(JSON.stringify({ t: "hello", name: "Tester" }));
   return { ws, messages, opened, closed, next, hello };
 }
-const info = async (port: number, query = "?build") => (await fetch(`http://localhost:${port}/net/info${query}`)).json();
+/** What /net/info answers, without its clock (`now`), so two answers of an unchanged world are equal. */
+const info = async (port: number, query = "?build") => {
+  const { now, ...rest } = await (await fetch(`http://localhost:${port}/net/info${query}`)).json();
+  return rest;
+};
 
 /** A stand-in for Luma's iCal feed on a free port: one House of AI event two days from now, or (down) an error.
  *  Counts how often it is asked. */
@@ -153,6 +158,36 @@ for (const kind of ["server.ts", "worker.ts"] as const) describe(kind, () => {
     const counted = first.hour + ((second.at - first.at) / 1000) * 24 / DAY_SECONDS;
     expect(Math.abs(second.hour - counted)).toBeLessThan(0.05); // within 1.5 s of play: what the two messages took
     expect(second.hour - first.hour).toBeGreaterThan(0.04); // the day went on between them: 1.5 s is 0.05 h
+  }, 30000);
+
+  test("holds the tour's world beside the players': a tree back before its time and a fresh start only there", async () => {
+    const { port } = await start(), tour = client(port, undefined, "?world=tour"), player = client(port);
+    const life: BuildChange[] = [...Array(8).fill({ type: "bite", tree: 2 }), { type: "fell", tree: 2, direction: 1 },
+      { type: "rest", tree: 2, at: [1, 0, 1], turn: [0, 0, 0, 1] }, ...Array(4).fill({ type: "bite", tree: 2 }), { type: "split", tree: 2 }, { type: "grow", tree: 2 }];
+    const built = async (world: string) => (await info(port, `?build${world}`)).build as BuildChange[];
+    for (const c of [tour, player]) { await c.opened; c.hello(); await c.next("welcome"); }
+    // The same work in both: the tour's tree grows back at once, the players' not before its time.
+    tour.ws.send(JSON.stringify({ t: "build", c: life }));
+    player.ws.send(JSON.stringify({ t: "build", c: life }));
+    expect(await player.next("world")).toMatchObject({ build: life.slice(0, -1).map((c) => c.type === "split" ? { type: "split", tree: 2 } : c) });
+    expect((await tour.next("build") as Extract<ServerMessage, { t: "build" }>).c.at(-1)).toEqual({ type: "grow", tree: 2 });
+    expect([(await built("&world=tour")).length, (await built("")).length]).toEqual([life.length, life.length - 1]);
+    // Afresh for the asking in the tour's world only; the players' world stays.
+    player.ws.send(JSON.stringify({ t: "reset" }));
+    tour.ws.send(JSON.stringify({ t: "reset" }));
+    expect(await tour.next("reset")).toEqual({ t: "reset" });
+    expect([(await built("&world=tour")).length, (await built("")).length, player.messages.some((m) => m.t === "reset")]).toEqual([0, life.length - 1, false]);
+    // Where the loose wood lies, as the host said: told to the next who comes in as the first.
+    const lying: Place = [200, 1, 0.5, -3, 0, 0.6, 0, 0.8];
+    player.ws.send(JSON.stringify({ t: "things", l: [lying] }));
+    player.ws.send(JSON.stringify({ t: "chat", text: "so the things are taken first" }));
+    await Bun.sleep(100);
+    player.ws.close();
+    await player.closed;
+    const next = client(port);
+    await next.opened;
+    next.hello();
+    expect(await next.next("things")).toEqual({ t: "things", l: [lying] });
   }, 30000);
 
   test("keeps the world and its epoch over a restart; a broken file starts afresh, kept aside", async () => {

@@ -145,8 +145,16 @@ The points a player earns by building with sticks, one for each stick built in, 
 _Avoid_: XP, coins, money, score
 
 **Saved game**:
-The state of the trees, the dam, the lodge and the cache, and the player's experience and outfits, kept between visits.
+What a player's browser keeps between visits: their experience, outfits and goods. The trees, the dam, the lodge and the cache are not part of it: they are the world's work, which only the server keeps.
 _Avoid_: save file, progress
+
+**World's work**:
+What the beavers have done to the world: trees gnawed and felled, the wood they gave, the dam, the lodge and the cache. The server keeps it, and every player's page starts in the server's.
+_Avoid_: world state, save
+
+**Tour's world**:
+The world the tour plays in, kept by the server beside the players' world, so the tour never changes a game someone plays.
+_Avoid_: test world
 
 ### How the game is put together
 

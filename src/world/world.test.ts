@@ -220,7 +220,7 @@ describe("the ground as drawn and collided", () => {
       const hit = world.castShape({ x, y: groundAt(x, 3) + 0.5, z: 3 }, { x: 0, y: 0, z: 0, w: 1 }, { x: 0, y: 0, z: -1 }, ball, 0, 3, true);
       expect(hit?.time_of_impact).toBeLessThan(1);
     }
-  });
+  }, 60_000); // about 5 s here and 8 to 12 s on GitHub's machines: over bun's 5 s
 });
 
 test("Rapier's heightfield: rows run along z, columns along x, column by column, centred", async () => {
