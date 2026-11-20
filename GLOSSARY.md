@@ -79,12 +79,16 @@ The player's own beaver companion, with a flower behind her ear. At the start of
 _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
 
 **Old Beaver**:
-An old, grey-muzzled beaver who sits hidden at the foot of the bank, among the trees at the clearing's edge, always in the same place. No player steers him and, unlike an animal, he never leaves his place or flees. When a player comes close he turns to them and tells a lore in a low murmur, its words shown in the HUD. Everyone finds him in the same place; what he tells, each player hears alone.
+An old, grey-muzzled beaver who sits hidden at the foot of the bank, among the trees at the clearing's edge, always in the same place. No player steers him and, unlike an animal, he never leaves his place or flees. When a player comes close he turns to them and tells a lore in his voice, its words shown in the HUD of every player near him. Everyone finds him in the same place, and he tells once for all: whoever is near hears the same lore at the same moment.
 _Avoid_: elder, sage, wise beaver, NPC, Shopkeeper
 
 **Lore**:
-One short tale the Old Beaver tells about the clearing's past, a few lines long. He tells them in turn, a new one each time a player comes close again.
+One short tale the Old Beaver tells about the clearing's past, a few lines long. He tells them in turn, and the turn is the world's, not each player's: a new one each time a player comes close after everyone has left his side, whoever heard the last.
 _Avoid_: story, legend, dialogue, quest (a lore asks nothing of the player)
+
+**Voice**:
+The lines a creature of the world says aloud in real words, heard from where it is by every player near it, quieter the farther off and not at all out of earshot. The Old Beaver has one: English, low and slow. A voice is made once each time the creature says a line, for all who listen, and no recording of it is kept anywhere. Where none is made, the creature murmurs the line instead: a low hum without words, one beat a word.
+_Avoid_: TTS, speech, narration, voice-over, voice chat (no player's voice is ever heard)
 
 **Quest**:
 A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her tracks, find her, gnaw her pen open. Nothing on the map marks where a step is.

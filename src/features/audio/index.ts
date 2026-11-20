@@ -3,6 +3,7 @@
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
 // that src/features/life shows, calling from where they are; the Bear's growl and its grunt at a tail slap (src/features/bear); the steps and splashes of other players
 // (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
+// The one sound not made here is the Old Beaver's Voice: the server sends it as ElevenLabs makes it, and it plays through the same mix.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
@@ -18,7 +19,7 @@ import { gait } from "../../anim/index.ts";
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
 import { findWater, groundAt } from "./ground.ts";
-import { createLapping, createMix, createMusic, createNight, createRain, createWind } from "./mix.ts";
+import { carried, createLapping, createMix, createMusic, createNight, createRain, createWind, SPEECH } from "./mix.ts";
 import { rand, SOUNDS, type SoundName } from "./sounds.ts";
 
 export const played: Partial<Record<string, number>> = {};
@@ -132,7 +133,57 @@ export const create: CreateFeature = (game) => {
   // physics steps, so it stops with the pause; a new line (his closing word, when the beaver walks off) cuts the rest
   // of the one before.
   let murmur: { place: Vector3; left: number; next: number; syllable: number } | undefined;
-  events.on("oldBeaverSpeaks", ({ place, words, syllable }) => { murmur = words > 0 ? { place, left: words, next: 0, syllable } : undefined; });
+  // His Voice, where the server says his lines: its sound comes a piece at a time while it is made (src/features/net
+  // passes it on) and each piece plays right after the one before, from where he sits, on the same bus as his
+  // murmur. A new line, or his falling silent, cuts what is left of it. Not counted in physics steps: a pause makes
+  // it silent, as it does all sound, but the line goes on.
+  // ElevenLabs sends it at about -26 LUFS. The mix adds about 11 dB to whatever is on the sfx bus (its level, the
+  // drive, the volume), so beside him it stands at about -14 LUFS with VOICE_GAIN, a little over the scene. It must
+  // stay under the limiter: a louder voice is pressed flat there, and then the limiter, not the distance, sets how
+  // loud he is, until far off. How much of it is heard goes by how far the player's beaver is from him, not the
+  // camera: the camera stands some metres behind its beaver, on either side of it, and the rules that say when he
+  // tells count from the beaver too. It falls as a voice does in the open and is gone just beyond where he stops
+  // telling (mix.ts carried); the panner only gives its direction, with the head's own filtering (HRTF), so before,
+  // behind and beside differ. With distance the air takes some of its highs (BRIGHT Hz beside him, DULL Hz at the
+  // edge of earshot). The ambience and the music step back under it only for a beaver close enough to follow the
+  // words: fully within a fifth of earshot, not at all from two fifths on.
+  const VOICE_GAIN = 1.2, BRIGHT = 9000, DULL = 3000;
+  const voice = {
+    place: undefined as Vector3 | undefined, earshot: 0, tail: 0, ducked: false, sources: new Set<AudioBufferSourceNode>(),
+    out: undefined as { gain: GainNode; tone: BiquadFilterNode } | undefined,
+  };
+  /** His voice for a beaver where the player's is now: its level, the Hz the air leaves of it, and how far the
+   *  ambience steps back under it (mix.speech's depth). */
+  const voiceNow = () => {
+    const d = Vector3.Distance(player.node.position, voice.place!), e = voice.earshot;
+    return { gain: VOICE_GAIN * carried(d, e), tone: BRIGHT * (DULL / BRIGHT) ** clamp(d / e), depth: SPEECH + (1 - SPEECH) * smooth(0.2 * e, 0.4 * e, d) };
+  };
+  events.on("oldBeaverSpeaks", ({ place, words, syllable, earshot }) => {
+    murmur = words > 0 ? { place, left: words, next: 0, syllable } : undefined;
+    for (const source of voice.sources) source.stop();
+    voice.sources.clear();
+    if (live && voice.ducked) live.mix.speech(live.ctx.currentTime, live.ctx.currentTime); // cut mid-line: the ambience comes back
+    Object.assign(voice, { place, earshot, out: undefined, tail: 0, ducked: false });
+  });
+  events.on("oldBeaverVoice", ({ pcm, rate }) => {
+    if (!live || live.paused || live.ctx.state !== "running" || !voice.place) return;
+    const { ctx } = live, samples = new Int16Array(pcm), buffer = ctx.createBuffer(1, samples.length, rate), data = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) data[i] = samples[i]! / 32768;
+    if (!voice.tail) played.voice = (played.voice ?? 0) + 1; // one per line, as the murmur counts its syllables
+    const source = new AudioBufferSourceNode(ctx, { buffer }), at = Math.max(ctx.currentTime + 0.05, voice.tail);
+    if (!voice.out) {
+      const from = live.panner(live.mix.sfx, voice.place.x, voice.place.y + 0.3, voice.place.z), now = voiceNow();
+      Object.assign(from, { panningModel: "HRTF", rolloffFactor: 0 }); // its direction only: its level is `carried`
+      const gain = new GainNode(ctx, { gain: now.gain }), tone = new BiquadFilterNode(ctx, { type: "lowpass", frequency: now.tone, Q: 0.5 });
+      gain.connect(tone).connect(from);
+      voice.out = { gain, tone };
+    }
+    source.connect(voice.out.gain);
+    source.onended = () => voice.sources.delete(source);
+    source.start(at);
+    voice.tail = at + buffer.duration;
+    voice.sources.add(source);
+  });
 
   // Lasting sounds: paddling and the fire's crackle, counted in physics steps so they stop with the pause.
   let stroke = 0;
@@ -194,6 +245,16 @@ export const create: CreateFeature = (game) => {
         l.setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
       }
       if (live.paused) return;
+      // His Voice while he speaks: its level, its highs and how far the ambience steps back follow the beaver.
+      if (voice.out && voice.place && voice.tail > now) {
+        const heard = voiceNow();
+        voice.out.gain.gain.setTargetAtTime(heard.gain, now, 0.08);
+        voice.out.tone.frequency.setTargetAtTime(heard.tone, now, 0.1);
+        // Only a page whose beaver is close steps its ambience back; one that has walked off gives it back at once.
+        const close = heard.depth < 1;
+        if (close || voice.ducked) live.mix.speech(now, close ? voice.tail : now, heard.depth);
+        voice.ducked = close;
+      }
       // The camera under the pond's surface (as src/features/post/underwater.ts finds it): everything muffled, the
       // pond humming; a tail slap on the surface comes down as a thump.
       live.mix.under(here.y < world.waterLevel && world.heightAt(here.x, here.z) < world.waterLevel, now);

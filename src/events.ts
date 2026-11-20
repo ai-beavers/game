@@ -8,6 +8,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { gait } from "./anim/index.ts";
 import type { Action, Motion } from "./contracts.ts";
 import type { BuildChange } from "./features/build/rules.ts";
+import type { Told } from "./features/old-beaver/rules.ts";
 import { slapHits } from "./player/state.ts";
 
 export interface GameEvents {
@@ -64,9 +65,19 @@ export interface GameEvents {
   /** From the flag feature (src/features/flag): the Flag caught fire, and has burnt down to a charred rag. */
   flagLit: { place: Vector3 };
   flagBurnt: { place: Vector3 };
-  /** From the Old Beaver feature (src/features/old-beaver): he murmurs a line of a lore, or his closing word, one
-   *  syllable a word, syllable s apart, from where he sits; for the local player only. words 0: he falls silent. */
-  oldBeaverSpeaks: { place: Vector3; words: number; syllable: number };
+  /** From the Old Beaver feature (src/features/old-beaver): he begins a line of a lore, or his closing word, from
+   *  where he sits: murmured, one syllable a word, syllable s apart. words 0: he falls silent, or says the line in
+   *  his voice (oldBeaverVoice follows). Either way what he said before is cut. earshot: m his voice carries. */
+  oldBeaverSpeaks: { place: Vector3; words: number; syllable: number; earshot: number };
+  /** From the Old Beaver feature, for src/features/net to tell the room: how near the local player's beaver is to
+   *  him now (rules.ts NEARS). */
+  oldBeaverNear: { near: number };
+  /** From src/features/net: what the room's Old Beaver tells now, for everyone in the world. told absent: the room
+   *  is gone, and he tells this page's player alone again. */
+  oldBeaverTold: { told?: Told };
+  /** From src/features/net: a piece of his voice as the server sends it, for the line begun last: 16-bit samples at
+   *  rate Hz, one channel. */
+  oldBeaverVoice: { pcm: ArrayBuffer; rate: number };
   /** From the bear feature (src/features/bear), about the local player's own Bear: it notices the beaver and growls;
    *  a tail slap landed on it (health: what it has left, 0: driven off). place: where the bear is. */
   bearNotices: { place: Vector3 };

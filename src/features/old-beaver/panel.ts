@@ -1,12 +1,16 @@
 // The Old Beaver's words in the HUD: a speech box with his name, "Old Beaver", in gold over the line he murmurs now,
 // at the bottom centre over the hints, in the home it shares with the breath (style.ts speech: he speaks only to a
 // beaver on land, the breath shows only in the water). Sized to the line, wrapped to the box's width; a line too long
-// for the room there is set smaller until it fits. Hidden while nothing is said.
+// for the room there is set smaller until it fits. Hidden while nothing is said. And over his head, while he talks,
+// a small speaker: it shows who is talking, for a player who hears him.
 //
 //   const box = speechBox(stage);   box.say(line) · box.say("") clears it · box.update() once a picture
+//   box.speaker(on, head)           once a picture: the speaker over `head` (a place in the world) while on
 //
 // Babylon GUI on stage.hud through Overlay; the line's native counterpart is a description, not a control: it carries
-// the line for screen readers. Names, for the tour: "old-beaver-name", "old-beaver-line".
+// the line for screen readers. Names, for the tour: "old-beaver-name", "old-beaver-line", "old-beaver-speaker".
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import type { Image } from "@babylonjs/gui/2D/controls/image.js";
 import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
 import type { Stage } from "../../engine.ts";
@@ -18,6 +22,8 @@ export const NAME = "Old Beaver";
 export function speechBox(stage: Stage) {
   const overlay = new Overlay(stage, "old-beaver-speech", false, 4);
   let back: Rectangle, name: TextBlock, line: TextBlock, slot: Box = box(0, 0, 0, 0), size = 13, small = 11, pad = 8, said = "";
+  let disc: Rectangle, speaker: Image;
+  const identity = Matrix.Identity(), screen = new Vector3();
   /** Rows the text takes at a size, wrapped to a width. */
   const rows = (text: string, at: number, room: number) => Math.max(1, Math.ceil(measure(text, at) / Math.max(1, room - 4)));
   const place = () => {
@@ -45,6 +51,9 @@ export function speechBox(stage: Stage) {
     name.fontWeight = "600";
     name.color = GOLD;
     line = overlay.label("old-beaver-line", said, slot, size, "center");
+    disc = overlay.rect("old-beaver-speaker-back", box(0, 0, 0, 0));
+    speaker = overlay.icon("old-beaver-speaker", "speaker", box(0, 0, 0, 0), GOLD);
+    disc.isVisible = speaker.isVisible = false;
     place();
   };
   onViewport(stage, draw);
@@ -58,6 +67,19 @@ export function speechBox(stage: Stage) {
       place();
     },
     get said() { return said; },
+    /** The speaker over `head` while `on`: a gold speaker on a dark disc, a constant size on the screen. Hidden when
+     *  the head is behind the camera or off the screen. */
+    speaker(on: boolean, head: Vector3) {
+      const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight, s = Math.round(size * 1.8);
+      if (on) Vector3.ProjectToRef(head, identity, stage.scene.getTransformMatrix(), stage.camera.viewport.toGlobal(w, h), screen);
+      on &&= screen.z > 0 && screen.z < 1 && screen.x > 0 && screen.x < w && screen.y > s && screen.y < h;
+      disc.isVisible = speaker.isVisible = on;
+      if (!on) return;
+      const x = Math.round(screen.x - s / 2), y = Math.round(screen.y - s), inset = Math.round(s * 0.2);
+      overlay.move(disc, box(x, y, s, s));
+      disc.cornerRadius = s / 2;
+      overlay.move(speaker, box(x + inset, y + inset, s - 2 * inset, s - 2 * inset));
+    },
     update() { overlay.show(hudShown()); },
   };
 }

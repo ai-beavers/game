@@ -101,7 +101,8 @@ function connect(name: string, receive: (m: ServerMessage) => void, closed = () 
     const ws = socket = new WebSocket(url);
     ws.onopen = () => { ws.send(JSON.stringify({ t: "hello", name, bot: true } satisfies ClientMessage)); console.log(`${name}: in`); };
     ws.onmessage = (e) => {
-      const m = JSON.parse(String(e.data)) as ServerMessage;
+      if (typeof e.data !== "string") return; // the Old Beaver's voice: a bot has no ears
+      const m = JSON.parse(e.data) as ServerMessage;
       if (m.t === "chat" && !quiet) console.log(`${name} hears: ${m.text}`);
       receive(m);
     };

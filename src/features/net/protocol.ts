@@ -9,9 +9,11 @@
 //   compact(work)                           the server's log shortened to the present world
 //   hourAt(START, started, now)             the shared day's hour: the server's since it started, the browser's since welcome
 //
-// Every message is JSON with a type `t`. The server never takes a player id from a client: it adds the sender's own.
+// Every message is JSON with a type `t`, but the Old Beaver's voice, which the server sends as binary. The server
+// never takes a player id from a client: it adds the sender's own.
 import type { Action, Motion } from "../../contracts.ts";
 export { DAY_SECONDS, hourAt, START } from "../sky/day.ts";
+import { NEARS, type Told } from "../old-beaver/rules.ts";
 import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
@@ -108,6 +110,8 @@ export type ClientMessage =
   | { t: "drop"; s: Place; v: [number, number, number] }
   /** Changes the sender made to the build feature's world, in order. */
   | { t: "build"; c: BuildChange[] }
+  /** How near the sender's beaver is to the Old Beaver, as its index in NEARS (src/features/old-beaver/rules.ts). */
+  | { t: "near"; near: number }
   /** In the tour's world only (room.ts, sandbox): start the world afresh. */
   | { t: "reset" };
 
@@ -139,7 +143,10 @@ export type ServerMessage =
   /** The server shortened its list (compact): the same world, from now on n changes long under this epoch. */
   | { t: "epoch"; epoch: string; n: number }
   /** The world was reset on the server: start again in the new one. */
-  | { t: "reset" };
+  | { t: "reset" }
+  /** What the Old Beaver tells now, to everyone and to each who comes in (src/features/old-beaver/telling.ts). His
+   *  voice is the one thing that is not JSON: its sound follows as binary messages, for the line told last. */
+  | ({ t: "lore" } & Told);
 
 // ---- checks -----------------------------------------------------------------------------------------------------
 
@@ -231,6 +238,7 @@ export function parseClient(text: unknown): ClientMessage | undefined {
       const c = m.c.map(parseChange).filter((x) => x !== undefined);
       return c.length ? { t: "build", c } : undefined;
     }
+    case "near": return int(m.near, 0, NEARS.length - 1) ? { t: "near", near: m.near } : undefined;
     case "reset": return { t: "reset" };
   }
 }

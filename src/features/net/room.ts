@@ -9,12 +9,17 @@
 //   room.info(addresses, withBuild)                   what GET /net/info answers
 //   room.reset() · room.save()                        the world afresh; the world kept now (before the process ends)
 //
+// The Old Beaver tells his lores once for the whole world (src/features/old-beaver/telling.ts): the pages say how near
+// their players are, the room tells them what he says, and with `speak` it sends them his voice as binary messages.
+//
 // The room's world is the only one: a page starts in what info() answers and never brings a world of its own. It lives
 // in memory; with keep it comes back after a restart.
 //
 // The room is the trust boundary: every message is checked by parseClient (protocol.ts), each socket is rate limited,
 // a player only ever speaks as itself, and only the host may move the loose things.
 import { newState, type BuildChange } from "../build/rules.ts";
+import { newTelling } from "../old-beaver/telling.ts";
+import type { Speak } from "../old-beaver/voice.ts";
 import {
   admit, bucket, compact, HELLO_TIME, hostOf, hourAt, MAX_PLAYERS, newEpoch, parseClient, PER_ADDRESS, restore, sameOrigin, START, uniqueName,
   type Place, type PlayerInfo, type ServerMessage, type Work,
@@ -26,9 +31,10 @@ const STRIKES = 600; // messages dropped for rate before the socket is closed
 const MAX_SOCKETS = 2 * MAX_PLAYERS; // players, and room for those still saying hello or being told it is full
 /** How long a change may wait before it is kept: at most this much work is lost when the process ends unasked. */
 export const SAVE_AFTER = 2000; // ms
+const TICK = 100; // ms between steps of the Old Beaver's telling, while anyone is near him or he tells
 
-/** What the room needs of a WebSocket. send on a closed socket must not throw. */
-export interface Socket { send(text: string): unknown; close(code: number, reason: string): void }
+/** What the room needs of a WebSocket. send on a closed socket must not throw; bytes go out as a binary message. */
+export interface Socket { send(data: string | Uint8Array): unknown; close(code: number, reason: string): void }
 
 interface Peer { id: number; name: string; joined: number; carry: number; bot: boolean; away: boolean }
 /** One socket in the room. addresses: what it is told to share; address: what the per-address limit counts it under
@@ -42,10 +48,12 @@ export interface Conn {
 
 /** version: the build (a commit), "" in development. publicUrl: pages from there may open the socket too. saved and
  *  keep: the world's work over restarts; without keep nothing is kept. sandbox: the tour's world (protocol.ts
- *  TOUR_WORLD), where any player may start the world afresh and a tree may grow back before its time. */
-export interface Home { version: string; publicUrl?: string; saved?: string; keep?: (text: string) => void; sandbox?: boolean }
+ *  TOUR_WORLD), where any player may start the world afresh and a tree may grow back before its time. speak: says a
+ *  line in the Old Beaver's voice (voice.ts, made with the server's key); without it, and in the tour's world, he
+ *  murmurs. */
+export interface Home { version: string; publicUrl?: string; saved?: string; keep?: (text: string) => void; sandbox?: boolean; speak?: Speak }
 
-export function newRoom({ version, publicUrl, saved, keep, sandbox = false }: Home) {
+export function newRoom({ version, publicUrl, saved, keep, sandbox = false, speak }: Home) {
   // ---- the world's work -------------------------------------------------------------------------------------------
 
   const work: Work = { epoch: newEpoch(), world: newState(), log: [] };
@@ -111,6 +119,30 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false }: Ho
   /** Closes a socket and takes it out at once, whenever its transport tells of the end. */
   const shut = (conn: Conn, code: number, reason: string) => { conn.socket.close(code, reason); close(conn); };
 
+  // ---- the Old Beaver ---------------------------------------------------------------------------------------------
+
+  const telling = newTelling({
+    tell: (told) => everyone({ t: "lore", ...told }),
+    // shortcut: his voice goes to every page in the world, near him or not (each plays as much as its beaver would
+    // hear): 48 kB a second per page while he speaks; send it only to those in earshot when a world outgrows 16.
+    sound: (pcm) => { for (const c of conns) if (c.listening) c.socket.send(pcm); },
+    speak: sandbox ? undefined : speak, // the tour's world never spends: there he murmurs
+  });
+  let ticking: ReturnType<typeof setInterval> | undefined, ticked = 0;
+  /** Steps his telling; the clock runs only while anyone is near him or he tells. */
+  const tick = () => {
+    const now = performance.now(), busy = telling.step((now - ticked) / 1000);
+    ticked = now;
+    if (busy) ticking ??= setInterval(tick, TICK);
+    else { clearInterval(ticking); ticking = undefined; }
+  };
+  /** A page says how near its player is (0: far, or gone): he answers at once, not a tick later. */
+  const near = (conn: Conn, how: number) => {
+    telling.near(conn, how);
+    if (!ticking) ticked = performance.now();
+    tick();
+  };
+
   /** Picks the host again; tells everyone when it changed. */
   function elect() {
     const id = hostOf(peers.values());
@@ -153,6 +185,7 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false }: Ho
       conn.listening = true;
       if (host === conn && places.size) send(conn, { t: "things", l: [...places.values()] });
       if (host && host !== conn) send(host, { t: "need" });
+      send(conn, { t: "lore", ...telling.told() }); // mid-lore it hears the rest: the next line, not the beginning
       console.log(`${me.name} joined (${peers.size} in)`);
       return;
     }
@@ -193,6 +226,9 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false }: Ho
       case "build":
         build(conn, m.c);
         return;
+      case "near":
+        near(conn, m.near);
+        return;
       case "reset":
         if (sandbox && conn.resend.take()) reset(); // under the rate of whole worlds: each makes every page load again
         return;
@@ -226,6 +262,7 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false }: Ho
     const peer = peers.get(conn);
     if (peer) {
       peers.delete(conn);
+      near(conn, 0);
       everyone({ t: "leave", id: peer.id });
       if (conn === host) host = undefined;
       elect();

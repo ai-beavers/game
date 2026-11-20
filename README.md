@@ -6,7 +6,9 @@ WebSocket: the Bun server on a local network, a Worker on Cloudflare for everyon
 
 ```
 bun install --frozen-lockfile
-bun dev                      the game on port 5180, for everyone on the network (server.ts); prints the addresses
+bun dev                      the game on port 5180, for everyone on the network (server.ts); prints the addresses.
+                             With ELEVENLABS_API_KEY in .env the Old Beaver says his lores in his voice, and the
+                             terminal shows every talk with ElevenLabs; without it he murmurs
 bun shot <url> --out shots/x.png      look at a page without a desktop: screenshot + console (tools/shot.ts)
 bun run check                typecheck and tests
 bun run tour --once --here   the whole tour once as a check, on the files as they are: one line per station, exit code 0 or 1;
@@ -40,6 +42,9 @@ Everyone plays at <https://beaver.uq-dev.workers.dev/>, in one shared world of u
 - **Starting the world afresh**: set the token once with `bunx wrangler secret put RESET_TOKEN`, then
   `curl -X POST -H "Authorization: Bearer <token>" https://beaver.uq-dev.workers.dev/net/reset`. Without the secret
   the address answers 404.
+- **The Old Beaver's voice**: set the key once with `bunx wrangler secret put ELEVENLABS_API_KEY`. The world's
+  Durable Object asks ElevenLabs for each line once and sends the sound to every player (ADR 0010); every talk with
+  ElevenLabs is in the Worker's logs. Without the secret he murmurs.
 
 ## Layout
 

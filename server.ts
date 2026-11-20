@@ -23,6 +23,11 @@
 //   WORLD_FILE=/data/world.json          keeps the world's work there over restarts (the tour's world beside it,
 //                                        in /data/world.json.tour)
 //   GIT_SHA=<commit>                     the build; a page from another build reloads once when it reconnects
+// The Old Beaver speaks with ElevenLabs only when the server is told to and holds the key; `bun dev` tells it:
+//   VOICE=1                              he says his lores in his voice (src/features/old-beaver/voice.ts), with
+//   ELEVENLABS_API_KEY=<key>             the key, which Bun reads from .env by itself. A key alone is not enough: the
+//                                        tour and every other `bun server.ts` would spend it unasked. Without either
+//                                        he murmurs. Every talk with ElevenLabs is logged here.
 // GET /net/info answers 200 with JSON while the server runs: it is the health check too. Its changes come only with
 // ?build (the page asks once as it loads). GET /net/events answers the House of AI events for the Calendar board
 // (src/features/shop/events.ts), from Luma's feed or HOUSE_OF_AI_FEED=<iCal address> (the tests' fixture).
@@ -32,6 +37,7 @@ import index from "./index.html";
 import { clientAddress, EVENTS_PATH, INFO_PATH, MAX_MESSAGE, PATH, PROXY_HEADERS, TOUR_WORLD, worldOf } from "./src/features/net/protocol.ts";
 import { houseOfAiEvents } from "./src/features/shop/events.ts";
 import { newRoom, type Conn } from "./src/features/net/room.ts";
+import { voiceWith } from "./src/features/old-beaver/voice.ts";
 import type { Built } from "./tools/build.ts";
 
 const PORT = Number(process.env.PORT ?? 5180);
@@ -82,6 +88,10 @@ async function bundle() {
 
 // ---- the world ----------------------------------------------------------------------------------------------------
 
+const VOICE = process.env.VOICE === "1";
+const speak = VOICE ? voiceWith(process.env.ELEVENLABS_API_KEY || undefined) : undefined;
+if (VOICE) console.log(speak ? "The Old Beaver speaks with ElevenLabs." : "VOICE is set, but ELEVENLABS_API_KEY is not: the Old Beaver murmurs.");
+
 /** One world's room. With WORLD_FILE its work comes back after a restart, from `file`; a file that is no world at all
  *  is kept aside as .bad. */
 function roomFor(file: string | undefined, sandbox: boolean) {
@@ -93,7 +103,7 @@ function roomFor(file: string | undefined, sandbox: boolean) {
     } catch (error) { console.error(`Could not keep the world in ${file}:`, error); }
   };
   const room = newRoom({
-    version: VERSION, publicUrl: process.env.PUBLIC_URL, sandbox,
+    version: VERSION, publicUrl: process.env.PUBLIC_URL, sandbox, speak,
     saved: file && existsSync(file) ? readFileSync(file, "utf8") : undefined, keep: file ? keep : undefined,
   });
   if (room.broken) {
