@@ -17,12 +17,12 @@ export const NAME = "Old Beaver";
 
 export function speechBox(stage: Stage) {
   const overlay = new Overlay(stage, "old-beaver-speech", false, 4);
-  let back: Rectangle, name: TextBlock, line: TextBlock, slot: Box = box(0, 0, 0, 0), size = 13, small = 11, said = "";
+  let back: Rectangle, name: TextBlock, line: TextBlock, slot: Box = box(0, 0, 0, 0), size = 13, small = 11, pad = 8, said = "";
   /** Rows the text takes at a size, wrapped to a width. */
   const rows = (text: string, at: number, room: number) => Math.max(1, Math.ceil(measure(text, at) / Math.max(1, room - 4)));
   const place = () => {
     if (!said) { back.isVisible = name.isVisible = line.isVisible = false; return; }
-    const pad = Math.round(size * 0.6), room = slot.w - 2 * pad, nameH = Math.round(small * 1.3);
+    const room = slot.w - 2 * pad, nameH = Math.round(small * 1.3);
     // The size that lets the line fit the room above the hints: the box's own, or smaller (never under 10 px).
     let at = size;
     while (at > 10 && nameH + rows(said, at, room) * Math.round(at * 1.3) + Math.round(pad * 1.2) > slot.h) at--;
@@ -39,7 +39,7 @@ export function speechBox(stage: Stage) {
   const draw = () => {
     overlay.clear();
     const l = hudLayout(stage);
-    slot = l.speech; size = l.u; small = l.small;
+    slot = l.speech; size = l.u; small = l.small; pad = l.pad;
     back = overlay.rect("old-beaver-back", slot);
     name = overlay.label("old-beaver-name", NAME, slot, small, "center");
     name.fontWeight = "600";

@@ -119,10 +119,11 @@ export const create: CreateFeature = (game) => {
   // Half the dam: a chime on the way, so the long middle of the work has a moment too.
   events.on("stickPlaced", ({ count, total }) => { if (count * 2 === total) play("chime", undefined, 1, "sfx", 0.25); });
 
-  // The Old Beaver murmurs a line from where he sits, one slow syllable a word (src/features/old-beaver).
-  events.on("oldBeaverSpeaks", ({ place, words }) => {
-    for (let i = 0; i < words; i++) play("murmur", place, Math.random(), "sfx", i * SYLLABLE + rand(0, 0.06));
-  });
+  // The Old Beaver murmurs a line from where he sits, one slow syllable a word (src/features/old-beaver). Counted in
+  // physics steps, so it stops with the pause; a new line (his closing word, when the beaver walks off) cuts the rest
+  // of the one before.
+  let murmur: { place: Vector3; left: number; next: number } | undefined;
+  events.on("oldBeaverSpeaks", ({ place, words }) => { murmur = { place, left: words, next: 0 }; });
 
   // Lasting sounds: paddling, counted in physics steps so it stops with the pause.
   let stroke = 0;
@@ -156,6 +157,11 @@ export const create: CreateFeature = (game) => {
 
   return {
     step(dt) {
+      if (murmur && (murmur.next -= dt) <= 0) {
+        play("murmur", murmur.place, Math.random(), "sfx", rand(0, 0.06));
+        murmur.next += SYLLABLE;
+        if (--murmur.left <= 0) murmur = undefined;
+      }
       if (motion.swimming >= 0.5) {
         stroke += dt * (0.9 + 1.4 * Math.min(1, motion.speed));
         if (stroke >= 1) { stroke = 0; play("paddle", at, clamp(motion.speed / 1.2)); }

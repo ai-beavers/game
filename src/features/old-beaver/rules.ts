@@ -58,7 +58,7 @@ export const LINE_MAX = 60;
 export const CLOSING = "Hm. Another time, then.";
 
 /** One visit's telling: idle (ready for the next lore), telling (a lore, a line of it, s spent on that line), or away
- *  (a lore ended; the next waits until the player has been beyond BREAK). next: the lore told next. */
+ *  (a lore ended, or broke off with the player afloat near him; the next waits until the player has been beyond BREAK). next: the lore told next. */
 export interface Visit { state: "idle" | "telling" | "away"; lore: number; line: number; time: number; next: number }
 /** What a telling update did, in order. */
 export type Happening =
@@ -83,7 +83,7 @@ const lineOf = (visit: Visit): Happening => {
 };
 
 /** Advances a visit by dt s with the player distance m away on the ground (from the feet), on land or not (afloat,
- *  in the canoe). Returns what happened. */
+ *  in the canoe): beyond BREAK or off the land mid-lore, he breaks off. Returns what happened. */
 export function tell(visit: Visit, at: { distance: number; land: boolean }, dt: number): Happening[] {
   if (visit.state === "idle") {
     if (!at.land || at.distance > START) return [];
@@ -96,6 +96,10 @@ export function tell(visit: Visit, at: { distance: number; land: boolean }, dt: 
   }
   if (at.distance > BREAK) {
     visit.state = "idle";
+    return [{ kind: "broke", lore: visit.lore }];
+  }
+  if (!at.land) { // into the water or the canoe near him: he breaks off, and tells again only once the player has left
+    visit.state = "away";
     return [{ kind: "broke", lore: visit.lore }];
   }
   const out: Happening[] = [], lines = LORES[visit.lore]!;

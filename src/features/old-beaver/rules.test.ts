@@ -117,3 +117,13 @@ test("every lore is two or three lines, each short enough for one or two rows of
   }
   expect(LINE_MAX).toBeLessThanOrEqual(64);
 });
+
+test("going into the water or the canoe near him mid-lore breaks off once, and the next lore waits until the player has left", () => {
+  const visit = newVisit();
+  tell(visit, { distance: 2, land: true }, 0.1);
+  expect(tell(visit, { distance: 3, land: false }, 0.1)).toEqual([{ kind: "broke", lore: 0 }]);
+  expect(tell(visit, { distance: 3, land: false }, 0.1)).toEqual([]);
+  expect(stay(visit, 2, 5)).toEqual([]); // back on land beside him: no new lore yet
+  stay(visit, BREAK + 1, 0.1);
+  expect(stay(visit, 3, 0.1)[0]).toEqual({ kind: "lore", lore: 1 });
+});

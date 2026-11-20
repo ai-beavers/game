@@ -24,14 +24,17 @@ import { CLOSING, COLLIDER, lineTime, newVisit, PLACE, REST, tell, words, type H
 
 const NEAR = 30; // m: within this he breathes and moves (his fur thins with distance by itself)
 const TURN = 2.2; // how fast he turns, 1/s (eased)
+const SEAT = 0.35; // m: half his sitting height, the collider's half-height and where his voice comes from above the ground
+// Cost per frame: one more furred beaver drawn, as Mrs. Beaver is; his pose and fur stepped only within NEAR, and the
+// telling a few numbers.
 
 /** The angle from a to b, wrapped to -π … π. */
 const turnBetween = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
 export const create: CreateFeature = (game) => {
   const { stage, world, player, events } = game;
-  const ground = world.heightAt(PLACE.x, PLACE.z), place = new Vector3(PLACE.x, ground + 0.35, PLACE.z);
-  stage.physics.createCollider(RAPIER.ColliderDesc.cylinder(0.35, COLLIDER).setTranslation(PLACE.x, ground + 0.35, PLACE.z));
+  const ground = world.heightAt(PLACE.x, PLACE.z), place = new Vector3(PLACE.x, ground + SEAT, PLACE.z);
+  stage.physics.createCollider(RAPIER.ColliderDesc.cylinder(SEAT, COLLIDER).setTranslation(PLACE.x, ground + SEAT, PLACE.z));
 
   let him: Awaited<ReturnType<typeof oldBeaver>> | undefined, facing = REST;
   void oldBeaver(stage).then((h) => {
