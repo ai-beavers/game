@@ -42,7 +42,7 @@ test("the beaver says why it does what it does, by the hour, the weather and wha
   expect(reason("Dam work", at({ carrying: true }))).toContain("stick");
   expect(reason("A new thing", at({}))).toBe("A new thing"); // no line of its own: its name
   expect(reason("Trading", at({ day: Date.parse("2026-12-20") }))).toBe("Wood to spare. Let's go shopping!");
-  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping", "Canoeing", "Find Mrs. Beaver", "Burn the flag"];
+  const activities = ["Dam work", "Pond patrol", "Tail slap", "Sky watch", "Regrowth", "Around the clearing", "Furious beaver", "Wears a hat", "Trading", "Sit and crawl", "Shopping", "Canoeing", "Find Mrs. Beaver", "Burn the flag", "Visit the Old Beaver"];
   for (const hour of [3, 9, 12.5, 19.5, 23]) for (const weather of ["fair", "rain", "fog"]) for (const activity of activities)
     for (const day of [undefined, Date.parse("2026-11-19")]) // one row of the caption, new or not
       expect(reason(activity, at({ hour, weather, day })).length).toBeLessThanOrEqual(40);
@@ -130,6 +130,13 @@ test("canoeing: new on the day it came, then a reason of its own that fits the w
   expect(reason("Canoeing", at({ day: later, hour: 12.5, weather: "fair" }))).toBe("Calm water. Out in the canoe.");
   expect(reason("Canoeing", at({ day: later, hour: 23, weather: "fair" }))).toContain("Lantern");
   expect(reason("Canoeing", at({ day: later, hour: 12.5, weather: "rain" }))).toContain("Rain");
+});
+
+test("visiting the Old Beaver: a reason of its own, new for a week from the day he came", () => {
+  expect(reason("Visit the Old Beaver", at({}))).toBe("Who mutters in the thicket?");
+  expect(reason("Visit the Old Beaver", at({})).length).toBeLessThan(40);
+  expect(fresh("Visit the Old Beaver", at({ day: Date.parse("2026-11-19") }))).toBe(true);
+  expect(fresh("Visit the Old Beaver", at({ day: Date.parse("2026-11-26") }))).toBe(false);
 });
 
 test("left alone: the beaver gives its reason in its own words, and is curious about it for its first week", () => {

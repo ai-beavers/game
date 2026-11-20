@@ -43,6 +43,19 @@ test("the hints sit low, under the middle of the picture", () => {
   expect(l.hints.x + l.hints.w / 2).toBe(640);
 });
 
+test("the Old Beaver's speech box sits over the hints, sharing the breath's home, with room for his name and a line", () => {
+  const phones: [number, number][] = [[390, 844], [844, 390]], cases = [...screens.flatMap(([w, h]) => modes.map((mode) => ({ w, h, mode }))),
+    ...phones.flatMap(([w, h]) => [{ touch: false, live: false }, { touch: true, live: false }].map((mode) => ({ w, h, mode })))];
+  for (const { w, h, mode } of cases) {
+    const l = layout(w, h, none, mode), at = `${w}x${h} ${JSON.stringify(mode)}`;
+    expect(l.speech.y + l.speech.h, at).toBe(l.breath.y + l.breath.h);
+    expect(l.speech.y + l.speech.h, at).toBeLessThanOrEqual(l.hints.y);
+    expect(l.speech.x, at).toBe(l.hints.x);
+    expect(l.speech.h, at).toBeGreaterThanOrEqual(l.small * 1.3 + l.u * 1.3);
+    expect(l.middle.top < l.middle.bottom, at).toBe(true);
+  }
+});
+
 test("a line too long for its row gets smaller type, down to a limit", () => {
   expect(fitType(24, 800, 30)).toBe(24); // fits as it is
   const long = fitType(24, 600, 55);

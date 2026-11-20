@@ -304,6 +304,35 @@ const RECIPES = {
     for (let i = 0; i < n; i++) burst(ctx, out, t, { at: rand(0, 0.35), filter: "bandpass", freq: rand(1800, 4200), q: 2, attack: 0.001, decay: rand(0.008, 0.02), peak: rand(0.25, 0.6) * (0.6 + 0.4 * amount) });
     burst(ctx, out, t, { filter: "lowpass", freq: 900, attack: 0.12, decay: 0.4, peak: 0.08 + 0.06 * amount });
   },
+  /** One syllable of the Old Beaver's murmur: a low, slow hum through the mouth with a slight wobble, its pitch
+   *  sinking a little; amount (0 … 1) shifts pitch and vowel, so syllables after one another differ. */
+  murmur(ctx, out, t, amount) {
+    const f = 84 * (0.93 + 0.14 * amount) * rand(0.97, 1.03), length = 0.3, attack = 0.08, start = t, end = t + attack + length * 1.6;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.6, start + attack);
+    gain.gain.setTargetAtTime(0, start + attack + length * 0.35, length / 4);
+    const voice = ctx.createOscillator(), wobble = ctx.createOscillator(), depth = ctx.createGain();
+    voice.type = "sawtooth";
+    voice.frequency.setValueAtTime(f, start);
+    voice.frequency.exponentialRampToValueAtTime(f * rand(0.86, 0.93), end);
+    wobble.frequency.value = rand(4.5, 6);
+    depth.gain.value = f * 0.025;
+    wobble.connect(depth).connect(voice.frequency);
+    // Two formants of a closed, rounded vowel ("mm", "oh"), and a lowpass that keeps it dark.
+    const low = ctx.createBiquadFilter(), high = ctx.createBiquadFilter(), dark = ctx.createBiquadFilter(), body = ctx.createGain(), air = ctx.createGain();
+    low.type = high.type = "bandpass";
+    low.frequency.value = 320 + 160 * amount; low.Q.value = 3;
+    high.frequency.value = 780 + 260 * (1 - amount); high.Q.value = 5;
+    dark.type = "lowpass"; dark.frequency.value = 1400; dark.Q.value = 0.7;
+    body.gain.value = 1; air.gain.value = 0.35;
+    voice.connect(low).connect(body).connect(dark);
+    voice.connect(high).connect(air).connect(dark);
+    dark.connect(gain).connect(out);
+    for (const osc of [voice, wobble]) { osc.start(start); osc.stop(end); }
+    // A breath of air on the onset.
+    burst(ctx, out, t, { filter: "bandpass", freq: 600, q: 1.2, attack: 0.04, decay: 0.12, peak: 0.03 });
+  },
   /** One wave against the shore. */
   lap(ctx, out, t, amount) {
     burst(ctx, out, t, { filter: "bandpass", freq: 450, to: 220, q: 1.2, attack: 0.15, decay: 0.5, peak: 0.3 + amount * 0.2 });

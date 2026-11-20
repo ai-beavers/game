@@ -2,7 +2,7 @@
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
 // that src/features/life shows, calling from where they are; the steps and splashes of other players
-// (src/features/net); and a quiet tune that composes itself. With the camera under water all of it is muffled.
+// (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
@@ -123,6 +123,12 @@ export const create: CreateFeature = (game) => {
   events.on("flagLit", ({ place }) => { fire = place; crackle = 0; });
   events.on("flagBurnt", () => { fire = undefined; });
 
+  // The Old Beaver murmurs a line from where he sits, one slow syllable a word (src/features/old-beaver). Counted in
+  // physics steps, so it stops with the pause; a new line (his closing word, when the beaver walks off) cuts the rest
+  // of the one before.
+  let murmur: { place: Vector3; left: number; next: number; syllable: number } | undefined;
+  events.on("oldBeaverSpeaks", ({ place, words, syllable }) => { murmur = words > 0 ? { place, left: words, next: 0, syllable } : undefined; });
+
   // Lasting sounds: paddling and the fire's crackle, counted in physics steps so they stop with the pause.
   let stroke = 0;
   const at = player.node.position, camera = stage.camera, forward = new Vector3(), up = new Vector3(), here = new Vector3();
@@ -155,6 +161,11 @@ export const create: CreateFeature = (game) => {
 
   return {
     step(dt) {
+      if (murmur && (murmur.next -= dt) <= 0) {
+        play("murmur", murmur.place, Math.random(), "sfx", rand(0, 0.06));
+        murmur.next += murmur.syllable;
+        if (--murmur.left <= 0) murmur = undefined;
+      }
       if (motion.swimming >= 0.5) {
         stroke += dt * (0.9 + 1.4 * Math.min(1, motion.speed));
         if (stroke >= 1) { stroke = 0; play("paddle", at, clamp(motion.speed / 1.2)); }

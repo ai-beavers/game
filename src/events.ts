@@ -56,6 +56,9 @@ export interface GameEvents {
   /** From the flag feature (src/features/flag): the Flag caught fire, and has burnt down to a charred rag. */
   flagLit: { place: Vector3 };
   flagBurnt: { place: Vector3 };
+  /** From the Old Beaver feature (src/features/old-beaver): he murmurs a line of a lore, or his closing word, one
+   *  syllable a word, syllable s apart, from where he sits; for the local player only. words 0: he falls silent. */
+  oldBeaverSpeaks: { place: Vector3; words: number; syllable: number };
   /** A change to the build feature's world state. remote false: made here, after it was applied (send it to others);
    *  emit it with remote true to apply a change that came from another player. */
   buildChange: { change: BuildChange; remote: boolean };
