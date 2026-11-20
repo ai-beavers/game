@@ -63,6 +63,7 @@ server.ts          the game and its multiplayer server on Bun, for a local netwo
 worker.ts          the same multiplayer on Cloudflare: a Worker and a Durable Object
 assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), bear.glb (from tools/blender/bear.py), logo.png
 tools/blender/     the models, built in Blender from code
+tools/comfyui/     animal models from pictures: the ComfyUI workflow and how to run it
 ```
 
 ## Conventions
