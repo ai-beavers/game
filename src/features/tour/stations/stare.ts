@@ -1,15 +1,20 @@
 // The Stare (src/features/stare): left alone on land for a minute of game time (a quarter of it in the fast tour), the
-// beaver turns round and looks straight into the player's camera; any input ends it at once and does what it always
-// does. Live it stares into the stream's camera, the player's own, behind the beaver.
+// beaver turns round and looks straight into the player's camera, then creeps up to it, the camera holding still,
+// until its face nearly touches the lens; any input ends it at once and does what it always does, and the camera
+// springs back behind it. Live it stares into the stream's camera, the player's own, behind the beaver.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { inv, rotate } from "../../../anim/quat.ts";
 import { REST } from "../../../anim/rest.ts";
+import { REST_DISTANCE } from "../../../player/camera.ts";
 import { THRESHOLD, TURN } from "../../stare/stare.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 const ACTIVITY = "Left alone";
 const AIMED = (15 * Math.PI) / 180; // rad between the face and the way to the camera that counts as looking into it
+const CLOSE = 0.5; // m from the eyes to the lens that counts as face to face
+/** s of game time the creep up to the lens may take: from the resting camera distance at its slow walk, and a margin. */
+const APPROACH = 16;
 /** The face's forward on the head bone: the way the head looks at rest (+z, as the beaver faces). */
 const FACE = Vector3.FromArray(rotate(inv(REST.head.armatureRotation), [0, 0, 1]));
 
@@ -41,8 +46,15 @@ export const stare = (kit: Kit): Station[] => {
         await until(() => !player.motion.stare, 1, "turned the camera during a stare, the beaver goes on staring");
       }
       await leftAlone();
-      await wait(live ? 4 : 0.5); // live: long enough to be seen
-      expect(off() < AIMED, `staring, the beaver's face is ${deg(off())} off the camera`);
+      // Then it comes up to the lens, the camera holding its place across (it only sinks to the eyes).
+      const held = stage.camera.position.clone(), eyes = () => Vector3.Distance(beaver.eyes.getAbsolutePosition(), stage.camera.position);
+      const across = () => Math.hypot(stage.camera.position.x - held.x, stage.camera.position.z - held.z);
+      await until(() => eyes() < CLOSE, APPROACH,
+        `staring, the beaver did not come up to the camera: its eyes ${eyes().toFixed(2)} m from the lens, at ${player.feet.x.toFixed(1)}, ${player.feet.z.toFixed(1)}`);
+      await wait(live ? 5 : 1.5); // arrived and standing; live: the close-up long enough to be seen
+      expect(eyes() < CLOSE, `come up to the camera, the beaver backed off: its eyes ${eyes().toFixed(2)} m from the lens`);
+      expect(across() < 0.3, `the camera followed the beaver during the approach: it moved ${across().toFixed(2)} m across`);
+      expect(off() < AIMED, `face to face, the beaver's face is ${deg(off())} off the camera`);
       // A key a person presses: W walks away from the camera, as it always does.
       const from = player.feet.clone(), facing = player.facing;
       press("KeyW", "keydown");
@@ -52,6 +64,10 @@ export const stare = (kit: Kit): Station[] => {
       expect(!player.motion.stare, "W pressed, the beaver stares on");
       expect(off() > AIMED, `W pressed, the beaver still looks into the camera (${deg(off())} off)`);
       expect(moved > 0.1 || turned > 0.5, `W pressed after a stare, the beaver went ${moved.toFixed(2)} m and turned ${deg(turned)}: the key did nothing`);
+      // Let go, the camera springs back behind the beaver to about its resting distance.
+      const back = () => Vector3.Distance(stage.camera.position, player.feet);
+      await until(() => back() > REST_DISTANCE * 0.6 && back() < REST_DISTANCE * 1.4, 3,
+        `after the Stare the camera stays ${back().toFixed(2)} m from the beaver, not back near ${REST_DISTANCE} m`);
     }, ACTIVITY],
   ];
 };

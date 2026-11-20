@@ -95,8 +95,10 @@ export interface PlayerControls extends Player {
   readonly touched: number;
   /** A slow turn on the spot another part asks for (src/features/stare): each step while nothing steers it, no action
    *  runs and it stands on land, the facing turns towards heading (radians, as facing) by at most rate rad/s. It is not
-   *  told as turning in the Motion, so the feet stay planted. undefined: none. */
-  turnTo: { heading: number; rate: number } | undefined;
+   *  told as turning in the Motion, so the feet stay planted. With a speed (m/s) it also walks forward along its facing
+   *  at that speed, under its normal movement and physics, told in the Motion as an ordinary slow walk; it stops where
+   *  a step would take it into the water. undefined: none. */
+  turnTo: { heading: number; rate: number; speed?: number } | undefined;
 }
 
 /** How a ride sits on the water, m: the feet above the level, the least water under them, how far ahead the bow is
@@ -179,6 +181,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   /** Whether a ride may be at x, z facing (dx, dz) (unit): deep enough at the seat, the bow in the water and clear. */
   const floats = (r: Ride, x: number, z: number, dx: number, dz: number, level: number) =>
     depthAt(x, z, level) > r.depth && depthAt(x + dx * r.bow, z + dz * r.bow, level, solid) > r.draft;
+
+  // Whether the ground a step ahead along the facing lies under the water (a walk asked for by turnTo stops there).
+  const wetAhead = () => {
+    const level = waterLevel();
+    if (level === undefined) return false;
+    const x = feet.x + Math.sin(facing) * (RADIUS + 0.15), z = feet.z + Math.cos(facing) * (RADIUS + 0.15), top = Math.max(level, feet.y) + 1;
+    return top - depthAt(x, z, top) < level;
+  };
 
   const steep = () => {
     down.origin = { x: feet.x, y: feet.y + 0.3, z: feet.z };
@@ -318,6 +328,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const { low, slow } = stepLow(!!input.dive, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: !!ride });
     const top = ride ? RIDE_SPEED : afloat ? SWIM_SPEED : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
     const [accel, brake] = ride ? [RIDE_ACCEL, RIDE_BRAKE] : afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
+    const going = speed; // m/s before steering brakes it: a walk asked for by turnTo keeps it
     steering.facing = facing; steering.speed = speed;
     steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
     facing = steering.facing; speed = steering.speed;
@@ -326,6 +337,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       const was = facing;
       facing = steering.facing = turnTowards(facing, turnTo.heading, turnTo.rate * dt);
       turned = facing - was;
+      if (turnTo.speed) speed = wetAhead() ? 0 : Math.min(turnTo.speed, going + ACCEL * dt);
     }
     if (low === "sit" && !ride) speed = 0; // sitting, it does not slide on: it stops where it sat down
 
