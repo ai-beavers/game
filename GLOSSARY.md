@@ -110,6 +110,14 @@ _Avoid_: skin, costume, clothes
 The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
 _Avoid_: boat, raft, kayak
 
+**Race**:
+Three laps in the canoe round the ring of buoys on the pond, against the clock. The clock starts when the canoe crosses the start line and stops when it crosses it after the third lap; each buoy must be passed in order. Getting out of the canoe abandons the race. The player's best time is kept for the visit. Each player races alone, and no one else sees their race.
+_Avoid_: kart race, time trial, grand prix, track, circuit
+
+**Buoy**:
+One of the floats in a ring round the middle of the pond that mark the race's way, riding on the water as the pond rises. Two of them, off the canoe's bank, make the start line. Everyone sees the same buoys.
+_Avoid_: checkpoint, marker, gate, waypoint
+
 **Flag**:
 The cloth with the AI beavers logo on a pole on the bank beside the building site. The player can set it alight; it burns down to a charred rag and a fresh one is raised at the next dawn. The fire never spreads beyond it. Each player has their own.
 _Avoid_: banner, pennant, standard

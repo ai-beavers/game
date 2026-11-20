@@ -4,7 +4,8 @@
 //   layout(1440, 810, inset, { touch: false, live: true })   → { u: 24, goals: Box, caption: Box, map: Box, … }
 //
 // The screen's regions, each element with one home in one of them:
-//   top left       pause (play, desktop), the player card,    top centre    the tour's caption, toasts under it
+//   top left       pause (play, desktop), the player card,    top centre    the tour's caption, the race card and
+//                                                                           toasts under it
 //                  the quest tracker (goals)
 //   top right      the map card (hour and weather, the map,    bottom left   chat log, connection, chat row
 //                  its legend), fps
@@ -56,6 +57,8 @@ export interface Layout {
   /** The player card (src/features/shop): name, level and Experience, over the goals. */
   player: Box;
   caption: Box; toast: Box;
+  /** The race card (src/features/race): lap, time and best, under the caption, over the toasts. */
+  race: Box;
   /** The map card: its header row (`status`: hour, weather, place), the map, the legend under it (0 high when compact). */
   card: Box; map?: Box; status: Box; legend: Box; fps: Box;
   /** The hotbar under the prompt: HOTBAR square slots `slot` px wide, `gap` apart, `pad` inside its edge. */
@@ -101,7 +104,9 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const goalsY = player.y + player.h + gap;
   const under = Math.max(fps.y + fps.h, goalsY + u * TRACKER) + gap; // the tracker: header, the goal at hand, its bar, how
   const caption = box((w - centreW) / 2, stacked && !live ? under : T, centreW, row);
-  const toast = box(caption.x, stacked && live ? under : caption.y + row + gap, centreW, toastH);
+  const raceW = Math.min(centreW, u * 13), raceH = Math.round(u * 2.9);
+  const race = box(Math.round((w - raceW) / 2), stacked && live ? under : caption.y + row + gap, raceW, raceH);
+  const toast = box(caption.x, race.y + raceH + gap, centreW, toastH);
   const goals = box(L, goalsY, leftW, Math.max(row, (stacked ? caption.y - gap : B - u * 10) - goalsY));
 
   // Bottom right: the thumbs' buttons; bottom left the stick's resting place under the chat (controls/touch.ts).
@@ -136,7 +141,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const log = box(L, logBottom - logH, chatW, logH);
   const chat = box(L, Math.min(log.y, chatRow.y), chatW, live ? 0 : chatBottom - Math.min(log.y, chatRow.y));
   return {
-    u, small, gap, pad, compact, pause, player, goals, caption, toast, card, map, status, legend, fps, hotbar, slot, chat, chatRow, log, breath, hints, prompt, speech, touch: thumbs,
+    u, small, gap, pad, compact, pause, player, goals, caption, race, toast, card, map, status, legend, fps, hotbar, slot, chat, chatRow, log, breath, hints, prompt, speech, touch: thumbs,
     middle: { top: middleTop, bottom: speech.y - gap },
   };
 }
@@ -151,7 +156,7 @@ export const fitType = (type: number, across: number, chars: number) =>
 /** The boxes that hold something at all times, to test that none lies on another. The goals' box is the room they may
  *  grow into, the map's and the caption's what they take. */
 export function homes(l: Layout): [string, Box][] {
-  const all: [string, Box | undefined][] = [["pause", l.pause], ["player", l.player], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * TRACKER) }], ["caption", l.caption], ["toast", l.toast],
+  const all: [string, Box | undefined][] = [["pause", l.pause], ["player", l.player], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * TRACKER) }], ["caption", l.caption], ["race", l.race], ["toast", l.toast],
     ["map card", l.card], ["fps", l.fps], ["hotbar", l.hotbar], ["chat row", l.chatRow], ["log", l.log], ["breath and speech", l.speech], ["hints", l.hints],
     ["prompt", l.prompt], ["touch", l.touch]];
   return all.filter((e): e is [string, Box] => !!e[1] && e[1].w > 0 && e[1].h > 0);
