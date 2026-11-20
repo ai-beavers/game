@@ -8,8 +8,8 @@ const screens: [number, number][] = [[640, 360], [1280, 720], [1440, 810], [1920
 const modes = [{ touch: false, live: false }, { touch: false, live: true }];
 
 test("the type grows with a stream's picture and keeps a minimum", () => {
-  expect(unit(1440, 810, true)).toBe(24);
-  expect(unit(1920, 1080, true)).toBe(32);
+  expect(unit(1366, 772, true)).toBe(17); // the stream's main view
+  expect(unit(1920, 1080, true)).toBe(24);
   expect(unit(640, 360, true)).toBe(12);
   expect(unit(1280, 720, false)).toBe(16);
   expect(unit(3840, 2160, false)).toBe(18);
