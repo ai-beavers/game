@@ -53,6 +53,8 @@ Everything a player sees is drawn by Babylon. The reason is in `docs/adr/0001-ba
 - Visible UI is Babylon GUI on the fullscreen texture `stage.hud`.
 - Build it with `Overlay` from `src/features/hud/overlay.ts`: `rect`, `text`, `label`, `pill`, `toast`, `button`, `field`, `range`. For each interactive control it creates a transparent native element with the same bounds, which carries pointer input, keyboard and gamepad focus and screen readers.
 - Colours, type scale and each element's place on screen come from `src/features/hud/style.ts` (`layout`, read through `hudLayout(stage)`). Regions never overlap; a new element gets a home there instead of fixed pixels.
+- One face: Nunito, bundled as `assets/nunito.woff2` (OFL, `assets/nunito-OFL.txt`) and loaded by `overlay.ts`, never fetched from a font service. Every overlay lays itself out again once it has loaded. Icons are inline SVG (`hud/icons.ts`), key caps `Overlay.cap` (none on touch: it has no keys).
+- Babylon GUI has no backdrop blur: panels are the 80% `PANEL` alone.
 - The HUD must read at 640x360, 1280x720, 1920x1080, 390x844 and 844x390.
 - A test (`src/features/hud/dom.test.ts`) fails when another file creates a DOM element.
 - Panels around the game on the stream (queue, titles, chat) belong to OBS, outside this repository.
