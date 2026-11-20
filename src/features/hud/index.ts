@@ -14,8 +14,9 @@ import { MapDisplay } from "./map-display.ts";
 import { menuNav } from "./nav.ts";
 import { EXTENT, type MapView } from "./map.ts";
 import { place } from "../net/tags.ts";
-import { box, floating, GOLD, hudLayout, onViewport, Overlay, safeArea, underGoals } from "./overlay.ts";
+import { box, floating, GOLD, hudLayout, measure, onViewport, Overlay, PANEL, safeArea, underGoals } from "./overlay.ts";
 import { skyLabel } from "./sky.ts";
+import { FAINT, PAPER, PLAYERS, QUIET, RADIUS, STICKS, TRACK, TRACKER } from "./style.ts";
 
 interface NetView { connected: boolean; me: number; host: number; remotes: Map<number, Remote> }
 interface BuildView {
@@ -26,20 +27,32 @@ const net = () => (window as { net?: NetView }).net;
 const build = () => (window as { build?: BuildView }).build;
 const shop = () => (window as { shop?: { place: { x: number; z: number } } }).shop;
 type Page = "start" | "pause" | "players" | "settings" | "controls";
-// The line under the goal at hand: what to do for it, with this device's button.
-const HOW: Record<Goal["id"], (p: { press: string; hold: string }) => string> = {
-  stick: p => `Go to the marker, ${p.press}`,
-  fell: p => `At a tree, ${p.hold} to gnaw`,
-  wood: p => `At the fallen tree, ${p.hold}`,
-  dam: p => `Carry sticks to the pond, ${p.press}`,
-  lodge: p => `Swim sticks out to the lodge, ${p.press}`,
-  cache: p => `Dive a stick down beside the lodge, ${p.press}`,
+// The line under the goal at hand: what to do for it; then the key cap of the Use button (held where it says "hold"),
+// on touch "tap Use" or "hold Use" in words.
+const HOW: Record<Goal["id"], { what: string; hold?: true }> = {
+  stick: { what: "Go to the marker" },
+  fell: { what: "Gnaw down a tree", hold: true },
+  wood: { what: "Gnaw the fallen tree", hold: true },
+  dam: { what: "Carry sticks to the pond" },
+  lodge: { what: "Swim sticks out to the lodge" },
+  cache: { what: "Dive a stick down beside the lodge" },
 };
+const howText = (id: Goal["id"], device: Device) => {
+  const how = HOW[id], words = PRESS[device][how.hold ? "hold" : "press"];
+  return device === "touch" ? `${how.what}, ${words}` : how.hold ? `${how.what}, hold` : how.what;
+};
+/** "Build the dam: 13 of 30" → the title and the count, for the tracker's heading and bar. */
+const split = (text: string) => {
+  const m = /^(.*): (\d+) of (\d+)$/.exec(text);
+  return m ? { title: m[1]!, n: Number(m[2]), of: Number(m[3]) } : { title: text, n: 0, of: 0 };
+};
+const PLACE = "Beaver Pond"; // the map card's header: where the map is
+const spaced = (s: string) => [...s].join(" "); // Babylon GUI has no letter spacing: hair spaces between letters
 const TAUGHT = "beaver.taught"; // the steps this player has done once, kept between visits like the settings
 
 export const create: CreateFeature = game => {
   const { stage, world, player, settings, events } = game;
-  const hud = new Overlay(stage, "beaver-hud", false, 4);
+  const hud = new Overlay(stage, "beaver-hud", false, 4), quest = new Overlay(stage, "quest-tracker", false, 4);
   const dialog = new Overlay(stage, "game-menu", true, 20);
   const map = new MapDisplay(world.heightAt, world.waterLevel);
   const touch = !!document.getElementById("touch-controls");
@@ -48,8 +61,14 @@ export const create: CreateFeature = game => {
   let played = 0, swimUntil = 0, praise = "", praiseUntil = 0, listOpen = false, others: number | undefined;
   let startName = settings.values.name || randomName();
   type Pill = ReturnType<Overlay["pill"]>;
-  let fps: TextBlock, mission: TextBlock, north: TextBlock, status: Pill, prompt: Pill, hints: Pill, note: Pill, players: Pill, marker: Pill;
-  let markerY = [0, 0], justDone = "", justDoneUntil = 0, compact = false;
+  let fps: TextBlock, north: TextBlock, prompt: Pill, hints: Pill, note: Pill, players: Pill, marker: Pill;
+  type Rect = ReturnType<Overlay["rect"]>;
+  /** The quest tracker's parts (redrawHud); `summary` is the whole list in words, for screen readers and the tour. */
+  let tracker: { panel: Rect; summary: TextBlock; head: TextBlock; done: TextBlock; title: TextBlock; track: Rect; fill: Rect; count: TextBlock;
+    hintIcon: ReturnType<Overlay["icon"]>; hint: TextBlock; cap: ReturnType<Overlay["cap"]>; shown: string };
+  /** The map card's header and its card. */
+  let sky: { card: Rect; time: TextBlock; kind: TextBlock; icons: Map<string, ReturnType<Overlay["icon"]>>; shown: string };
+  let markerY = [0, 0];
   // The first minute: each step's hint shows when it is of use and goes once done; done steps are remembered.
   let taught = new Set<Step>();
   try { taught = new Set(JSON.parse(localStorage.getItem(TAUGHT) ?? "[]")); } catch { /* a broken or blocked store: all to learn */ }
@@ -60,7 +79,7 @@ export const create: CreateFeature = game => {
   };
   let walked = 0, looked = 0, lastYaw = player.camera.yaw;
   const lastAt = player.node.position.clone();
-  let mapSize = 0, nextMap = 0, goalPanel: ReturnType<Overlay["rect"]>;
+  let mapSize = 0, nextMap = 0, layoutNow: ReturnType<typeof hudLayout>;
   const readers = document.createElement("output");
   readers.setAttribute("aria-live", "polite");
   const photo = () => document.body.classList.contains("photo");
@@ -80,9 +99,43 @@ export const create: CreateFeature = game => {
     hud.dom.append(readers);
     const w = stage.canvas.clientWidth, h = stage.canvas.clientHeight, at = hudLayout(stage), {u, small, gap, pad} = at;
     const {top: T, right: R, bottom: B, left: L} = safeArea(); // all 0 on a desktop
-    compact = at.compact;
+    layoutNow = at;
     if (at.pause) hud.button("pause","Pause",at.pause,() => open("pause"));
     fps = hud.label("fps","",at.fps,small,"center");
+    // The map card: the hour, the weather and the place on top, the map, the legend under it. With the large map
+    // asked for, only its header stays in the corner.
+    const card = hud.rect("map-card",large ? at.status : at.card,PANEL,RADIUS);
+    const iconSize = Math.round(u*1.05), headY = at.status.y+(at.status.h-iconSize)/2;
+    const icons = new Map((["sun","moon","cloud","rain","fog"] as const).map(k => [k as string,hud.icon("sky-"+k,k,box(at.status.x+pad,headY,iconSize,iconSize),GOLD)]));
+    const time = hud.text("weather","",box(at.status.x+pad+iconSize+gap*.7,at.status.y,u*3.2,at.status.h),Math.round(u*.95));
+    time.fontWeight = "800";
+    const kind = hud.text("weather-kind","",box(at.status.x+pad+iconSize+gap*.7+u*3,at.status.y,at.status.w-iconSize-u*3-2*pad,at.status.h),small);
+    kind.color = QUIET;
+    const room = at.status.w-2*pad-iconSize-u*3.2-measure("Cloudy",small)-gap;
+    if (measure(spaced(PLACE),small*.85,"800") < room) {
+      const place = hud.text("map-place",spaced(PLACE),box(at.status.x+pad,at.status.y,at.status.w-2*pad,at.status.h),Math.round(small*.85));
+      place.fontWeight = "800"; place.color = FAINT; place.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    }
+    sky = { card, time, kind, icons, shown: "" };
+    if (at.legend.h && !large) {
+      // The legend: what the dots are; the key that opens the large map.
+      const dot = Math.round(small*.55), cy = at.legend.y+at.legend.h/2, type = Math.round(small*.85), capSize = Math.round(small*1.25);
+      const keyW = !touch && !live ? capSize+5+measure("Map",type) : 0, end = at.legend.x+at.legend.w-pad-keyW-gap;
+      let x = at.legend.x+pad;
+      for (const [name,colour] of [["You",GOLD],["Players",PLAYERS],["Sticks",STICKS]] as const) {
+        const itemW = dot+4+measure(name,type);
+        if (x+itemW > end) break; // a narrow card: the first ones only
+        hud.rect("legend-"+name,box(x,cy-dot/2,dot,dot),colour,dot/2);
+        const label = hud.text("legend-"+name+"-text",name,box(x+dot+4,at.legend.y,itemW,at.legend.h),type,"left",false);
+        label.color = QUIET; label.textWrapping = false;
+        x += itemW+gap;
+      }
+      if (keyW) {
+        const words = hud.text("legend-map","Map",box(at.legend.x,at.legend.y,at.legend.w-pad,at.legend.h),type,"left",false);
+        words.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT; words.color = QUIET;
+        hud.cap("legend-map-key","M",box(at.legend.x+at.legend.w-pad-keyW,cy-capSize/2,capSize,capSize),Math.round(small*.8));
+      }
+    }
     // The large map is asked for: the middle of the screen, as large as fits.
     mapSize = large ? Math.min(w-24-L-R,h-62-T-B,390) : at.map?.w ?? 0;
     const mapBox = large ? box(L+(w-L-R-mapSize)/2,T+(h-T-B-mapSize)/2,mapSize,mapSize) : at.map ?? box(0,0,0,0);
@@ -98,21 +151,9 @@ export const create: CreateFeature = game => {
     toggle.element.onblur = () => { map.focused = false; map.markAsDirty(); };
     north = hud.label("map-north","N",box(mapBox.x,mapBox.y+3,mapSize,u*1.5),u,"center");
     north.fontWeight = "bold"; north.isVisible = large;
-    status = hud.pill("weather",large ? {...at.status,y:T+gap} : at.status,u,"top");
-    goalPanel = hud.rect("goals-panel",box(at.goals.x,at.goals.y,at.goals.w,1));
-    mission = hud.label("goals","",box(at.goals.x+pad,at.goals.y+pad*.7,at.goals.w-2*pad,1),u);
-    // The panel takes the height of its text, however many lines the goals wrap into.
-    // A text resized to fit counts the texture's pixels, not the CSS pixels the rest scales from (twice as many on a phone).
-    const k = stage.hud.getSize().width/w;
-    mission.resizeToFit = true;
-    mission.width = (at.goals.w-2*pad)*k+"px";
-    mission.onLinesReadyObservable.add(() => {
-      const tall = Math.min(mission.heightInPixels/k, at.goals.h-pad*1.4);
-      goalPanel.height = tall+pad*1.4+"px";
-      markerY[0] = Math.max(at.middle.top, at.goals.y+tall+pad*1.4+gap); // the marker stays below the goals
-    });
+    drawTracker(at);
     prompt = hud.pill("context",at.prompt,Math.round(u*1.15));
-    prompt.text.fontWeight = "600";
+    prompt.text.fontWeight = "800";
     hints = hud.pill("input-hints",at.hints,u);
     note = hud.toast("announcement",at.toast,Math.round(u*1.1));
     players = hud.pill("players-list",box(at.goals.x,at.middle.top,w-2*at.goals.x,Math.max(u*4,at.middle.bottom-at.middle.top)),u,"top");
@@ -121,6 +162,68 @@ export const create: CreateFeature = game => {
     marker.text.color = GOLD; marker.text.fontWeight = "bold";
     markerY = [at.middle.top, at.middle.bottom];
     nextMap = 0;
+  }
+
+  // The quest tracker in the goals' home: "BEAVER WORK" and how many are done, the goal at hand large, its bar where
+  // it has a count, and how to do it. Placed by placeTracker() whenever what it says changes.
+  function drawTracker(at: ReturnType<typeof hudLayout>) {
+    const {x, y, w} = at.goals, {u, small, pad} = at, inner = w-2*pad;
+    quest.clear();
+    const panel = quest.rect("goals-panel",box(x,y,w,u*TRACKER));
+    // The whole list in words, unseen: what screen readers announce, and what the tour reads ("goals").
+    const summary = quest.text("goals","",box(x,y,w,1),small);
+    summary.alpha = 0;
+    const head = quest.text("goals-head",spaced("BEAVER WORK"),box(x+pad,y,inner,small*1.5),Math.round(small*.85),"left",false);
+    head.color = GOLD; head.fontWeight = "900";
+    const done = quest.text("goals-done","",box(x+pad,y,inner,small*1.5),Math.round(small*.85),"left",false);
+    done.color = QUIET; done.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    const title = quest.text("goals-title","",box(x+pad,y,inner,u*1.8),Math.round(u*1.45),"left",false);
+    title.fontWeight = "800"; title.textWrapping = false;
+    const track = quest.rect("goals-track",box(x+pad,y,1,1),TRACK,3), fill = quest.rect("goals-bar",box(x+pad,y,1,1),GOLD,3);
+    const count = quest.text("goals-count","",box(x+pad,y,inner,u*1.3),u,"left",false);
+    count.fontWeight = "800"; count.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    const hintIcon = quest.icon("goals-how-icon","stick",box(x+pad,y,small,small),QUIET);
+    const hint = quest.text("goals-how","",box(x+pad,y,inner,u*1.4),small,"left",false);
+    hint.textWrapping = false;
+    const cap = quest.cap("goals-how-key","",box(x,y,Math.round(small*1.4),Math.round(small*1.4)),Math.round(small*.85));
+    tracker = { panel, summary, head, done, title, track, fill, count, hintIcon, hint, cap, shown: "" };
+  }
+  /** Lays the tracker out for what it says now: the panel takes the height of what it shows, the marker keeps under it. */
+  function placeTracker(heading: string, doneText: string, counted: { n: number; of: number } | undefined, how: string, key: string, doing: boolean) {
+    const at = layoutNow, {x, y, w} = at.goals, {u, small, pad, gap} = at, inner = w-2*pad, t = tracker;
+    let cy = y+pad;
+    t.done.text = doneText;
+    for (const c of [t.head,t.done]) quest.move(c,box(x+pad,cy,inner,Math.round(small*1.4)));
+    cy += Math.round(small*1.4)+gap*.6;
+    // The title as large as fits its row.
+    t.title.text = heading;
+    t.title.fontSize = Math.min(Math.round(u*1.45),Math.floor(inner/Math.max(1,measure(heading,1,"800"))));
+    quest.move(t.title,box(x+pad,cy,inner,Math.round(u*1.8)));
+    cy += Math.round(u*1.8)+gap*.4;
+    t.track.isVisible = t.fill.isVisible = t.count.isVisible = !!counted;
+    if (counted) {
+      const countW = Math.ceil(measure(`${counted.of}/${counted.of}`,u,"800"))+gap, barW = inner-countW-gap, barH = Math.max(4,Math.round(u*.4));
+      t.count.text = `${counted.n}/${counted.of}`;
+      quest.move(t.count,box(x+pad,cy,inner,Math.round(u*1.3)));
+      quest.move(t.track,box(x+pad,cy+Math.round((u*1.3-barH)/2),barW,barH));
+      t.fill.isVisible = counted.n > 0;
+      quest.move(t.fill,box(x+pad,cy+Math.round((u*1.3-barH)/2),Math.max(barH,Math.round(barW*counted.n/Math.max(1,counted.of))),barH));
+      cy += Math.round(u*1.3)+gap*.4;
+    }
+    // How to do it: the stick's icon, the line, the key cap; all done, only the line.
+    t.hint.isVisible = !!how; t.hintIcon.isVisible = !!how && doing;
+    t.cap.back.isVisible = !!how && !!key;
+    if (how) {
+      const rowH = Math.round(u*1.4), iconSize = t.hintIcon.isVisible ? Math.round(small*1.1) : 0, textX = x+pad+(iconSize ? iconSize+gap*.8 : 0);
+      t.hint.text = how; t.hint.color = iconSize ? PAPER : QUIET;
+      quest.move(t.hintIcon,box(x+pad,cy+(rowH-iconSize)/2,iconSize,iconSize));
+      quest.move(t.hint,box(textX,cy,x+pad+inner-textX,rowH));
+      if (key) { t.cap.text.text = key; t.cap.at(Math.round(textX+measure(how,small)+gap*.8),Math.round(cy+(rowH-small*1.4)/2)); }
+      cy += rowH;
+    }
+    const tall = Math.min(cy+pad-y, at.goals.h);
+    quest.move(t.panel,box(x,y,w,tall));
+    markerY[0] = Math.max(at.middle.top, y+tall+gap); // the marker stays below the goals
   }
 
   function toggleMap() {
@@ -295,7 +398,7 @@ export const create: CreateFeature = game => {
   window.addEventListener("blur",away);
   document.addEventListener("visibilitychange",() => { if (document.hidden) away(); });
   events.on("enterWater",() => { swimUntil = played+6; });
-  events.on("goalDone",({goal,text}) => { announce("✓ "+text,5); justDone = goal; justDoneUntil = played+4; });
+  events.on("goalDone",({text}) => { announce("✓ "+text,5); });
   events.on("action",() => learn("use"));
   events.on("tailSlap",({remote}) => { if (!remote) learn("slap"); });
   // For the tour's "First steps" station: a visitor who has never played.
@@ -374,17 +477,28 @@ export const create: CreateFeature = game => {
         padWas = pressed;
       } else padWas = [];
       hud.show(started && !photo());
+      if (!hud.group.isVisible) quest.show(false);
       if (!hud.group.isVisible) return;
-      goalPanel.isVisible = mission.isVisible = goals.length > 0 && !large;
-      // The goal at hand stands out with what to do for it; a goal just done keeps its tick a moment on a small screen.
-      const doing = current();
-      const shown = compact ? (doing ? goals.filter(g => g.id === doing || g.id === justDone && played < justDoneUntil) : goals.slice(-1)) : goals;
-      const lines = shown.map(g => (g.done ? "✓ " : g.id === doing ? "› " : "· ") + g.text + (g.id === doing && !live ? "\n    " + HOW[g.id](PRESS[device]) : ""));
-      if (!doing) lines.push("The world goes on: trees grow back, and others keep building.");
-      mission.text = "Beaver work\n" + lines.join("\n");
+      const trackerOn = goals.length > 0 && !large;
+      quest.show(trackerOn); tracker.panel.isVisible = trackerOn; // mrs-beaver/panel.ts hangs under it while it shows
+      // The goal at hand, large, with its count and what to do for it; all done, the world going on.
+      const doing = current(), goal = doing ? goals.find(g => g.id === doing)! : undefined, parts = goal && split(goal.text);
+      const how = !doing ? "Trees grow back, and others keep building." : live ? "" : howText(doing, device);
+      const key = doing && !live && device !== "touch" ? USE[device] : "";
+      const doneText = `${goals.filter(g => g.done).length} of ${goals.length} done`;
+      const say = [parts?.title, doneText, parts?.n, how, key].join("|");
+      if (trackerOn && say !== tracker.shown) {
+        tracker.shown = say;
+        placeTracker(parts?.title ?? "The world goes on", doneText, parts?.of ? parts : undefined, how, key, !!doing);
+      }
+      tracker.summary.text = "Beaver work\n" + goals.map(g => (g.done ? "✓ " : g.id === doing ? "› " : "· ") + g.text).join("\n");
+      // A card with a row hung under it (Mrs. Beaver's quest) joins it: square corners where they meet.
+      tracker.panel.cornerRadiusZ = tracker.panel.cornerRadiusW = underGoals.box ? 0 : RADIUS;
       fps.text = settings.values.fps ? Math.round(stage.engine.getFps())+" fps" : "";
       const offer = player.offer()?.text || "";
-      prompt.set(offer && !live ? USE[device] + "   " + offer : "");
+      if (live || !offer) prompt.set("");
+      else if (device === "touch") prompt.set(USE.touch + "   " + offer); // no keys on touch: the button's name
+      else prompt.set(offer, USE[device]);
       if (oldOffer !== offer) { oldOffer = offer; readers.value = prompt.text.text; }
       const feet = player.node.position, pond = world.pond;
       const wet = !!pond && Math.hypot(feet.x-pond.x, feet.z-pond.z) < pond.radius+2.5;
@@ -394,20 +508,28 @@ export const create: CreateFeature = game => {
       pointAt(live || large ? undefined : firstTarget());
       note.set(played < praiseUntil ? praise : "");
       players.set(listOpen ? "Players\n" + playerNames().join("\n") : "");
-      const s = game.sky && skyLabel(game.sky.hour,game.sky.weather,game.sky.dark);
-      status.set(s ? s.time+"   "+s.text : "");
+      const s = game.sky && skyLabel(game.sky.hour,game.sky.weather,game.sky.dark), sayingSky = s ? s.time+s.icon+s.text : "";
+      if (sayingSky !== sky.shown) {
+        sky.shown = sayingSky;
+        sky.time.text = s?.time ?? ""; sky.kind.text = s?.text ?? "";
+        sky.kind.left = Math.round(parseFloat(sky.time.left as string)+measure(sky.time.text,sky.time.fontSizeInPixels,"800")+layoutNow.gap*.7)+"px";
+        for (const [k,image] of sky.icons) image.isVisible = k === s?.icon;
+      }
       const now = performance.now();
       if (now < nextMap) return;
       nextMap = now+90;
       const at = player.node.position, b = build(), n = net();
-      let dam: MapView["dam"];
+      let dam: MapView["dam"], objective: MapView["objective"];
       if (b) {
         const {origin,across} = b.dam.frame, dx = -across.z*DAM.length/2, dz = across.x*DAM.length/2;
         dam = {from:{x:origin.x-dx,z:origin.z-dz},to:{x:origin.x+dx,z:origin.z+dz},built:Math.min(1,b.state.dam.length/SLOTS)}; // the lodge's sticks come after the dam's in that list
+        // The goal at hand's place, with how far it is: the dam, else the lodge (its cache lies beside it).
+        const doing = current(), place = doing === "dam" ? origin : doing === "lodge" || doing === "cache" ? b.dam.lodgeAt : undefined;
+        if (place) objective = {...place,label:`${doing === "dam" ? "Dam" : "Lodge"} · ${Math.round(Math.hypot(place.x-at.x,place.z-at.z))} m`};
       }
       map.paint({centre:large ? {x:0,z:0} : at, span:large ? 2*EXTENT : 26, beaver:at, facing:player.facing, yaw:player.camera.yaw,
         sticks:world.sticks.filter(s => s.body.isEnabled()).map(s => s.mesh.position), trees:world.trees?.filter((_,i) => b?.state.trees[i]?.fell===undefined).map(t => t.place),
-        dam, level:world.waterLevel, lodge:b && b.state.dam.length>=SLOTS ? b.dam.lodgeAt : undefined, shop:shop()?.place,
+        dam, objective, level:world.waterLevel, lodge:b && b.state.dam.length>=SLOTS ? b.dam.lodgeAt : undefined, shop:shop()?.place,
         players:n ? [...n.remotes.values()].filter(r => r.node.isEnabled()).map(r => ({x:r.feet.x,z:r.feet.z,name:r.name})) : [] },mapSize);
     },
   };

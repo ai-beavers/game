@@ -41,6 +41,7 @@ import { pondPatrol } from "./stations/pond.ts";
 import { anger } from "./stations/anger.ts";
 import { skyWatch } from "./stations/sky.ts";
 import { hud } from "./stations/hud.ts";
+import { levels } from "./stations/levels.ts";
 import { controls } from "./stations/controls.ts";
 import { views } from "./stations/views.ts";
 import { firstSteps } from "./stations/first-steps.ts";
@@ -56,7 +57,7 @@ import { flag } from "./stations/flag.ts";
 import { stare } from "./stations/stare.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, dam, trading, hotbar, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, flag, mrsBeaver, oldBeaver, stare, skyWatch, hud, controls, views, firstSteps];
+const STATIONS = [movement, dam, levels, trading, hotbar, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, flag, mrsBeaver, oldBeaver, stare, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)

@@ -1,6 +1,7 @@
-// The Shop's HUD: the player's Experience next to the goals, and the Shopkeeper's panel of Outfits.
+// The Shop's HUD: the player card over the goals (name, level and the Experience into it, from all Experience ever
+// earned), and the Shopkeeper's panel of Outfits with the Experience there is to spend.
 //
-//   const hud = shopHud(stage, actions);   hud.show(state)   hud.open(state) · hud.close() · hud.isOpen · hud.update()
+//   const hud = shopHud(stage, actions, () => name);   hud.show(state)   hud.open(state) · hud.close() · hud.isOpen · hud.update()
 //
 // Babylon GUI on stage.hud through Overlay, so every button has a native counterpart: keyboard focus (Tab, arrows),
 // a gamepad (hud/nav.ts: A presses, B is Escape) and touch work as for every menu. The panel is a modal dialog: the
@@ -8,35 +9,64 @@
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { SHIRT_CREAM, type RGB } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
-import { box, GOLD, hudLayout, onViewport, Overlay, PANEL } from "../hud/overlay.ts";
-import { GLOW, PAPER, QUIET } from "../hud/style.ts";
-import { OUTFITS, type Outfit, type OutfitId, type ShopState } from "./rules.ts";
+import { box, GOLD, hudLayout, measure, onViewport, Overlay, PANEL } from "../hud/overlay.ts";
+import { BROWN, GLOW, INK, PAPER, QUIET, TRACK } from "../hud/style.ts";
+import { levelOf, OUTFITS, type Outfit, type OutfitId, type ShopState } from "./rules.ts";
 
 const PRINT = Color3.FromHexString(SHIRT_CREAM); // which the Outfit's colour tints
 const swatch = (c: RGB, base = Color3.White()) => new Color3(c[0] * base.r, c[1] * base.g, c[2] * base.b).toHexString();
 export const experienceText = (n: number) => `✦ ${n} Experience`;
 
-export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(id: OutfitId): void; close(): void }) {
-  const readout = new Overlay(stage, "shop-experience", false, 4);
+export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(id: OutfitId): void; close(): void }, name: () => string) {
+  const readout = new Overlay(stage, "player-card", false, 4);
   const panel = new Overlay(stage, "shop-panel", true, 18);
-  let pill: ReturnType<Overlay["pill"]>, state: ShopState | undefined, open = false, flash = 0;
+  let card: ReturnType<typeof drawCard> | undefined, state: ShopState | undefined, open = false, flash = 0;
   const hudShown = () => !!stage.hud.getControlByName("beaver-hud")?.isVisible && !document.body.classList.contains("photo");
 
-  const drawReadout = () => {
+  // The player card: the avatar (a paw in an orange ring), the name with the level beside it, the bar and the
+  // Experience into the level under it. Named for the tour: "player-name", "player-level", "player-xp".
+  function drawCard() {
     readout.clear();
-    const at = hudLayout(stage);
-    pill = readout.pill("experience", at.experience, Math.round(at.u * 0.9), "top");
-    pill.text.color = GOLD; pill.text.fontWeight = "600";
-    shownText = "";
-  };
-  let shownText = "";
-  const setReadout = () => {
-    const text = state ? experienceText(state.experience) : "";
-    if (text === shownText) return;
-    shownText = text;
-    pill.set(text);
-    pill.at(pill.slot.x, pill.slot.y); // against the left, under the pause button, over the goals
-  };
+    const at = hudLayout(stage), { x, y, w, h } = at.player, { u, small, gap } = at;
+    const back = readout.rect("player-back", at.player, PANEL, h / 2);
+    const inset = Math.round(h * 0.1), d = h - 2 * inset;
+    const ring = readout.rect("player-avatar", box(x + inset, y + inset, d, d), BROWN, d / 2);
+    ring.thickness = Math.max(2, Math.round(d * 0.06)); ring.color = GOLD;
+    readout.icon("player-paw", "paw", box(x + inset + d * 0.25, y + inset + d * 0.25, d * 0.5, d * 0.5), PAPER);
+    const left = x + inset + d + gap, inner = x + w - Math.round(h * 0.35) - left;
+    const nameSize = Math.round(u * (at.compact ? 1 : 1.2)), xpSize = Math.round(small * 0.85), barH = Math.max(4, Math.round(u * 0.3));
+    const rows = nameSize * 1.25 + barH + xpSize * 1.25 + gap * 0.8, top = y + (h - rows) / 2;
+    const name = readout.text("player-name", "", box(left, top, inner, nameSize * 1.25), nameSize);
+    name.fontWeight = "800"; name.textWrapping = 2; // TextWrapping.Ellipsis (a const enum): a long name ends in "…" before the badge
+    const badgeSize = Math.round(small * 0.8), badgeH = Math.round(badgeSize * 1.5);
+    const badge = readout.rect("player-level-back", box(left, top, 1, badgeH), GOLD, 4);
+    const level = readout.text("player-level", "", box(left, top, 1, badgeH), badgeSize, "center");
+    level.color = INK; level.fontWeight = "900";
+    const barY = top + nameSize * 1.25 + gap * 0.4;
+    readout.rect("player-track", box(left, barY, inner, barH), TRACK, barH / 2);
+    const fill = readout.rect("player-bar", box(left, barY, 1, barH), GOLD, barH / 2);
+    const xp = readout.text("player-xp", "", box(left, barY + barH + gap * 0.4, inner, xpSize * 1.25), xpSize);
+    xp.color = QUIET;
+    let said = "";
+    return {
+      back, xp,
+      set(s: ShopState, who: string) {
+        const l = levelOf(s.earned), say = `${who}|${l.level}|${l.into}`;
+        if (say === said) return;
+        said = say;
+        name.text = who; level.text = `LV ${l.level}`; xp.text = `${l.into} / ${l.need} XP`;
+        // The badge right after the name, the name cut short where both would not fit.
+        const badgeW = Math.ceil(measure(level.text, badgeSize, "900")) + Math.round(badgeSize * 1.1);
+        const nameW = Math.min(Math.ceil(measure(who, nameSize, "800")) + 2, inner - badgeW - gap);
+        readout.move(name, box(left, top, nameW, nameSize * 1.25));
+        const by = Math.round(top + (nameSize * 1.25 - badgeH) / 2);
+        readout.move(badge, box(left + nameW + gap * 0.8, by, badgeW, badgeH));
+        readout.move(level, box(left + nameW + gap * 0.8, by, badgeW, badgeH));
+        fill.isVisible = l.into > 0;
+        readout.move(fill, box(left, barY, Math.max(barH, Math.round(inner * l.into / l.need)), barH));
+      },
+    };
+  }
 
   const drawPanel = () => {
     const focus = document.activeElement instanceof HTMLElement && panel.dom.contains(document.activeElement) ? document.activeElement.getAttribute("aria-label")?.split(" ")[1] : undefined;
@@ -81,7 +111,7 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
     if (wearing || dear) { button.element.disabled = true; button.panel.alpha = button.caption.alpha = 0.45; }
   };
 
-  onViewport(stage, () => { drawReadout(); setReadout(); if (open) drawPanel(); });
+  onViewport(stage, () => { card = drawCard(); if (open) drawPanel(); });
   // Escape closes the panel (the dialog's own cancel is held back by Overlay); Enter and Space press its buttons and
   // stay out of the game (Space would jump).
   window.addEventListener("keydown", (e) => {
@@ -95,17 +125,16 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
     show(next: ShopState) {
       if (state && next.experience > state.experience) flash = 1;
       state = { ...next, owned: [...next.owned] };
-      setReadout();
       if (open) drawPanel();
     },
     open() { open = true; drawPanel(); panel.show(true); drawPanel(); },
     close() { open = false; panel.show(false); panel.clear(); },
     update(dt: number) {
       readout.show(hudShown());
-      // A stick just built in: the readout lights up a moment, so the player sees what earned it.
+      if (state) card?.set(state, name());
+      // A stick just built in: the card lights up a moment, so the player sees what earned it.
       flash = Math.max(0, flash - dt * 1.5);
-      pill.back.background = flash > 0 ? GLOW : PANEL;
-      pill.text.scaleX = pill.text.scaleY = 1 + 0.15 * flash;
+      if (card) { card.back.background = flash > 0 ? GLOW : PANEL; card.xp.color = flash > 0 ? GOLD : QUIET; }
     },
   };
 }

@@ -32,7 +32,8 @@ export const shopping = (kit: Kit): Station[] => {
   const { beaver, player, want, live, wait, until, walkTo, reach, tap, key, expect, hudText } = kit;
   const panel = () => document.querySelector<HTMLDialogElement>("dialog#shop-panel");
   const button = (label: string) => panel()?.querySelector<HTMLButtonElement>(`button[aria-label^="${label}"]`) ?? null;
-  const experience = () => Number(/(\d+) Experience/.exec(hudText("experience"))?.[1] ?? NaN);
+  // The Experience there is to spend, as the Shopkeeper's panel shows it (the player card shows the level instead).
+  const experience = () => Number(/(\d+) Experience/.exec(hudText("shop-experience"))?.[1] ?? NaN);
   return [
     ["Buy an outfit", async () => {
       const shop = (window as { shop?: ShopDebug }).shop ?? skip("no shop feature");

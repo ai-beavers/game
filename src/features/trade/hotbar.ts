@@ -12,12 +12,12 @@ import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
 import type { Stage } from "../../engine.ts";
 import { box, hudLayout, onViewport, Overlay } from "../hud/overlay.ts";
+import { FAINT, FONT, PANEL, PAPER, SLOT } from "../hud/style.ts";
 import { goodOf } from "./ledger.ts";
 import { SLOTS } from "./hold.ts";
 
-// The design's colours and type (design.pen, node Gu6b3), kept here until the HUD's palette holds them.
-const BAR = "#1E150ECC", SLOT = "#FFFFFF12", EDGE = "#FFF6E433", PICKED = "#F2A53A33", ORANGE = "#F2A53A";
-const CREAM = "#FFF6E4", NUMBER = "#FFF6E480", FONT = "Nunito, system-ui, sans-serif";
+// The HUD's palette (style.ts); the slot selected is the gold at a fifth, as the design (design.pen, node Gu6b3).
+const PICKED = "rgba(242,165,58,0.2)";
 /** The design's sizes at a 64 px slot: corners, the icon, the number and the count. */
 const SIZE = { bar: 18, slot: 12, icon: 28, number: 11, count: 12 };
 
@@ -32,7 +32,7 @@ const PATHS: Record<string, string> = {
   shell: "M3 15c0-5 4-10 9-10s9 5 9 10c-2 2-5 3-9 3s-7-1-9-3zM12 5v13M8 6.5 7 17M16 6.5l1 10.5M5 9.5l-.5 7M19 9.5l.5 7",
 };
 const iconUrl = (path: string) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="${CREAM}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg>`);
+  `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="${PAPER}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg>`);
 const ICONS = Object.fromEntries(Object.entries(PATHS).map(([id, path]) => [id, iconUrl(path)]));
 
 const title = (s: string) => s[0]!.toUpperCase() + s.slice(1);
@@ -49,8 +49,8 @@ export function createHotbar(stage: Stage, select: (n: number) => void) {
   const draw = () => {
     slots.forEach((s, i) => {
       const v = views[i] ?? {}, on = i + 1 === picked;
-      s.back.background = on ? PICKED : SLOT;
-      s.back.color = on ? ORANGE : EDGE;
+      s.back.background = on ? PICKED : SLOT.back;
+      s.back.color = on ? SLOT.chosen : SLOT.edge;
       s.icon.isVisible = !!v.icon;
       if (v.icon) s.icon.source = ICONS[v.icon] ?? null;
       s.count.text = v.count ? `×${v.count}` : "";
@@ -61,20 +61,20 @@ export function createHotbar(stage: Stage, select: (n: number) => void) {
 
   onViewport(stage, () => {
     overlay.clear();
-    const at = hudLayout(stage).hotbar, k = at.h / (64 + 20), side = Math.round(64 * k);
+    const l = hudLayout(stage), at = l.hotbar, side = l.slot, k = side / 64;
     const pad = Math.round((at.h - side) / 2), gap = (at.w - 2 * pad - SLOTS * side) / (SLOTS - 1);
-    overlay.rect("hotbar-bar", at, BAR, Math.round(SIZE.bar * k));
+    overlay.rect("hotbar-bar", at, PANEL, Math.round(SIZE.bar * k));
     slots = Array.from({ length: SLOTS }, (_, i) => {
       const r = box(Math.round(at.x + pad + i * (side + gap)), at.y + pad, side, side), n = i + 1;
-      const back = overlay.rect(`hotbar-slot-${n}`, r, SLOT, Math.round(SIZE.slot * k));
+      const back = overlay.rect(`hotbar-slot-${n}`, r, SLOT.back, Math.round(SIZE.slot * k));
       back.thickness = Math.max(1, Math.round(1.5 * k));
       const inset = Math.round(6 * k), type = (px: number) => Math.max(9, Math.round(px * k));
       const number = overlay.text(`hotbar-number-${n}`, String(n), box(r.x + inset, r.y + inset - 2, side, type(SIZE.number) + 4), type(SIZE.number), "left", false);
-      number.fontFamily = FONT; number.fontWeight = "800"; number.color = NUMBER; number.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+      number.fontFamily = FONT; number.fontWeight = "800"; number.color = FAINT; number.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
       const iconSize = Math.round(SIZE.icon * k), icon = overlay.put(new Image(`hotbar-icon-${n}`), box(r.x + (side - iconSize) / 2, r.y + (side - iconSize) / 2, iconSize, iconSize));
       icon.stretch = Image.STRETCH_UNIFORM;
       const count = overlay.text(`hotbar-count-${n}`, "", box(r.x, r.y + side - inset - type(SIZE.count) - 2, side - inset, type(SIZE.count) + 4), type(SIZE.count), "left", false);
-      count.fontFamily = FONT; count.fontWeight = "900"; count.color = CREAM; count.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      count.fontFamily = FONT; count.fontWeight = "900"; count.color = PAPER; count.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
       if (live) return { back, icon, count };
       // The native button carries the tap, keyboard focus and the screen reader; Babylon draws the slot under it.
       const button = overlay.button(`hotbar-button-${n}`, describe(n, {}), r, () => { select(n); button.element.blur(); });

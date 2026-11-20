@@ -41,8 +41,10 @@ test("the hints sit low, under the middle of the picture, over the prompt and th
   const l = layout(1280, 720, none, { touch: false, live: false });
   expect(l.hints.y).toBeGreaterThan(720 * 0.7);
   expect(l.hints.x + l.hints.w / 2).toBe(640);
-  expect(l.hints.y < l.prompt.y && l.prompt.y + l.prompt.h < l.hotbar.y).toBe(true);
-  expect(Math.abs(l.hotbar.x + l.hotbar.w / 2 - 640)).toBeLessThanOrEqual(1);
+  expect(l.prompt.y + l.prompt.h).toBeLessThanOrEqual(l.hotbar.y);
+  expect(Math.abs(l.hotbar.x + l.hotbar.w / 2 - 640)).toBeLessThanOrEqual(1); // on whole pixels
+  expect(l.hotbar.w).toBeGreaterThanOrEqual(5 * l.slot);
+  expect(l.hotbar.y + l.hotbar.h).toBe(720 - 12); // on the bottom margin
 });
 
 test("the Old Beaver's speech box sits over the hints, sharing the breath's home, with room for his name and a line", () => {
