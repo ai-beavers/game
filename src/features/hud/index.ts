@@ -9,7 +9,7 @@ import { BUTTON, down, firstPad } from "../controls/pad.ts";
 import { randomName } from "../net/name.ts";
 import { clean, INFO_PATH, NAME_LENGTH } from "../net/protocol.ts";
 import type { Remote } from "../net/remote.ts";
-import { CONTROLS, DEVICE_NAMES, PRESS, TEACH, USE, type Device, type Step } from "./devices.ts";
+import { CONTROLS, DEVICE_NAMES, FIGHT, PRESS, TEACH, USE, type Device, type Step } from "./devices.ts";
 import { MapDisplay } from "./map-display.ts";
 import { menuNav } from "./nav.ts";
 import { EXTENT, type MapView } from "./map.ts";
@@ -45,7 +45,7 @@ export const create: CreateFeature = game => {
   const touch = !!document.getElementById("touch-controls");
   let device: Device = touch ? "touch" : "keys", helpDevice: Device = device;
   let large = false, started = false, page: Page | undefined, address = "", goals: Goal[] = [];
-  let played = 0, swimUntil = 0, praise = "", praiseUntil = 0, listOpen = false, others: number | undefined;
+  let played = 0, swimUntil = 0, bearUntil = 0, praise = "", praiseUntil = 0, listOpen = false, others: number | undefined;
   let startName = settings.values.name || randomName();
   type Pill = ReturnType<Overlay["pill"]>;
   let fps: TextBlock, mission: TextBlock, north: TextBlock, status: Pill, prompt: Pill, hints: Pill, note: Pill, players: Pill, marker: Pill;
@@ -295,6 +295,7 @@ export const create: CreateFeature = game => {
   window.addEventListener("blur",away);
   document.addEventListener("visibilitychange",() => { if (document.hidden) away(); });
   events.on("enterWater",() => { swimUntil = played+6; });
+  events.on("bearNotices",() => { bearUntil = played+8; });
   events.on("goalDone",({goal,text}) => { announce("✓ "+text,5); justDone = goal; justDoneUntil = played+4; });
   events.on("action",() => learn("use"));
   events.on("tailSlap",({remote}) => { if (!remote) learn("slap"); });
@@ -389,8 +390,9 @@ export const create: CreateFeature = game => {
       const feet = player.node.position, pond = world.pond;
       const wet = !!pond && Math.hypot(feet.x-pond.x, feet.z-pond.z) < pond.radius+2.5;
       const step: Step | undefined = !taught.has("move") ? "move" : !taught.has("look") ? "look" : !taught.has("use") && offer ? "use" : !taught.has("slap") && wet ? "slap" : undefined;
-      // One line of advice at a time, low in the middle over the prompt: what to learn, else how to get out of the water.
-      hints.set(live ? "" : step ? TEACH[device][step] : played < swimUntil ? "Swim to the shore to climb out" : "");
+      // One line of advice at a time, low in the middle over the prompt: what to do about the bear, what to learn, else
+      // how to get out of the water.
+      hints.set(live ? "" : played < bearUntil ? FIGHT[device] : step ? TEACH[device][step] : played < swimUntil ? "Swim to the shore to climb out" : "");
       pointAt(live || large ? undefined : firstTarget());
       note.set(played < praiseUntil ? praise : "");
       players.set(listOpen ? "Players\n" + playerNames().join("\n") : "");

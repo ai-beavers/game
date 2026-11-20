@@ -4,11 +4,11 @@
 //   layout(1440, 810, inset, { touch: false, live: true })   → { u: 24, goals: Box, caption: Box, map: Box, … }
 //
 // The screen's regions, each element with one home in one of them:
-//   top left       pause (play, desktop), Experience, goals  top centre    the tour's caption, toasts under it
+//   top left       pause (play, desktop), Experience, goals  top centre    the tour's caption, the Bear's Health bar, toasts
 //   top right      map, hour and weather, fps, backpack      bottom left   chat log, connection, chat row
 //   bottom centre  breath or speech, hints and advice, prompt  bottom right  the thumbs' buttons (controls/touch.ts)
 // Regions never overlap: when the top centre has no room between the sides, live its caption goes above them and the
-// toasts under them, in play both under them; when the bottom centre has none, it goes beside the chat, or above the
+// Health bar and the toasts under them, in play all three under them; when the bottom centre has none, it goes beside the chat, or above the
 // chat row with the chat log above it. The breath (only in the water) and the Old Beaver's speech box (only to a
 // beaver on land) share one home above the hints: the speech box is the breath's box grown upwards as far as there is
 // room, short of the middle and of the sides' columns.
@@ -20,6 +20,8 @@ export const PAPER = "#f6f2e7", INK = "#182825", GOLD = "#f7ca77", QUIET = "#bcc
 export const PANEL = "rgba(18,32,31,0.8)";
 /** A backing lit up a moment, for a number that just went up (the Experience). */
 export const GLOW = "rgba(120,86,24,0.85)";
+/** What is left of a Health bar (src/features/bear), and the empty track behind it. */
+export const HEALTH = "#c8604e", TRACK = "rgba(5,12,12,0.7)";
 export const RADIUS = 10;
 /** The one shadow under HUD text, backed or not. */
 export const SHADOW = { color: "rgba(5,12,12,0.85)", blur: 4 };
@@ -37,6 +39,8 @@ export interface Layout {
   /** The player's Experience (src/features/shop), a short row over the goals. */
   experience: Box;
   caption: Box; toast: Box;
+  /** The Bear's Health bar (src/features/bear), a short row between the caption and the toasts. */
+  health: Box;
   map?: Box; status: Box; fps: Box;
   /** The goods in the backpack (src/features/trade), one row under the fps. */
   backpack: Box;
@@ -77,7 +81,9 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const goalsY = experience.y + experience.h + gap;
   const under = Math.max(backpack.y + backpack.h, goalsY + u * 6.5) + gap; // a short goals list: the goal at hand, how, one done
   const caption = box((w - centreW) / 2, stacked && !live ? under : T, centreW, row);
-  const toast = box(caption.x, stacked && live ? under : caption.y + row + gap, centreW, toastH);
+  const healthW = Math.min(centreW, u * 16), healthH = Math.round(u * 1.5);
+  const health = box((w - healthW) / 2, stacked && live ? under : caption.y + row + gap, healthW, healthH);
+  const toast = box(caption.x, health.y + healthH + gap, centreW, toastH);
   const goals = box(L, goalsY, leftW, Math.max(row, (stacked ? caption.y - gap : B - u * 10) - goalsY));
 
   // Bottom right: the thumbs' buttons; bottom left the stick's resting place under the chat (controls/touch.ts).
@@ -108,7 +114,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const log = box(L, logBottom - logH, chatW, logH);
   const chat = box(L, Math.min(log.y, chatRow.y), chatW, live ? 0 : chatBottom - Math.min(log.y, chatRow.y));
   return {
-    u, small, gap, pad, compact, pause, experience, goals, caption, toast, map, status, fps, backpack, chat, chatRow, log, breath, hints, prompt, speech, touch: thumbs,
+    u, small, gap, pad, compact, pause, experience, goals, caption, health, toast, map, status, fps, backpack, chat, chatRow, log, breath, hints, prompt, speech, touch: thumbs,
     middle: { top: middleTop, bottom: speech.y - gap },
   };
 }
@@ -123,7 +129,7 @@ export const fitType = (type: number, across: number, chars: number) =>
 /** The boxes that hold something at all times, to test that none lies on another. The goals' box is the room they may
  *  grow into, the map's and the caption's what they take. */
 export function homes(l: Layout): [string, Box][] {
-  const all: [string, Box | undefined][] = [["pause", l.pause], ["experience", l.experience], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * 6.5) }], ["caption", l.caption], ["toast", l.toast],
+  const all: [string, Box | undefined][] = [["pause", l.pause], ["experience", l.experience], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * 6.5) }], ["caption", l.caption], ["health", l.health], ["toast", l.toast],
     ["map", l.map], ["status", l.status], ["fps", l.fps], ["backpack", l.backpack], ["chat row", l.chatRow], ["log", l.log], ["breath and speech", l.speech], ["hints", l.hints],
     ["prompt", l.prompt], ["touch", l.touch]];
   return all.filter((e): e is [string, Box] => !!e[1] && e[1].w > 0 && e[1].h > 0);

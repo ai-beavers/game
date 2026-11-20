@@ -29,7 +29,8 @@ import { DELAY, Track } from "./track.ts";
 const FACING = 3, MOTION_AT = 4;
 const STEPS = [3, 9, 11, 14, 15].map((i) => i + MOTION_AT), FOLLOWS = { [10 + MOTION_AT]: 9 + MOTION_AT };
 const LIFT = HEIGHT / 2 + 0.02; // feet to the capsule's middle, with the player's gap to the ground
-const NO_CONTACTS = 0x0002_0000; // member of group 1, takes contacts with no group
+/** Collision groups of a solid thing the beaver walks against but which pushes nothing (the Bear uses them too). */
+export const NO_CONTACTS = 0x0002_0000; // member of group 1, takes contacts with no group
 const CLOCK = 13, HOLD = 1500; // the Motion's time in the packed list; ms a short action (a build) stays on its tag
 
 export function createRemote(stage: Stage, id: number, name: string, lanterns: RemoteLanterns) {
