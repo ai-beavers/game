@@ -15,7 +15,7 @@ import type { Image } from "@babylonjs/gui/2D/controls/image.js";
 import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
 import type { Stage } from "../../engine.ts";
-import { box, hudLayout, onViewport, Overlay, underGoals } from "../hud/overlay.ts";
+import { box, goalsPanel, hudLayout, onViewport, Overlay, underGoals } from "../hud/overlay.ts";
 import { FLOWER, GOLD, PAPER, QUIET, RADIUS, TRACK } from "../hud/style.ts";
 
 export const TITLE = "Find Mrs. Beaver", FOUND = "Mrs. Beaver found";
@@ -23,7 +23,7 @@ export const TITLE = "Find Mrs. Beaver", FOUND = "Mrs. Beaver found";
 export function questList(stage: Stage, steps: readonly string[]) {
   const overlay = new Overlay(stage, "mrs-beaver-list", false, 4);
   let back: Rectangle, line: Rectangle, flower: Image, chevron: Image, title: TextBlock, at: TextBlock, lines: TextBlock[] = [];
-  let done = -1, x = 0, y = 0, w = 0, size = 12, pad = 0, gap = 6;
+  let done = -1, x = 0, y = 0, w = 0, h = 0, size = 12, atSize = 11, pad = 0, gap = 6;
   const draw = () => {
     overlay.clear();
     shownAt = NaN; // placed under the goals anew on the next update
@@ -37,7 +37,8 @@ export function questList(stage: Stage, steps: readonly string[]) {
     chevron = overlay.icon("mrs-beaver-more", "chevron", box(x, y, size, size), QUIET);
     title = overlay.label("mrs-beaver", "", box(x, y, w, size * 1.3), size);
     title.fontWeight = "800";
-    at = overlay.text("mrs-beaver-at", "", box(x, y, w, size * 1.3), Math.round(l.small * 0.9), "left", false);
+    atSize = Math.round(l.small * 0.9);
+    at = overlay.text("mrs-beaver-at", "", box(x, y, w, size * 1.3), atSize, "left", false);
     at.color = QUIET;
     lines = steps.map((_, i) => {
       const step = overlay.text(`mrs-beaver-step-${i}`, "", box(x, y, w, 1), size);
@@ -51,8 +52,9 @@ export function questList(stage: Stage, steps: readonly string[]) {
   /** Puts the row with its top at top: the flower, the title and the step at hand beside it, the chevron right. */
   const place = (top: number) => {
     y = Math.round(top);
-    const freed = done >= steps.length, lineH = Math.round(size * 1.3), subH = freed ? 0 : Math.round(at.fontSizeInPixels * 1.35);
-    const h = Math.round(pad * 1.6) + lineH + subH, icon = Math.round(size * 1.3), textX = x + pad + icon + gap;
+    const freed = done >= steps.length, lineH = Math.round(size * 1.3), subH = freed ? 0 : Math.round(atSize * 1.35);
+    h = Math.round(pad * 1.6) + lineH + subH;
+    const icon = Math.round(size * 1.3), textX = x + pad + icon + gap;
     overlay.move(back, box(x, y, w, h));
     overlay.move(line, box(x + pad, y, w - 2 * pad, 1));
     overlay.move(flower, box(x + pad, y + (h - icon) / 2, icon, icon));
@@ -83,14 +85,13 @@ export function questList(stage: Stage, steps: readonly string[]) {
     update() {
       overlay.show(hudShown());
       // Joined to the goals panel as tall as it is now; at the goals' place when the panel is hidden (the large map).
-      const goals = stage.hud.getControlByName("goals-panel") as Rectangle | null;
-      const top = goals?.isVisible ? parseFloat(goals.top as string) + parseFloat(goals.height as string) : hudLayout(stage).goals.y;
+      const goals = goalsPanel.box, top = goals ? goals.y + goals.h : hudLayout(stage).goals.y;
       if (top !== shownAt && Number.isFinite(top)) {
         shownAt = top; place(top);
         // Alone (no panel above it) it is a card of its own: all four corners round, no line on top.
-        back.cornerRadiusX = back.cornerRadiusY = goals?.isVisible ? 0 : RADIUS; line.isVisible = !!goals?.isVisible;
+        back.cornerRadiusX = back.cornerRadiusY = goals ? 0 : RADIUS; line.isVisible = !!goals;
       }
-      underGoals.box = overlay.group.isVisible ? { x, y, w, h: parseFloat(back.height as string) } : undefined;
+      underGoals.box = overlay.group.isVisible ? { x, y, w, h } : undefined;
     },
   };
 }
