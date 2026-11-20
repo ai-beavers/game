@@ -1,50 +1,106 @@
-// Mrs. Beaver's rules as plain logic, apart from rendering, so they can be tested alone: where she may be hidden,
-// where her flower lies dropped on the way, which hiding place a visit picks, and the quest that rescues her: three
-// steps in order (find her flower, find her, gnaw the pen open), and what the Use key offers on each.
+// Mrs. Beaver's rules as plain logic, apart from rendering, so they can be tested alone: where she may be hidden (a
+// brush pile at every hiding place, hers over her pen), the clues she left on her way there (her dropped flower, then
+// her tracks), which hiding place a visit picks, and the quest that rescues her: four steps in order (find her flower,
+// find her tracks, find her, gnaw the pen open), and what the Use key offers on each.
 //
-//   const quest = pick(Math.random());               a visit: at HIDING[quest.place], her flower at FLOWER[quest.place]
+//   const quest = pick(Math.random());               a visit: at HIDING[quest.place], her flower at FLOWER[quest.place],
+//                                                    her tracks at TRACKS[quest.place] facing TRACKS_FACING[quest.place]
 //   offered(quest, { flower, pen, carrying, afloat })  "flower" | "gnaw" | undefined: what the Use key offers there
-//   take(quest)                                      true once: the flower picked up (flower step → find)
-//   find(quest, pen)                                 true once: within FIND m of the pen (find step → gnaw)
+//   take(quest)                                      true once: the flower picked up (flower step → tracks)
+//   follow(quest, tracks)                            true once: within TRACKS_REACH m of her tracks (tracks step → find)
+//   find(quest, pen)                                 true once: within FIND m of her pile (find step → gnaw)
 //   gnaw(quest, dt)                                  true once: gnawed GNAW s in all, the pen open (gnaw step → freed)
-//   done(quest)                                      how many steps are done, 0 … 3 (the checklist's ticks)
+//   done(quest)                                      how many steps are done, 0 … 4 (the checklist's ticks)
 //   rows(done, fits)                                 which step lines the checklist shows
 //   wayHome(place)                                   the points she walks to in turn once freed, the last one HOME
+//   wayOut(place, from, to, short)                   the points from one spot towards another along her way out from HOME
 //
 // Each change says whether it changed something, so the feature tells of each step exactly once. Nothing here is
 // kept: the quest lives in memory for one visit (no localStorage, no network).
 
 export interface XZ { x: number; z: number }
-/** The three hiding places: on dry land just inside where the bank stood before the clearing grew (terrain.ts
- *  FIRST_RIM; they stayed, so a rescue is no longer a walk than before), clear of the Pond, the building site, the Shop, the
- *  trading post and the spawn, each with a straight way over land to HOME (rules.test.ts checks both). West, south,
- *  north. */
-export const HIDING: readonly XZ[] = [{ x: -13.3, z: -2.3 }, { x: 3.5, z: -13 }, { x: -5, z: 13.6 }];
-/** Where her flower lies, one spot per hiding place (same order): about halfway along the straight way from HOME to
- *  it, on dry land, clear of the Pond, the site, the dam, the Shop, the trading post, the spawn and the sticks laid out
- *  (rules.test.ts checks it). */
-export const FLOWER: readonly XZ[] = [{ x: -7.9, z: 0 }, { x: 0.8, z: -6.1 }, { x: -4, z: 9.1 }];
+/** The six hiding places, each with a brush pile: on dry land just inside where the bank stood before the clearing
+ *  grew (terrain.ts FIRST_RIM; they stayed, so a rescue is no longer a walk than before), clear of the Pond, the
+ *  building site, the Shop, the Calendar board, the trading post and the spawn, each with a way of straight legs over
+ *  land to HOME (rules.test.ts checks both). West, south, north, south-south-west (short of the hill, whose
+ *  steep side no way may cross), west-north-west, east. */
+export const HIDING: readonly XZ[] = [{ x: -13.3, z: -2.3 }, { x: 3.5, z: -13 }, { x: -5, z: 13.6 }, { x: -3.1, z: -14.4 }, { x: -14.1, z: 3.8 }, { x: 10.6, z: -8.9 }];
+/** Where her flower lies, one spot per hiding place (same order): out along her way from HOME, about a third of it
+ *  (up to half where the middle of the clearing is crowded), on dry land, clear of the Pond, the site, the dam, the
+ *  Shop, the board, the trading post, the spawn and the sticks laid out (rules.test.ts checks it). */
+export const FLOWER: readonly XZ[] = [{ x: -6.1, z: 0.8 }, { x: 0.5, z: -5.4 }, { x: -4.4, z: 6.6 }, { x: -3.7, z: -5.4 }, { x: -6.4, z: 2.5 }, { x: 3.3, z: -3.8 }];
+/** Where her tracks lie, one spot per hiding place (same order): the middle of a trail of paw prints about 3 m long,
+ *  about two thirds of her way out, on dry land clear of all that stands round it (rules.test.ts checks it). */
+export const TRACKS: readonly XZ[] = [{ x: -9.7, z: -0.8 }, { x: 1.5, z: -8 }, { x: -3.7, z: 11.7 }, { x: -2.1, z: -9.5 }, { x: -10.4, z: 2.8 }, { x: 5.9, z: -5.6 }];
+/** Which way her tracks point (radians, as Player.teleport: 0 is +z): from each tracks spot at its hiding place. */
+export const TRACKS_FACING: readonly number[] = TRACKS.map((t, i) => Math.atan2(HIDING[i]!.x - t.x, HIDING[i]!.z - t.z));
 /** Where she waits once freed: beside the building site, on its south-west side away from the dam and the crates. */
 export const HOME: XZ = { x: -2.5, z: 2.3 };
 /** The bends of her way home from each hiding place (same order), walked in turn before HOME: from the north one the
- *  straight way runs into the Calendar board beside the Shop, so it bends round the board's east end, short of the
- *  crates by the site. Every leg is a straight way over dry land past nothing solid (rules.test.ts checks them). */
-export const BENDS: readonly (readonly XZ[])[] = [[], [], [{ x: -3.1, z: 9.5 }]];
+ *  straight way runs into the Calendar board beside the Shop, so it bends round the board's east end and then again
+ *  to pass west of the crates by the site; the others bend where a straight way would run up the hill's steep side,
+ *  past a tree or a rock. Every leg is a straight way over dry land, no steeper than a beaver walks, past nothing solid
+ *  (rules.test.ts checks them). */
+export const BENDS: readonly (readonly XZ[])[] = [
+  [],
+  [],
+  [{ x: -1.9, z: 9.7 }, { x: -2.9, z: 4.8 }],
+  [{ x: -2, z: -11 }],
+  [{ x: -10.6, z: 2.8 }],
+  [{ x: 0.2, z: -1.6 }],
+];
 /** Her way home from a hiding place: the points she walks to in turn, the last one HOME. */
 export const wayHome = (place: number): XZ[] => [...(BENDS[place] ?? []), HOME];
+/** A way from `from` towards `to` for one who follows her way out from HOME (HOME, her bends back to front, her
+ *  hiding place): onto that way at its point nearest `from`, along it round its bends, the last point `short` m before
+ *  its point nearest `to`. So from her flower to her tracks each leg is straight, past nothing solid (rules.test.ts
+ *  checks it), where a straight line is not: from the north flower it runs through the Calendar board. */
+export function wayOut(place: number, from: XZ, to: XZ, short = 0): XZ[] {
+  const points = [HOME, ...[...(BENDS[place] ?? [])].reverse(), HIDING[place]!];
+  const legs = points.slice(1).map((b, k) => ({ a: points[k]!, b, len: Math.hypot(b.x - points[k]!.x, b.z - points[k]!.z) }));
+  /** How far along the way p lies: the m walked from HOME to the point of the way nearest it. */
+  const along = (p: XZ) => {
+    let walked = 0, at = 0, nearest = Infinity;
+    for (const { a, b, len } of legs) {
+      const dx = b.x - a.x, dz = b.z - a.z, t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (len * len)));
+      const away = Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
+      if (away < nearest) { nearest = away; at = walked + len * t; }
+      walked += len;
+    }
+    return at;
+  };
+  /** The point of the way m walked from HOME. */
+  const point = (m: number): XZ => {
+    for (const { a, b, len } of legs) {
+      if (m <= len) return { x: a.x + ((b.x - a.x) * m) / len, z: a.z + ((b.z - a.z) * m) / len };
+      m -= len;
+    }
+    return HIDING[place]!;
+  };
+  const start = along(from), end = Math.max(0, along(to) - short);
+  if (end <= start) return [point(end)]; // no further out than where it starts: straight there
+  const bends: XZ[] = [];
+  let walked = 0;
+  for (const { b, len } of legs) { walked += len; if (walked > start && walked < end) bends.push(b); }
+  return [point(start), ...bends, point(end)];
+}
 /** m from the middle of the pen to the player's feet within which the Use key offers to gnaw it open. */
 export const REACH = 1.3;
 /** m from the flower to the player's feet within which the Use key offers to pick it up. */
 export const FLOWER_REACH = 1.2;
+/** m: how long the trail of her tracks is, end to end. */
+export const TRAIL = 2.8;
+/** m from the middle of her tracks to the player's feet within which they count as found: on the trail. */
+export const TRACKS_REACH = 1.6;
 /** m from the middle of the pen to the player's feet within which she counts as found. */
-export const FIND = 4;
+export const FIND = 2.5;
 /** s of held Use that gnaw the pen open; what is gnawed stays for the visit when Use is let go. */
 export const GNAW = 3;
 
-/** The step reached: the one at hand, or freed once all three are done. */
-export type Step = "flower" | "find" | "gnaw" | "freed";
+/** The step reached: the one at hand, or freed once all four are done. */
+export type Step = "flower" | "tracks" | "find" | "gnaw" | "freed";
 /** The steps in order: a step's index is how many are done when it is reached. */
-const ORDER: readonly Step[] = ["flower", "find", "gnaw", "freed"];
+const ORDER: readonly Step[] = ["flower", "tracks", "find", "gnaw", "freed"];
 export interface Quest { place: number; step: Step; gnawed: number }
 
 /** A new visit: on the flower step, at the hiding place a random number 0 … 1 picks (and its flower spot). */
@@ -61,9 +117,17 @@ export function offered(quest: Quest, at: { flower: number; pen: number; carryin
   return undefined;
 }
 
-/** Picks up her flower: true on the flower step (→ find), false on any other. */
+/** Picks up her flower: true on the flower step (→ tracks), false on any other. */
 export function take(quest: Quest): boolean {
   if (quest.step !== "flower") return false;
+  quest.step = "tracks";
+  return true;
+}
+
+/** Finds her tracks: true on the tracks step within TRACKS_REACH m of them (tracks: m from the feet), → find; false
+ *  otherwise. */
+export function follow(quest: Quest, tracks: number): boolean {
+  if (quest.step !== "tracks" || tracks > TRACKS_REACH) return false;
   quest.step = "find";
   return true;
 }
@@ -84,15 +148,15 @@ export function gnaw(quest: Quest, dt: number): boolean {
   return true;
 }
 
-/** How many of the three steps are done: 0 on the flower step … 3 once she is freed. */
+/** How many of the four steps are done: 0 on the flower step … 4 once she is freed. */
 export function done(quest: Quest): number {
   return ORDER.indexOf(quest.step);
 }
 
-/** The step lines (0 … 2) the checklist shows under its title with `done` steps done: all three where they fit, only
+/** The step lines (0 … 3) the checklist shows under its title with `done` steps done: all four where they fit, only
  *  the one at hand where they would not (a small, wide screen), none once she is freed. */
 export function rows(done: number, fits: boolean): number[] {
   const count = ORDER.length - 1;
   if (done >= count) return [];
-  return fits ? [0, 1, 2] : [Math.max(0, done)];
+  return fits ? ORDER.slice(0, count).map((_, i) => i) : [Math.max(0, done)];
 }

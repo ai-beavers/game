@@ -1,8 +1,8 @@
 // Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
-// that src/features/life shows, calling from where they are; the steps and splashes of other players
-// (src/features/net); and a quiet tune that composes itself. With the camera under water all of it is muffled.
+// that src/features/life shows, calling from where they are; the Bear's growl and its grunt at a tail slap (src/features/bear); the steps and splashes of other players
+// (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 //
 // The sky (game.sky, when the sky feature runs) drives the ambience: rain and wind follow its rain and wind, birds
 // sing by day and less in rain, frogs at dusk, crickets and the owl at night, the music goes quieter and lower at
@@ -102,7 +102,8 @@ export const create: CreateFeature = (game) => {
   events.on("enterWater", ({ place, speed }) => play("splash", place, clamp(0.3 + speed / 5)));
   events.on("leaveWater", ({ place }) => play("shake", place, 1, "sfx", 0.2));
   // A tail slap, this beaver's or another player's (src/features/net/remote.ts emits theirs).
-  events.on("tailSlap", ({ place, water }) => play(water ? "slap" : "thump", place));
+  // Struck in the air (the leap at the Bear) it meets no ground: silent unless it lands on the Bear (the smack below).
+  events.on("tailSlap", ({ place, water, air }) => { if (!air) play(water ? "slap" : "thump", place); });
   events.on("pickup", ({ place }) => play("pickup", place));
   events.on("drop", ({ place }) => play("drop", place));
 
@@ -119,7 +120,22 @@ export const create: CreateFeature = (game) => {
   // Half the dam: a chime on the way, so the long middle of the work has a moment too.
   events.on("stickPlaced", ({ count, total }) => { if (count * 2 === total) play("chime", undefined, 1, "sfx", 0.25); });
 
-  // Lasting sounds: paddling, counted in physics steps so it stops with the pause.
+  // The Bear growls as it notices the beaver, and grunts when a tail slap lands (src/features/bear).
+  events.on("bearNotices", ({ place }) => play("growl", place));
+  events.on("bearSlapped", ({ place }) => { play("smack", place); play("grunt", place); });
+
+  // A burning Flag crackles until it is burnt down (src/features/flag).
+  let fire: Vector3 | undefined, crackle = 0;
+  events.on("flagLit", ({ place }) => { fire = place; crackle = 0; });
+  events.on("flagBurnt", () => { fire = undefined; });
+
+  // The Old Beaver murmurs a line from where he sits, one slow syllable a word (src/features/old-beaver). Counted in
+  // physics steps, so it stops with the pause; a new line (his closing word, when the beaver walks off) cuts the rest
+  // of the one before.
+  let murmur: { place: Vector3; left: number; next: number; syllable: number } | undefined;
+  events.on("oldBeaverSpeaks", ({ place, words, syllable }) => { murmur = words > 0 ? { place, left: words, next: 0, syllable } : undefined; });
+
+  // Lasting sounds: paddling and the fire's crackle, counted in physics steps so they stop with the pause.
   let stroke = 0;
   const at = player.node.position, camera = stage.camera, forward = new Vector3(), up = new Vector3(), here = new Vector3();
   let bird = rand(2, 6), owl = rand(8, 20);
@@ -151,10 +167,16 @@ export const create: CreateFeature = (game) => {
 
   return {
     step(dt) {
+      if (murmur && (murmur.next -= dt) <= 0) {
+        play("murmur", murmur.place, Math.random(), "sfx", rand(0, 0.06));
+        murmur.next += murmur.syllable;
+        if (--murmur.left <= 0) murmur = undefined;
+      }
       if (motion.swimming >= 0.5) {
         stroke += dt * (0.9 + 1.4 * Math.min(1, motion.speed));
         if (stroke >= 1) { stroke = 0; play("paddle", at, clamp(motion.speed / 1.2)); }
       } else stroke = 0.6;
+      if (fire && (crackle -= dt) <= 0) { crackle = rand(0.25, 0.5); play("crackle", fire, Math.random(), "ambience"); }
     },
     update(dt) {
       if (!live) return;

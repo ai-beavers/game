@@ -4,7 +4,7 @@ import type { TextBlock } from "@babylonjs/gui";
 import type { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
 import type { Stage } from "../../engine.ts";
 import { Overlay, box, floating, hudLayout, measure, onViewport } from "../hud/overlay.ts";
-import { INK, PANEL, QUIET, RADIUS } from "../hud/style.ts";
+import { INK, PANEL, PAPER, QUIET, RADIUS } from "../hud/style.ts";
 import { CHAT_LENGTH } from "./protocol.ts";
 import { place, wrap } from "./tags.ts";
 
@@ -31,17 +31,25 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
   const tags = new Map<number | "me",Tag>(), lines: { text: string; at: number }[] = [];
   const log = document.createElement("output");
   log.setAttribute("aria-live","polite");
-  let name = "", statusText = "", typing = false, input: HTMLInputElement | undefined;
-  let messages: TextBlock, status: TextBlock, me: ReturnType<Overlay["button"]>;
-  // The bottom left of the HUD's layout (hud/style.ts): the chat row at its foot, the log and the connection over it.
+  let statusText = "", typing = false, input: HTMLInputElement | undefined;
+  let messages: TextBlock, status: TextBlock;
+  // The bottom left of the HUD's layout (hud/style.ts): the chat row at its foot (one "Chat [T]" pill; the name is
+  // changed in Settings), the log and the connection over it.
   function layout() {
     const draft = input?.value || "";
     layer.clear();
     layer.dom.append(log);
-    const at = hudLayout(stage), {x, y, w: width, h: rowH} = at.chatRow, nameW = Math.min(102,width*.42);
-    me = layer.button("rename",name || "Set name",box(x,y,nameW,rowH),actions.rename);
-    me.element.setAttribute("aria-label","Change player name");
-    layer.button("chat-open","Chat",box(x+nameW+5,y,55,rowH),openChat);
+    const at = hudLayout(stage), {x, y, w: width, h: rowH} = at.chatRow, size = Math.round(at.small*1.05);
+    const iconSize = Math.round(size*1.2), capSize = Math.round(size*1.35), pad = Math.round(rowH*.4), keys = !document.getElementById("touch-controls"); // touch has no keys
+    const pillW = Math.round(pad*2+iconSize+6+measure("Chat",size,"800")+(keys ? 8+capSize : 0));
+    const chat = layer.button("chat-open","Chat",box(x,y,pillW,rowH),openChat);
+    chat.panel.background = PANEL; chat.panel.cornerRadius = rowH/2; chat.panel.thickness = 0;
+    chat.element.addEventListener("blur",() => { chat.panel.thickness = 0; });
+    chat.caption.fontSize = size; chat.caption.fontWeight = "800";
+    chat.caption.textHorizontalAlignment = 0; // left
+    layer.move(chat.caption,box(x+pad+iconSize+6,y,pillW,rowH));
+    layer.icon("chat-icon","chat",box(x+pad,y+(rowH-iconSize)/2,iconSize,iconSize),PAPER);
+    if (keys) layer.cap("chat-key","T",box(x+pillW-pad-capSize,y+(rowH-capSize)/2,capSize,capSize),Math.round(size*.8));
     const lineH = Math.round(at.small*1.3*1.1);
     status = layer.label("connection-status",statusText,box(x,at.log.y,width,lineH),at.small);
     messages = layer.label("chat-log","",box(x,at.log.y+lineH,width,at.log.h-lineH-(typing ? 42 : 0)),at.small);
@@ -67,7 +75,7 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
   function closeChat() { typing = false; rebuild(); }
   window.addEventListener("keydown",e => {
     if (typing || document.querySelector("dialog:modal") || stage.paused || e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) return;
-    if (e.code === "Enter" && !e.repeat && !e.isComposing && !e.metaKey && !e.ctrlKey && !e.altKey && actions.canChat()) {
+    if ((e.code === "Enter" || e.code === "KeyT") && !e.repeat && !e.isComposing && !e.metaKey && !e.ctrlKey && !e.altKey && actions.canChat()) {
       e.preventDefault(); e.stopImmediatePropagation(); openChat();
     }
   },true);
@@ -136,7 +144,8 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
     status(value = "") { statusText = value; status.text = value; },
     /** The join address is shown on Pause → Players (hud/index.ts), not on the play screen. */
     address(_value: string) {},
-    me(value: string) { name = value; me.caption.text = value || "Set name"; me.element.textContent = me.caption.text; me.element.setAttribute("aria-label","Change player name"); },
+    /** The player's own name: shown on the player card (shop/panel.ts) and changed in Settings, not here. */
+    me(_value: string) {},
     update() {
       const visible = !stage.paused && !document.querySelector("dialog:modal");
       layer.show(visible && !live); tagLayer.show(visible);

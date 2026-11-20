@@ -14,6 +14,8 @@ class Coat extends MaterialPluginBase {
   anger = 0;
   /** 0 dry … 1 dripping: darker, glossier, the shells combed flat. */
   wet = 0;
+  /** 0 … 1: an old beaver's grey on the muzzle and face, and on the pale markings (the Old Beaver). */
+  grey = 0;
   /** light.ts's "sun": the rim of light on the coat's edge is brightest with it behind the beaver. */
   sun: DirectionalLight | null = null;
 
@@ -25,12 +27,12 @@ class Coat extends MaterialPluginBase {
   override getAttributes(attributes: string[]) { attributes.push("furMask", "furLayer"); }
   override getUniforms() {
     return {
-      ubo: [{ name: "furState", size: 3, type: "vec3" }, { name: "furSun", size: 3, type: "vec3" }],
-      vertex: "uniform vec3 furState; uniform vec3 furSun;", fragment: "uniform vec3 furState; uniform vec3 furSun;",
+      ubo: [{ name: "furState", size: 4, type: "vec4" }, { name: "furSun", size: 3, type: "vec3" }],
+      vertex: "uniform vec4 furState; uniform vec3 furSun;", fragment: "uniform vec4 furState; uniform vec3 furSun;",
     };
   }
   override bindForSubMesh(buffer: UniformBuffer) {
-    buffer.updateFloat3("furState", this.anger, Number(this.dressed), this.wet);
+    buffer.updateFloat4("furState", this.anger, Number(this.dressed), this.wet, this.grey);
     const d = this.sun?.direction;
     buffer.updateFloat3("furSun", d?.x ?? 0, d?.y ?? -1, d?.z ?? 0);
   }
@@ -66,6 +68,9 @@ class Coat extends MaterialPluginBase {
         if (shell > 0. && length(fract(hair)-center) > (.68-.48*shell)*(.7+.3*grain)*(1.-.35*furState.z)) discard; // wet: thin, clumped tips
         vec3 marking = vec3(.62, .4, .22); // warm cream: belly, chin, muzzle
         surfaceAlbedo = mix(surfaceAlbedo, marking, coatMask.g * (1.-furState.x));
+        // Grey with age (furState.w): the markings, and the head from the cheeks up, most on the muzzle and face.
+        float aged = furState.w * max(coatMask.g, smoothstep(.6, .7, furRest.y) * mix(.55, 1., smoothstep(-.02, .12, furRest.z)));
+        surfaceAlbedo = mix(surfaceAlbedo, vec3(.36, .34, .32), aged);
         surfaceAlbedo *= mix(.68,1.,coatMask.b) * mix(.85,1.12,shell);
         // Sub-pixel strands blend to a solid coat when another player walks away.
         float detail = 1.-smoothstep(.55,1.5,max(fwidth(hair.x), fwidth(hair.y)));

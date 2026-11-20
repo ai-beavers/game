@@ -1,11 +1,13 @@
 // Mrs. Beaver: the player's own beaver companion. At the start of every visit she has been carried off and is shut in
-// a pen of sticks at one of three hiding places at the edge of the Clearing, and her flower lies dropped on the way
-// there (rules.ts). The player rescues her in a quest, three steps in order, shown as a checklist in the HUD (panel.ts)
-// with nothing on the map: find her flower (the Use key, E / X / the Use button, offers "Pick up the flower" at it with
-// free paws), find her (within a few metres of her pen), gnaw the pen open (hold Use there about three seconds, with
-// the gnaw motion; letting go keeps what is gnawed). Each step done chimes with a "✓" notice (the goalDone event). Then
-// the pen falls into loose sticks to carry and build with, she wears her flower again and walks home to a spot beside
-// the building site, where she waits for the rest of the visit, and the list says only "Mrs. Beaver found".
+// a pen of sticks under one of six brush piles at the edge of the Clearing, all alike from outside, and she left two
+// clues on her way there: her flower dropped about a third of the way out, her tracks about two thirds, pointing at
+// her pile (rules.ts). The player rescues her in a quest, four steps in order, shown as a checklist in the HUD
+// (panel.ts) with nothing on the map: find her flower (the Use key, E / X / the Use button, offers "Pick up the
+// flower" at it with free paws), find her tracks (walk onto them), find her (within a few metres of her pile), gnaw the
+// pen open (hold Use there about three seconds, with the gnaw motion; letting go keeps what is gnawed). A wrong pile is
+// only solid: Use offers nothing there and nothing ticks. Each step done chimes with a "✓" notice (the goalDone event).
+// Then her pile and pen fall into loose sticks to carry and build with, she wears her flower again and walks home to a
+// spot beside the building site, where she waits for the rest of the visit, and the list says only "Mrs. Beaver found".
 //
 //   import { create as mrsBeaver } from "./features/mrs-beaver/index.ts";   after shop in FEATURES (it shares the Use key)
 //
@@ -14,22 +16,24 @@
 // out of its ids).
 //
 // Debug, for bun shot --eval and the tour (window.mrsBeaver): .pen (where the pen stands) · .flower (where her flower
-// lies) · .step (flower, find, gnaw, freed) · .gnawed (s gnawed so far) · .state (missing, freed) · .home (where she
+// lies) · .tracks (the middle of her tracks) · .piles (every brush pile, hers among them) · .step (flower, tracks,
+// find, gnaw, freed) · .gnawed (s gnawed so far) · .state (missing, freed) · .home (where she
 // waits) · .her() (where she is now) · .wears (her flower behind her ear) · .dropped (her flower on the ground) ·
-// .stand() (where to stand to gnaw the pen) · .at() stands there facing the pen · .atFlower() stands at the flower ·
+// .stand(place?) (where to stand to gnaw the pen, or at the pile of that hiding place) · .at() stands there facing the pen · .atFlower() stands at the flower ·
 // .reset(place?) a new quest, at a hiding place picked anew (or the one given).
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
 import { RAPIER } from "../../engine.ts";
 import type { Actor, Offer } from "../../player/index.ts";
-import { buildDropped, buildPen, mrsBeaver, PEN } from "./creature.ts";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh.js";
+import { BRUSH, buildBrush, buildDropped, buildPen, buildTracks, mrsBeaver, PEN } from "./creature.ts";
 import { questList } from "./panel.ts";
-import { done, find, FLOWER, gnaw, GNAW, HIDING, HOME, offered, pick, take, wayHome, type Quest } from "./rules.ts";
+import { done, find, FLOWER, follow, gnaw, GNAW, HIDING, HOME, offered, pick, take, TRACKS, TRACKS_FACING, wayHome, type Quest } from "./rules.ts";
 
 const NEAR = 28; // m: within this she moves (or while she walks home)
 const WALK = 1.1; // m/s on her way home
 const STAND = 1.0; // m from the pen's middle, towards the Clearing, where a player gnaws it open
-const FALLEN = 6; // sticks the pen falls into
+const FALLEN = 8; // sticks the pen and its pile fall into
 
 /** Facing (radians, as Player.teleport) from a to b. */
 const towards = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.atan2(b.x - a.x, b.z - a.z);
@@ -37,23 +41,47 @@ const towards = (a: { x: number; z: number }, b: { x: number; z: number }) => Ma
 export const create: CreateFeature = (game) => {
   const { stage, world, player, events } = game;
   let quest: Quest = pick(Math.random());
-  const where = () => HIDING[quest.place]!, flowerAt = () => FLOWER[quest.place]!;
-  /** Towards the Clearing's middle from the pen: she faces it, the player comes from it. */
-  const inward = () => { const p = where(), r = Math.hypot(p.x, p.z) || 1; return { x: -p.x / r, z: -p.z / r }; };
-  const stand = () => { const p = where(), n = inward(); return { x: p.x + n.x * STAND, z: p.z + n.z * STAND }; };
+  const where = () => HIDING[quest.place]!, flowerAt = () => FLOWER[quest.place]!, tracksAt = () => TRACKS[quest.place]!;
+  /** Where to stand at the pile of hiding place i (hers by default): STAND m from its middle towards the Clearing's,
+   *  where she faces and the player comes from. */
+  const stand = (i = quest.place) => { const p = HIDING[i]!, r = Math.hypot(p.x, p.z) || 1; return { x: p.x - (p.x / r) * STAND, z: p.z - (p.z / r) * STAND }; };
 
-  // The pen, and a collider round it so the beaver cannot walk in.
-  let pen: ReturnType<typeof buildPen> | undefined, solid: RAPIER.Collider | undefined;
+  // A brush pile at every hiding place, each with a collider so the beaver cannot walk in; under hers, her pen.
+  const brush = buildBrush(stage);
+  let piles: ({ mesh: InstancedMesh; solid: RAPIER.Collider } | undefined)[] = [];
+  let pen: ReturnType<typeof buildPen> | undefined;
+  /** Takes away the pile at hiding place i, if it stands. */
+  const clear = (i: number) => {
+    const pile = piles[i];
+    if (!pile) return;
+    pile.mesh.dispose();
+    stage.physics.removeCollider(pile.solid, false);
+    piles[i] = undefined;
+  };
   const shut = () => {
+    HIDING.forEach((_, i) => clear(i));
     pen?.dispose();
-    if (solid) stage.physics.removeCollider(solid, false);
-    const p = where(), y = world.heightAt(p.x, p.z);
+    piles = HIDING.map((p) => {
+      const y = world.heightAt(p.x, p.z);
+      return {
+        mesh: brush.place(p.x, y, p.z, towards(p, { x: 0, z: 0 })), // all turned alike, to the middle
+        solid: stage.physics.createCollider(RAPIER.ColliderDesc.cylinder(BRUSH.height / 2, BRUSH.solid).setTranslation(p.x, y + BRUSH.height / 2 - 0.1, p.z)),
+      };
+    });
+    const p = where();
     pen = buildPen(stage);
-    pen.root.position.set(p.x, y, p.z);
+    pen.root.position.set(p.x, world.heightAt(p.x, p.z), p.z);
     pen.root.rotation.y = towards(p, { x: 0, z: 0 });
-    solid = stage.physics.createCollider(RAPIER.ColliderDesc.cylinder(PEN.height / 2 + 0.2, PEN.radius + 0.06).setTranslation(p.x, y + PEN.height / 2 - 0.1, p.z));
   };
   shut();
+
+  // Her tracks, pressed into the ground on her way, pointing at her pile; they stay for the visit.
+  let tracks: ReturnType<typeof buildTracks> | undefined;
+  const press = () => {
+    tracks?.dispose();
+    tracks = buildTracks(stage, tracksAt(), TRACKS_FACING[quest.place]!, (x, z) => world.heightAt(x, z));
+  };
+  press();
 
   // Her flower, dropped on the ground on the way to her until it is picked up.
   let dropped: ReturnType<typeof buildDropped> | undefined;
@@ -70,8 +98,7 @@ export const create: CreateFeature = (game) => {
   const fall = () => {
     const p = where(), y = world.heightAt(p.x, p.z), variants = world.props?.stick.length ?? 1, turn0 = towards(p, { x: 0, z: 0 });
     pen?.dispose(); pen = undefined;
-    if (solid) stage.physics.removeCollider(solid, false);
-    solid = undefined;
+    clear(quest.place);
     if (!world.addLoose) return;
     for (let k = 0; k < FALLEN; k++) {
       // Not on the side towards the Clearing, where the player stands and she walks out.
@@ -114,7 +141,7 @@ export const create: CreateFeature = (game) => {
     }
     return true;
   };
-  /** Her way home from the pen, leg by leg, over land past nothing solid (rules.test.ts checks the three; this is the
+  /** Her way home from the pen, leg by leg, over land past nothing solid (rules.test.ts checks the six; this is the
    *  game's own check, for a world changed since). */
   const clearWay = () => {
     let from = where();
@@ -122,12 +149,13 @@ export const create: CreateFeature = (game) => {
     return true;
   };
 
-  const list = questList(stage, ["Find her flower", "Find Mrs. Beaver", "Gnaw the pen open"]);
+  const list = questList(stage, ["Find her flower", "Find her tracks", "Find Mrs. Beaver", "Gnaw the pen open"]);
   const say = () => list.set(done(quest));
   say();
 
   const away = () => { const p = where(); return Math.hypot(player.feet.x - p.x, player.feet.z - p.z); };
   const toFlower = () => { const f = flowerAt(); return Math.hypot(player.feet.x - f.x, player.feet.z - f.z); };
+  const toTracks = () => { const t = tracksAt(); return Math.hypot(player.feet.x - t.x, player.feet.z - t.z); };
   const offers = (carrying: boolean) => offered(quest, { flower: toFlower(), pen: away(), carrying, afloat: player.afloat || player.riding });
   const takeFlower = () => {
     if (!take(quest)) return;
@@ -173,6 +201,9 @@ export const create: CreateFeature = (game) => {
     mrsBeaver: {
       get pen() { const p = where(); return { x: p.x, z: p.z }; },
       get flower() { const f = flowerAt(); return { x: f.x, z: f.z }; },
+      get tracks() { const t = tracksAt(); return { x: t.x, z: t.z }; },
+      /** Every brush pile's place, hers among them (in the order of the hiding places). */
+      get piles() { return HIDING.map((p) => ({ x: p.x, z: p.z })); },
       get step() { return quest.step; },
       get gnawed() { return quest.gnawed; },
       get state() { return quest.step === "freed" ? "freed" : "missing"; },
@@ -201,14 +232,15 @@ export const create: CreateFeature = (game) => {
         quest = at === undefined ? pick(Math.random()) : { place: at, step: "flower", gnawed: 0 };
         phase = "pen";
         gnawing = false;
-        // The sticks an earlier pen here fell into go (they are this browser's alone): the new pen stands clear of them.
-        const p = where();
+        // The sticks an earlier pen fell into go (they are this browser's alone), at whichever pile it stood: every
+        // pile stands clear again, and no stick by a wrong one takes the Use key.
         for (const stick of world.sticks.filter((t) => t.mesh.metadata?.local && t !== player.carrying && t.body.isEnabled())) {
           const at = stick.body.translation();
-          if (Math.hypot(at.x - p.x, at.z - p.z) < 2) { world.removeLoose?.(stick); stick.mesh.dispose(); }
+          if (HIDING.some((p) => Math.hypot(at.x - p.x, at.z - p.z) < 2)) { world.removeLoose?.(stick); stick.mesh.dispose(); }
         }
         shut();
         drop();
+        press();
         place();
         wear();
         say();
@@ -220,7 +252,12 @@ export const create: CreateFeature = (game) => {
   return {
     update(dt) {
       list.update();
-      // The step "Find Mrs. Beaver": with her flower in the paws, within a few metres of her pen.
+      // The step "Find her tracks": with her flower in the paws, on her tracks.
+      if (quest.step === "tracks" && follow(quest, toTracks())) {
+        say();
+        events.emit("goalDone", { goal: "mrs-beaver-tracks", text: "Tracks found" });
+      }
+      // The step "Find Mrs. Beaver": once her tracks are found, within a few metres of her pile.
       if (quest.step === "find" && find(quest, away())) {
         say();
         events.emit("goalDone", { goal: "mrs-beaver-find", text: "Mrs. Beaver found" });

@@ -10,8 +10,8 @@ bun dev                      the game on port 5180, for everyone on the network 
 bun shot <url> --out shots/x.png      look at a page without a desktop: screenshot + console (tools/shot.ts)
 bun run check                typecheck and tests
 bun run tour --once --here   the whole tour once as a check, on the files as they are: one line per station, exit code 0 or 1;
-                             --station Name (repeatable) plays only those. The saved game is kept between runs
-                             (recordings/tour-save.json), so the second run reaches the lodge
+                             --station Name (repeatable) plays only those. The tour's world is kept between runs
+                             (its server's file, recordings/tour-world.json.tour), so the second run reaches the lodge
 bun run tour --once --here --repeat 30 [--beside]
                              the soak: that many whole tours in a row, exit code 1 if any failed (--beside: under load)
 /?mute                       the game with its sound off, without touching the saved settings (for stream tiles)
@@ -33,6 +33,8 @@ Everyone plays at <https://beaver.uq-dev.workers.dev/>, in one shared world of u
   (`wrangler deploy`). Players reconnect by themselves and load the new build once. The world's work stays.
 - **What runs there**: one Worker (`worker.ts`, `wrangler.jsonc`). Cloudflare serves the files of `dist/` itself. One
   Durable Object holds the world with the same rules as `server.ts`: both run `src/features/net/room.ts`.
+- **House of AI events**: both servers answer `/net/events` from the House of AI Hamburg's public Luma calendar
+  (`src/features/shop/events.ts`), one copy kept for an hour; the Calendar board asks it hourly (ADR 0006).
 - **Credentials**: the GitHub environment `production` holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and
   takes runs from `main` only.
 - **Starting the world afresh**: set the token once with `bunx wrangler secret put RESET_TOKEN`, then
@@ -51,10 +53,10 @@ src/anim/          how it moves: Motion in, Pose out, pure maths
 src/player/        input, Rapier character, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
-src/features/      dam building, the trading post, the shop, the canoe, multiplayer, controls, HUD, wildlife, weather, audio, effects, photo mode and tour
+src/features/      dam building, the trading post, the shop, the canoe, its race, multiplayer, controls, HUD, wildlife, the bear, weather, audio, effects, photo mode and tour
 server.ts          the game and its multiplayer server on Bun, for a local network
 worker.ts          the same multiplayer on Cloudflare: a Worker and a Durable Object
-assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), logo.png
+assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), bear.glb (from tools/blender/bear.py), logo.png
 tools/blender/     the models, built in Blender from code
 ```
 
@@ -65,3 +67,5 @@ fixed steps of 1/60 s. `?debug` in the address draws the colliders.
 
 Models are rebuilt with Blender, headless:
 `/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/build.py -- assets/beaver.glb`
+
+`/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/bear.py -- assets/bear.glb`

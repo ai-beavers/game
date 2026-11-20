@@ -8,6 +8,7 @@ const SRC = join(import.meta.dir, "../..");
 /** Elements nobody sees as interface: textures, a download, text for screen readers, the clipboard. */
 const INVISIBLE: Record<string, string[]> = {
   "beaver/index.ts": ["canvas"],
+  "features/flag/index.ts": ["canvas"],
   "features/hud/index.ts": ["output", "textarea"],
   "features/hud/map-display.ts": ["canvas"],
   "features/hud/map.ts": ["canvas"],

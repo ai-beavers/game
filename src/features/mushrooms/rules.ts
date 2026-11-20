@@ -14,8 +14,8 @@
 export interface XZ { x: number; z: number }
 /** Where the mushrooms grow: at the foot of trees of the layout (placeAll), on the side towards the meadow, on dry
  *  land, clear of everything the player goes to for something else (rules.test.ts checks it). They stay when the tree
- *  is felled. Three near each other to the south-east and south, then south-west, west, north. */
-export const SPOTS: readonly XZ[] = [{ x: 4.3, z: -7.4 }, { x: 7.4, z: -8.6 }, { x: 0.1, z: -10.3 }, { x: -5.6, z: -11.2 }, { x: -13.2, z: 1.5 }, { x: 0.3, z: 13.6 }];
+ *  is felled. Three near each other to the south-east and south, then south-west, west-south-west (clear of the brush pile at Mrs. Beaver's west-north-west hiding place), north. */
+export const SPOTS: readonly XZ[] = [{ x: 4.3, z: -7.4 }, { x: 7.4, z: -8.6 }, { x: 0.1, z: -10.3 }, { x: -5.6, z: -11.2 }, { x: -8.1, z: -6 }, { x: 0.3, z: 13.6 }];
 /** m from a spot to the player's feet within which the Use key offers to eat it. */
 export const REACH = 1.0;
 /** Mushrooms eaten within WINDOW s that make the view dizzy. */

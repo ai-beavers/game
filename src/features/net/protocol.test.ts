@@ -82,6 +82,25 @@ describe("motion", () => {
     }
     expect(unpackMotion(packMotion(newMotion()), into).low).toBeUndefined();
   });
+  test("a lantern switched off is seen dark by others, and lit again after", () => {
+    const into = newMotion();
+    const off = { ...newMotion(), lanternOff: true };
+    expect(unpackMotion(packMotion(off), into).lanternOff).toBe(true);
+    expect(parseClient(state({ m: packMotion(off) }))).toBeDefined();
+    expect(unpackMotion(packMotion(newMotion()), into).lanternOff).toBeFalsy();
+    expect(unpackMotion(packMotion({ ...newMotion(), lanternOff: false }), into).lanternOff).toBeFalsy();
+  });
+  test("a Stare stays with its own player: it never travels", () => {
+    const staring = { ...newMotion(), grounded: true, stare: { weight: 1, yaw: 0.4, pitch: 0.2 } };
+    expect(packMotion(staring)).toEqual(packMotion({ ...newMotion(), grounded: true }));
+    expect(unpackMotion(packMotion(staring), newMotion()).stare).toBeUndefined();
+  });
+  test("the server drops a state whose lantern switch is not 0 or 1", () => {
+    const m = packMotion(newMotion()), last = m.length - 1;
+    for (const v of [0, 1]) expect(parseClient(state({ m: m.map((x, i) => i === last ? v : x) }))).toBeDefined();
+    for (const v of [2, -1, 0.5]) expect(parseClient(state({ m: m.map((x, i) => i === last ? v : x) }))).toBeUndefined();
+    expect(parseClient(state({ m: m.slice(0, last) }))).toBeUndefined(); // an old page's Motion, without it
+  });
 });
 
 describe("hourAt", () => {
@@ -201,7 +220,8 @@ describe("build changes", () => {
       { type: "split", tree: 3 }, { type: "split", tree: 3, at: 1.7e12 }, { type: "grow", tree: 3 }, { type: "place", slot: 0, stick: "t3:4" }, { type: "place", slot: 1, stick: "w12" }];
     expect(build(all)).toEqual({ t: "build", c: all as BuildChange[] });
     expect(build([{ type: "bite", tree: 1, evil: 1 }])).toEqual({ t: "build", c: [{ type: "bite", tree: 1 }] });
-    expect(build([{ type: "find" }], "bring")?.t).toBe("bring");
+    expect(build([{ type: "find" }], "bring")).toBeUndefined(); // a page brings no world of its own
+    expect(parseClient(JSON.stringify({ t: "reset", evil: 1 }))).toEqual({ t: "reset" });
   });
 
   test("leaves out what is unknown, out of range or malformed", () => {
@@ -394,8 +414,8 @@ describe("build changes", () => {
     }
     for (let k = 0; k < STICKS; k++) take({ type: "place", slot: k, stick: `t${k % trees}:${k % 6}` });
     expect(world.dam.length).toBe(STICKS);
-    const bring = JSON.stringify({ t: "bring", c: changesOf(world) });
-    expect(bring.length).toBeLessThan(MAX_MESSAGE);
-    expect(parseClient(bring)).toEqual({ t: "bring", c: changesOf(world) });
+    const whole = JSON.stringify({ t: "build", c: changesOf(world) }); // all of it made while the connection was lost
+    expect(whole.length).toBeLessThan(MAX_MESSAGE);
+    expect(parseClient(whole)).toEqual({ t: "build", c: changesOf(world) });
   });
 });

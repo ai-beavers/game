@@ -169,6 +169,8 @@ export const loadBeaver: LoadBeaver = async (scene) => {
       calm.set(...c);
       Color3.LerpToRef(calm, red, anger, material.albedoColor);
     },
+    get grey() { return fur.coat.grey; },
+    set grey(value) { fur.coat.grey = Math.min(1, Math.max(0, value)); },
     pose(pose) {
       for (const { name, node, rotation, position, scale } of bones) {
         const p = pose[name];

@@ -265,6 +265,25 @@ const RECIPES = {
     bark(0, 0.5);
     bark(0.42, 0.35);
   },
+  /** The Bear rearing up at the beaver: a long, low, rough growl that swells and falls. */
+  growl(ctx, out, t) {
+    const v = rand(0.94, 1.06);
+    buzz(ctx, out, t, { freq: 62 * v, to: 48 * v, filter: 320, sweep: 520, q: 1.2, attack: 0.25, decay: 0.9, peak: 1.25 });
+    buzz(ctx, out, t, { at: 0.05, freq: 93 * v, to: 70 * v, filter: 700, sweep: 420, q: 1.5, attack: 0.3, decay: 0.8, peak: 0.63 });
+    burst(ctx, out, t, { filter: "bandpass", freq: 480, to: 300, q: 0.8, attack: 0.3, decay: 0.8, peak: 0.45 });
+  },
+  /** The Bear hit by a tail slap: a short, hoarse grunt. */
+  grunt(ctx, out, t) {
+    const v = rand(0.92, 1.08);
+    buzz(ctx, out, t, { freq: 110 * v, to: 70 * v, filter: 520, sweep: 300, q: 1.6, attack: 0.015, decay: 0.28, peak: 1.0 });
+    burst(ctx, out, t, { filter: "bandpass", freq: 700 * v, to: 380, q: 1, attack: 0.01, decay: 0.22, peak: 0.5 });
+  },
+  /** A tail slap landing on the Bear: a flat, sharp crack on fur over a deep thud of the body. */
+  smack(ctx, out, t) {
+    burst(ctx, out, t, { filter: "highpass", freq: 1800, attack: 0.001, decay: 0.03, peak: 0.6 });
+    burst(ctx, out, t, { filter: "bandpass", freq: 1500, to: 500, q: 0.8, attack: 0.001, decay: 0.1, peak: 0.7 });
+    tone(ctx, out, t, { freq: 150, to: 50, attack: 0.002, decay: 0.2, peak: 0.6 });
+  },
   /** One chirp of a cricket: three quick pulses of a high tone; amount picks its pitch. */
   cricket(ctx, out, t, amount) {
     const f = 4300 + amount * 600;
@@ -297,6 +316,41 @@ const RECIPES = {
     } else {
       for (let i = 0; i < 10; i++) tone(ctx, out, t, { at: i * 0.045, freq: 4600 * v, to: 3800 * v, attack: 0.004, decay: 0.03, peak: 0.16 + 0.008 * i });
     }
+  },
+  /** A fire's crackle (src/features/flag): a few dry snaps over a soft breath of flame. */
+  crackle(ctx, out, t, amount) {
+    const n = 2 + Math.floor(rand(0, 4));
+    for (let i = 0; i < n; i++) burst(ctx, out, t, { at: rand(0, 0.35), filter: "bandpass", freq: rand(1800, 4200), q: 2, attack: 0.001, decay: rand(0.008, 0.02), peak: rand(0.25, 0.6) * (0.6 + 0.4 * amount) });
+    burst(ctx, out, t, { filter: "lowpass", freq: 900, attack: 0.12, decay: 0.4, peak: 0.08 + 0.06 * amount });
+  },
+  /** One syllable of the Old Beaver's murmur: a low, slow hum through the mouth with a slight wobble, its pitch
+   *  sinking a little; amount (0 … 1) shifts pitch and vowel, so syllables after one another differ. */
+  murmur(ctx, out, t, amount) {
+    const f = 84 * (0.93 + 0.14 * amount) * rand(0.97, 1.03), length = 0.3, attack = 0.08, start = t, end = t + attack + length * 1.6;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.6, start + attack);
+    gain.gain.setTargetAtTime(0, start + attack + length * 0.35, length / 4);
+    const voice = ctx.createOscillator(), wobble = ctx.createOscillator(), depth = ctx.createGain();
+    voice.type = "sawtooth";
+    voice.frequency.setValueAtTime(f, start);
+    voice.frequency.exponentialRampToValueAtTime(f * rand(0.86, 0.93), end);
+    wobble.frequency.value = rand(4.5, 6);
+    depth.gain.value = f * 0.025;
+    wobble.connect(depth).connect(voice.frequency);
+    // Two formants of a closed, rounded vowel ("mm", "oh"), and a lowpass that keeps it dark.
+    const low = ctx.createBiquadFilter(), high = ctx.createBiquadFilter(), dark = ctx.createBiquadFilter(), body = ctx.createGain(), air = ctx.createGain();
+    low.type = high.type = "bandpass";
+    low.frequency.value = 320 + 160 * amount; low.Q.value = 3;
+    high.frequency.value = 780 + 260 * (1 - amount); high.Q.value = 5;
+    dark.type = "lowpass"; dark.frequency.value = 1400; dark.Q.value = 0.7;
+    body.gain.value = 1; air.gain.value = 0.35;
+    voice.connect(low).connect(body).connect(dark);
+    voice.connect(high).connect(air).connect(dark);
+    dark.connect(gain).connect(out);
+    for (const osc of [voice, wobble]) { osc.start(start); osc.stop(end); }
+    // A breath of air on the onset.
+    burst(ctx, out, t, { filter: "bandpass", freq: 600, q: 1.2, attack: 0.04, decay: 0.12, peak: 0.03 });
   },
   /** One wave against the shore. */
   lap(ctx, out, t, amount) {

@@ -64,6 +64,8 @@ export interface Beaver {
   look: Look;
   /** The colour of its calm coat, linear RGB (anger reddens it from there). */
   coat: RGB;
+  /** 0 … 1: grey with age on the muzzle, the face and the pale markings (the Old Beaver); 0 for every player. */
+  grey: number;
   /** Puts every bone where the pose says; bones left out go to rest. */
   pose(pose: Pose): void;
   /** Once per frame, after pose(): whatever the look needs (fur density for the size on screen, …). */
@@ -117,6 +119,14 @@ export interface Motion {
   /** Sits in a canoe (with low "sit") and paddles it: the right arm strokes as the speed says, a paddle in the paw. Only
    *  the local player's own beaver tells it (src/features/canoe); left out: no paddle. */
   paddle?: boolean;
+  /** The player switched the lantern off (a flash): its glass and its light dark. The lantern feature writes it into
+   *  the local player's Motion; it travels to other players. Left out or false: on (bots never flash). */
+  lanternOff?: boolean;
+  /** A Stare (GLOSSARY.md): the head turned to look along yaw and pitch, rad relative to the body (yaw 0 ahead, positive
+   *  to its left; pitch positive up), by weight 0 … 1, unblinking and cocked a little to one side. The stare feature
+   *  writes it into the local player's Motion each frame, so the eyes follow a moving camera. Left out: no stare
+   *  (remotes and bots never stare; it does not travel). */
+  stare?: { weight: number; yaw: number; pitch: number };
 }
 
 export interface Animator {

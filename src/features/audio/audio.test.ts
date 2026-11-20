@@ -80,10 +80,10 @@ test("every sound, the tail slap's crack and thump among them, makes sources tha
 /** How loud each one-shot may be at the camera, at the default volume: LUFS of its loudest 400 ms (M max). */
 const BANDS: [low: number, high: number, names: string[]][] = [
   [-16, -9, ["fanfare", "chime"]], // milestones: the loudest, a few LU over the scene
-  [-20, -11, ["slap", "splash", "crash", "crack", "creak"]], // the alarm and the big moments
-  [-27, -17, ["land", "thump", "shake", "bite", "place", "drop", "pickup", "jump"]], // the beaver at work
+  [-20, -11, ["slap", "splash", "crash", "crack", "creak", "growl", "smack"]], // the alarm and the big moments
+  [-27, -17, ["land", "thump", "shake", "bite", "place", "drop", "pickup", "jump", "murmur", "grunt"]], // the beaver at work, the Old Beaver's murmur, the Bear's grunt
   [-30, -22, ["stepGrass", "stepShore", "stepWater", "paddle"]], // under the ambience
-  [-41, -22, ["owl", "deer", "cricket", "frog", "tick", "plip", "bird", "lap"]], // the world around, far off or many
+  [-41, -22, ["owl", "deer", "cricket", "frog", "tick", "plip", "bird", "lap", "crackle"]], // the world around, far off or many
 ];
 const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap", "underwater"];
 const chrome = existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
