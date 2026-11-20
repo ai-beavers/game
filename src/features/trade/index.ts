@@ -47,7 +47,7 @@ export const create: CreateFeature = (game) => {
   onViewport(stage, () => {
     overlay.clear();
     const at = hudLayout(stage);
-    row = overlay.pill("backpack", at.backpack, at.small, "top");
+    row = overlay.pill("backpack", at.hotbar, at.small, "top");
     row.set(shown);
   });
   const showBackpack = () => { shown = backpackLine(ledger); row?.set(shown); };

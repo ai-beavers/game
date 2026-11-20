@@ -154,7 +154,19 @@ _Avoid_: camera mode, POV, cockpit view
 
 **Experience**:
 The points a player earns by building with sticks, one for each stick built in, and spends at the shop.
-_Avoid_: XP, coins, money, score
+_Avoid_: XP, coins, money, score (the player card writes "XP" only as the unit after its numbers: "12 / 30 XP")
+
+**Level**:
+How far a player has come, from all the Experience they ever earned; spending Experience at the shop does not lower it. Level 2 takes 20 Experience, each level after 10 more than the one before. The player card shows it.
+_Avoid_: rank, tier
+
+**Player card**:
+The card at the top left of the HUD: the player's name, their level and how much Experience they still need for the next one.
+_Avoid_: profile, badge, Experience pill
+
+**Quest tracker**:
+The card under the player card: the build goal at hand, its count and how to do it, and under it the quest (Mrs. Beaver's) with its step at hand.
+_Avoid_: goals panel, mission log
 
 **Saved game**:
 What a player's browser keeps between visits: their experience, outfits and goods. The trees, the dam, the lodge and the cache are not part of it: they are the world's work, which only the server keeps.
@@ -183,7 +195,7 @@ The engine, scene, camera, HUD texture and physics world every part and feature 
 _Avoid_: context, app, renderer
 
 **HUD**:
-Everything drawn over the world for the player: goals, map, hints, menus, touch controls.
+Everything drawn over the world for the player: the player card, the quest tracker, the map, hints, the hotbar, menus, touch controls.
 _Avoid_: UI, GUI, interface
 
 **Overlay**:
