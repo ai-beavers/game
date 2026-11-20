@@ -18,11 +18,15 @@ const way = () => c.buoys.flatMap((b, i) => {
   return Array.from({ length: 10 }, (_, k) => ({ x: b.x + (n.x - b.x) * k / 10, z: b.z + (n.z - b.z) * k / 10 }));
 });
 
-test("the ring is open water at the lowest pond, and clears the lodge and the food cache with room for the canoe", () => {
+test("the ring is open water at every pond level, and clears the lodge and the food cache with room for the canoe", () => {
   const across = { x: POND.x - SITE.x, z: POND.z - SITE.z }, l = Math.hypot(across.x, across.z);
   const lodge = { x: POND.x + across.x / l * 0.6, z: POND.z + across.z / l * 0.6 }; // build/dam.ts lodgeAt
+  for (let k = 0; k <= 4; k++) {
+    const level = low + POND_RISE * k / 4; // no dam to a finished one: the buoys stay where they are
+    expect(course(POND, bankPlace(POND, spawn, heightAt, level))).toEqual(c);
+    for (const p of way()) expect(level - heightAt(p.x, p.z)).toBeGreaterThan(0.3); // the canoe needs 0.25 m under its seat
+  }
   for (const p of way()) {
-    expect(low - heightAt(p.x, p.z)).toBeGreaterThan(0.3); // the canoe needs 0.25 m under its seat
     expect(from(p, lodge)).toBeGreaterThan(LODGE_REACH + 0.3 + 0.1); // the lodge, half the canoe's beam, a little
     expect(from(p, CACHE_AT)).toBeGreaterThan(0.4 + 0.3);
   }

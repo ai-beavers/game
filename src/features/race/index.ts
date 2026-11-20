@@ -19,6 +19,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { CreateFeature } from "../../game.ts";
 import { material } from "../../world/models.ts";
+import { GOLD } from "../hud/style.ts";
 import { bankPlace } from "../canoe/place.ts";
 import { raceCard } from "./card.ts";
 import { course, newRace, stepRace, type Place, type RaceState } from "./rules.ts";
@@ -39,10 +40,10 @@ export const create: CreateFeature = (game) => {
     ...[c.start.a, c.start.b].map((b, i) => ({ at: b, mesh: post.createInstance(`start buoy ${i}`) })),
   ];
   for (const { mesh } of marks) { mesh.isPickable = false; mesh.rotation.y = Math.random() * Math.PI * 2; }
-  const gold = material(scene, "race ring", 0xf2a53a);
+  const gold = material(scene, "race ring", parseInt(GOLD.slice(1), 16));
   const rings = [0, 1].map((i) => {
     const ring = MeshBuilder.CreateTorus(`race ring ${i}`, { diameter: 0.62, thickness: 0.05, tessellation: 28 }, scene);
-    gold.emissiveColor = Color3.FromHexString("#f2a53a").scale(0.35); // seen at dusk, under the bloom's threshold at night
+    gold.emissiveColor = Color3.FromHexString(GOLD).scale(0.35); // seen at dusk, under the bloom's threshold at night
     ring.material = gold; ring.isPickable = false; ring.setEnabled(false);
     return ring;
   });

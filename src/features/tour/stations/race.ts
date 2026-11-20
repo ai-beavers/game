@@ -2,6 +2,7 @@
 // line again; the race card shows the lap and the time, and at the finish the time and the best time. Out of the canoe
 // the race card is gone.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { LAPS } from "../../race/rules.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
@@ -68,10 +69,10 @@ export const racing = (kit: Kit): Station[] => {
         await until(started, 3, `crossed the start line, no race started (${JSON.stringify(race.state)})`);
         expect(race.state.kind === "racing" && race.state.lap === 1, `the race started, but it is ${JSON.stringify(race.state)}`);
         await until(shown, 1, "racing, but the race card is not up");
-        expect(/^Lap 1\/3$/.test(hudText("race-lap")), `the race card says "${hudText("race-lap")}", not "Lap 1/3"`);
+        expect(hudText("race-lap") === `Lap 1/${LAPS}`, `the race card says "${hudText("race-lap")}", not "Lap 1/${LAPS}"`);
         // 3. Three laps: to each next buoy in turn, then across the line again.
         const past = { x: start.middle.x + start.forward.x * 0.6, z: start.middle.z + start.forward.z * 0.6 };
-        for (let lap = 1; lap <= 3; lap++) {
+        for (let lap = 1; lap <= LAPS; lap++) {
           for (let i = 0; i < n; i++) {
             const was = passed.length;
             await paddle(buoys[i]!, 0.3, () => passed.length > was);
@@ -80,11 +81,11 @@ export const racing = (kit: Kit): Station[] => {
           const lapped = laps.length;
           await paddle(past, 0.3, () => laps.length > lapped);
           await until(() => laps.length > lapped, 3, `crossed the line after lap ${lap}'s buoys, no lap counted (${JSON.stringify(race.state)})`);
-          if (lap < 3) expect(hudText("race-lap") === `Lap ${lap + 1}/3`, `on lap ${lap + 1}, the race card says "${hudText("race-lap")}"`);
+          if (lap < LAPS) expect(hudText("race-lap") === `Lap ${lap + 1}/${LAPS}`, `on lap ${lap + 1}, the race card says "${hudText("race-lap")}"`);
         }
       } finally { off.forEach((f) => f()); }
-      expect(JSON.stringify(passed) === JSON.stringify([0, 1, 2].flatMap(() => buoys.map((_, i) => i))), `the buoys were passed in this order: ${passed.join(" ")}`);
-      expect(JSON.stringify(laps) === "[1,2,3]", `laps counted: ${laps.join(" ")}`);
+      expect(JSON.stringify(passed) === JSON.stringify(Array.from({ length: LAPS }).flatMap(() => buoys.map((_, i) => i))), `the buoys were passed in this order: ${passed.join(" ")}`);
+      expect(JSON.stringify(laps) === JSON.stringify(Array.from({ length: LAPS }, (_, i) => i + 1)), `laps counted: ${laps.join(" ")}`);
       // 4. The finish: a time, the best no slower, the card showing it.
       await until(finished, 2, "three laps, but the race never finished");
       const { time, best } = last.raceFinish!;
