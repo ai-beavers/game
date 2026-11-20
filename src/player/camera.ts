@@ -64,6 +64,7 @@ const SWIM_PITCH = 0.13, SWIM_BACK = 0.08; // lower (rad) and farther (fraction)
 const WORK_CLOSE = 0.22, WORK_SIDE = 0.45; // closer (fraction) and round to the side (rad) while gnawing or building
 const ZOOM = 6; // 1/s, the eased zoom
 const LEFT_ALONE = 3, CENTRE = 0.5, AHEAD = 0.5; // s without look input, 1/s back to rest, rad within which it swings behind
+const JOLT = 0.22, JOLT_FOV = 0.07, JOLT_EASE = 9; // a blow at full strength: m the picture jumps, rad the lens closes in, 1/s it settles
 const WATER_GAP = 0.3, UNDER_GAP = 0.25; // m the camera keeps above the water, and below it while the beaver dives
 const DIVE_RAMP = 1.0; // 1/s: how fast the camera goes under and up again (under in about a second, through the surface in a third)
 // Under water: the look point lower (m, at the diving body), the camera level with it (rad lower), a little nearer
@@ -209,7 +210,7 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
   const { camera, physics, canvas, engine } = stage;
   const look = new Vector3(), direction = new Vector3(), probe = new Vector3(), ball = new RAPIER.Ball(BALL), rig = newRig();
   const rotation = { x: 0, y: 0, z: 0, w: 1 };
-  let shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0, touched = 0;
+  let shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0, touched = 0, jolt = 0;
   let seen: View = "third-person", eyes: TransformNode | undefined, eyeChain: TransformNode[] = [];
   // The hold: the point it looks at, where the camera stands for it, how far it is held (0 … 1, on a spring).
   let hold = false, held = 0, heldV = 0;
@@ -263,6 +264,8 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       eyes = node; eyeChain = [];
       for (let n: Node | null = node ?? null; n; n = n.parent) if (n instanceof TransformNode) eyeChain.unshift(n);
     },
+    /** A blow landed (src/features/bear): the picture jumps and closes in for a moment, 0 … 1 hard; it settles by itself. */
+    jolt(amount: number) { jolt = Math.max(jolt, amount); },
     turn(yaw: number, pitch: number) {
       if (yaw || pitch) { idle = 0; touched++; }
       state.yaw += yaw;
@@ -281,6 +284,7 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
         camera.fov = lens(engine.getAspectRatio(camera) || 16 / 9).fov;
         state.pitch = pitchRange(state.pitch);
         camera.setTarget(gaze(state.yaw, state.pitch).addInPlace(camera.position));
+        jolt = 0; // through its own eyes the picture already jumps with the head
         return;
       }
       state.pitch = pitchRange(state.pitch);
@@ -345,9 +349,13 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
         const to = heldLook.subtract(camera.position).normalize();
         camera.setTarget(Vector3.Lerp(ahead, to, k).normalize().addInPlace(camera.position));
         if (!hold && held <= 0.001) held = heldV = 0;
-        return;
+      } else camera.setTarget(ahead.addInPlace(camera.position));
+      if (jolt > 0.01) {
+        // Moved after it was aimed, so the whole picture shakes; the lens closes in a little with it.
+        camera.position.addInPlaceFromFloats((Math.random() - 0.5) * JOLT * jolt, (Math.random() - 0.5) * JOLT * jolt, (Math.random() - 0.5) * JOLT * jolt);
+        camera.fov -= JOLT_FOV * jolt;
+        jolt *= Math.exp(-JOLT_EASE * dt);
       }
-      camera.setTarget(ahead.addInPlace(camera.position));
     },
   };
   // Drag to orbit, wheel to zoom; the page does not scroll or pan.

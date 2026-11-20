@@ -19,7 +19,6 @@ import { hex } from "../../world/color.ts";
 // Babylon thin instance batch per kind. Fewer animals at lower settings.quality. Deer and owl are drawn (and
 // stepped) only in their hours: outside them their batches are switched off.
 import type { CreateFeature, Feature } from "../../game.ts";
-import { daylightOf } from "../../light.ts";
 import { seeded } from "../../world/noise.ts";
 import { placeAll } from "../../world/place.ts";
 import { BASIN, POND, RIM, groundAt } from "../../world/terrain.ts";
@@ -29,11 +28,9 @@ import {
 } from "./brain.ts";
 import { makeDeep, startleDeep, stepDeep, type Bed } from "./deep.ts";
 import {
-  animalMesh, bedShape, bigFishShape, birdShape, butterflyShape, deerShape, dragonflyShape, duckShape, fishShape, frogShape, minnowShape, owlShape, striderShape,
+  animalMesh, bedShape, bigFishShape, birdShape, butterflyShape, deerShape, dragonflyShape, duckShape, fishShape, frogShape, lightAnimal, minnowShape, owlShape, striderShape,
 } from "./shapes.ts";
 import { sunAt } from "../sky/clock.ts";
-import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
-import type { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { DepthRenderer } from "@babylonjs/core/Rendering/depthRenderer.js";
 
@@ -143,8 +140,7 @@ export const create = ((game) => {
     if (heard.length > 4) heard.shift();
   };
   Object.assign(window, { life: { get animals() { return animals; }, heard } });
-  const sun = scene.getLightByName("sun") as DirectionalLight | null, skylight = scene.getLightByName("skylight") as HemisphericLight | null, towards = new Vector3();
-  const lantern = daylightOf(scene)?.lantern;
+  const towards = new Vector3();
 
   const place = new Vector3(), size = Vector3.One(), turn = Quaternion.Identity(), matrix = Matrix.Identity();
   const put = (animal: ReturnType<typeof animalMesh>, i: number, x: number, y: number, z: number, heading: number, pitch = 0, roll = 0, scale = 1,
@@ -287,13 +283,7 @@ export const create = ((game) => {
       ring.visibility = 1 - age;
     });
   }
-  function light(animal: ReturnType<typeof animalMesh>) {
-    const camera = scene.activeCamera ?? stage.camera;
-    animal.material.setVector3("cameraPosition", camera.globalPosition).setFloat("waterLevel", land.water);
-    if (sun) animal.material.setVector3("sunDirection", sun.direction).setColor3("sunColor", sun.diffuse.scale(sun.intensity * 0.45));
-    if (skylight) animal.material.setColor3("skyColor", skylight.diffuse.scale(skylight.intensity * 0.6)).setColor3("groundColor", skylight.groundColor.scale(skylight.intensity * 0.6));
-    if (lantern) animal.material.setVector3("lanternAt", lantern.at).setColor3("lanternGlow", lantern.glow);
-  }
+  const light = (animal: ReturnType<typeof animalMesh>) => lightAnimal(scene, animal.material, land.water);
 
   // Under water every animal goes into the depth map posed as it is drawn (shapes.ts: depth), so the water's fog lies
   // on it by its own distance. The map is the under-water pass's (src/features/post), there once that feature runs.

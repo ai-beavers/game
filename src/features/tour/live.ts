@@ -85,7 +85,7 @@ export interface Moment {
 
 /** The activities the newest features added, and the day each came (UTC). A feature with an activity of its own
  *  enters it here; the beaver is curious about it for FRESH days. Drop an entry once it is older. */
-const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18", Canoeing: "2026-11-18", "Find Mrs. Beaver": "2026-11-19", "Left alone": "2026-11-19", "Burn the flag": "2026-11-20", "Visit the Old Beaver": "2026-11-19", "Hold a good": "2026-11-20" };
+const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18", Canoeing: "2026-11-18", "Find Mrs. Beaver": "2026-11-19", "Left alone": "2026-11-19", "Burn the flag": "2026-11-20", "Visit the Old Beaver": "2026-11-19", "Hold a good": "2026-11-20", "Drive off the bear": "2026-11-20", "Canoe race": "2026-11-20" };
 const FRESH = 7; // days
 export const fresh = (activity: string, m: Moment) => {
   const since = m.day === undefined || !NEW[activity] ? NaN : (m.day - Date.parse(NEW[activity]!)) / 86_400_000;
@@ -134,7 +134,9 @@ export function reason(activity: string, m: Moment): string {
     case "Visit the Old Beaver": return "Who mutters in the thicket?";
     case "Left alone": return "Nobody's touching the controls. I'll just… look at you.";
     case "Burn the flag": return "That flag has had it.";
+    case "Drive off the bear": return "A bear! Not in my clearing.";
     case "Hold a good": return "What's in my backpack again?";
+    case "Canoe race": return "Three laps round my pond. Go!";
     default: return activity;
   }
 }

@@ -6,7 +6,9 @@ import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { hex as C } from "../../world/color.ts";
 import { smoothstep } from "../../world/noise.ts";
-import { LANTERN_GLSL, LANTERN_UNIFORMS } from "../../light.ts";
+import { daylightOf, LANTERN_GLSL, LANTERN_UNIFORMS } from "../../light.ts";
+import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
+import type { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
 
 const smooth = (x: number, a: number, b: number) => smoothstep(a, b, x);
 type Paint = (p: Vector3, n: Vector3, out: Color3) => void;
@@ -499,6 +501,18 @@ export function deerShape(): Shape {
         n = normalize(n);
       }`,
   };
+}
+
+/** Feeds a lit animal's material what its shader lights itself by, once a picture: the camera, the water's level, the
+ *  scene's sun (or moon) and sky, and the lantern. */
+export function lightAnimal(scene: Scene, material: ShaderMaterial, waterLevel: number) {
+  const camera = scene.activeCamera, sun = scene.getLightByName("sun") as DirectionalLight | null, sky = scene.getLightByName("skylight") as HemisphericLight | null;
+  const lantern = daylightOf(scene)?.lantern;
+  material.setFloat("waterLevel", waterLevel);
+  if (camera) material.setVector3("cameraPosition", camera.globalPosition);
+  if (sun) material.setVector3("sunDirection", sun.direction).setColor3("sunColor", sun.diffuse.scale(sun.intensity * 0.45));
+  if (sky) material.setColor3("skyColor", sky.diffuse.scale(sky.intensity * 0.6)).setColor3("groundColor", sky.groundColor.scale(sky.intensity * 0.6));
+  if (lantern) material.setVector3("lanternAt", lantern.at).setColor3("lanternGlow", lantern.glow);
 }
 
 // ---- a tawny owl, 38 cm tall ---------------------------------------------------------------------------------------
