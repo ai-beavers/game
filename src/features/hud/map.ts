@@ -9,7 +9,7 @@ import { hex as colorFromHex } from "../../world/color.ts";
 //
 // North up, fixed: up on the map is +z, the way the camera looks at the start, so right is -x.
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
-import { GOLD } from "./style.ts";
+import { FONT, GOLD, INK, PANEL, PAPER, PLAYERS, STICKS } from "./style.ts";
 
 /** Half the width of the mapped square around the middle of the clearing, m, and metres per pixel. */
 export const EXTENT = 38;
@@ -38,6 +38,8 @@ export interface MapView {
   /** The Shop (src/features/shop): a round roof with its mirror ball's sparkle. */
   shop?: Point;
   players?: (Point & { name: string })[];
+  /** Where the goal at hand is done, and its chip ("Dam · 14 m"), kept inside the map when it lies beyond. */
+  objective?: Point & { label: string };
   /** The pond's surface now; the ground is painted again when it moves. */
   level?: number;
 }
@@ -149,22 +151,30 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
         const [x, y] = at(stick);
         g.beginPath();
         g.arc(x, y, 2.6 * unit, 0, Math.PI * 2);
-        g.fillStyle = "#f2d49a"; g.strokeStyle = "rgba(40,28,14,0.8)";
+        g.fillStyle = STICKS; g.strokeStyle = "rgba(40,28,14,0.8)";
         g.fill(); g.stroke();
       }
-      g.font = `600 ${Math.round(10 * unit)}px system-ui, sans-serif`;
+      g.font = `800 ${Math.round(9 * unit)}px ${FONT}`;
       g.textBaseline = "middle";
+      /** A chip: text on a rounded backing, its left end at x (or its middle, centred), kept inside the map. */
+      const chip = (text: string, x: number, y: number, back: string, ink: string, centred = false) => {
+        const h = 14 * unit, w = g.measureText(text).width + 10 * unit;
+        x = Math.max(2, Math.min(px - w - 2, centred ? x - w / 2 : x)); y = Math.max(h / 2 + 2, Math.min(px - h / 2 - 2, y));
+        g.beginPath(); g.roundRect(x, y - h / 2, w, h, h / 2);
+        g.fillStyle = back; g.fill();
+        g.fillStyle = ink; g.fillText(text, x + 5 * unit, y + 0.5 * unit);
+      };
       for (const p of view.players ?? []) {
         const [x, y] = at(p);
         g.beginPath();
         g.arc(x, y, 4 * unit, 0, Math.PI * 2);
-        g.fillStyle = "#8fd3ff"; g.strokeStyle = "#ffffff";
+        g.fillStyle = PLAYERS; g.strokeStyle = "#ffffff";
         g.fill(); g.stroke();
-        g.lineWidth = 3 * unit; g.strokeStyle = "rgba(20,24,30,0.75)";
-        g.strokeText(p.name, x + 6.5 * unit, y);
-        g.fillStyle = "#f3efe6";
-        g.fillText(p.name, x + 6.5 * unit, y);
-        g.lineWidth = 1.2 * unit;
+        chip(p.name, x - 2 * unit, y + 12 * unit, PANEL, PAPER, true);
+      }
+      if (view.objective) {
+        const [x, y] = at(view.objective);
+        chip(view.objective.label, x, y - 12 * unit, GOLD, INK, true);
       }
       const [bx, by] = at(view.beaver);
       // Where the camera looks: a faint wedge. The camera looks along (-sin yaw, -cos yaw) in x, z.
@@ -182,7 +192,7 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
       g.beginPath();
       g.moveTo(0, -7 * unit); g.lineTo(5 * unit, 5 * unit); g.lineTo(0, 2.5 * unit); g.lineTo(-5 * unit, 5 * unit);
       g.closePath();
-      g.fillStyle = "#ffffff"; g.strokeStyle = "rgba(20,24,30,0.9)"; g.lineJoin = "round";
+      g.fillStyle = GOLD; g.strokeStyle = "#ffffff"; g.lineJoin = "round"; // you: orange, as in the legend
       g.fill(); g.stroke();
       g.restore();
     },

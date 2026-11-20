@@ -1,5 +1,6 @@
 // The Shop: a small disco-like hut on dry ground in the Clearing, HOUSE OF AI on the sign in front, a café inside.
-// Players earn Experience, one for each stick they build in (the dam, the lodge, the food cache), and the Shopkeeper
+// Players earn Experience, one for each stick they build in (the dam, the lodge, the food cache); all ever earned
+// gives their level on the player card (rules.ts levelOf), and spending does not lower it. The Shopkeeper
 // behind the counter sells Outfits for it: walk in, press Use (E / X / the Use button) at the counter, buy one and the
 // beaver wears it at once. Bought Outfits are kept; switching between them, or back to the default look, is free.
 //
@@ -66,7 +67,7 @@ export const create: CreateFeature = async (game) => {
     buy(id: OutfitId) { if (buy(state, id)) { save(); dress(); hud.show(state); } },
     wear(id: OutfitId) { if (wear(state, id)) { save(); dress(); hud.show(state); } },
     close: () => hud.close(),
-  });
+  }, () => settings.values.name);
   hud.show(state);
   events.on("buildChange", ({ change, remote }) => {
     if (remote || change.type !== "place") return;

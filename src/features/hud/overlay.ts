@@ -3,15 +3,24 @@
 import { Container } from "@babylonjs/gui/2D/controls/container.js";
 import { Control } from "@babylonjs/gui/2D/controls/control.js";
 import { Rectangle } from "@babylonjs/gui/2D/controls/rectangle.js";
+import { Image } from "@babylonjs/gui/2D/controls/image.js";
 import { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
+import nunito from "../../../assets/nunito.woff2" with { type: "file" };
 import type { Stage } from "../../engine.ts";
-import { GOLD, INK, layout, PANEL, PAPER, RADIUS, SHADOW, type Box } from "./style.ts";
+import { icon, type Icon } from "./icons.ts";
+import { CAP, FONT, GOLD, INK, layout, PANEL, PAPER, RADIUS, SHADOW, type Box } from "./style.ts";
 
 export const box = (x: number, y: number, w: number, h: number): Box => ({ x, y, w, h });
 export { GOLD, PANEL };
-const EDGE = "#88958a";
+const EDGE = "rgba(255,246,228,0.22)";
 /** A button at rest (not primary, not pressed). */
-export const BUTTON_BACK = "#324540";
+export const BUTTON_BACK = "#3a2a1c";
+
+// The HUD's face from the bundle, never from the network. Until it is there the HUD draws in the fallback; once it is,
+// every overlay lays itself out again (onViewport) with the widths measured anew.
+const face = new FontFace("Nunito", `url(${nunito})`, { weight: "200 1000" });
+document.fonts.add(face);
+const fontReady = face.load().then(() => { widths.clear(); }, () => { /* the fallback stays */ });
 const left = Control.HORIZONTAL_ALIGNMENT_LEFT, top = Control.VERTICAL_ALIGNMENT_TOP;
 type Action = HTMLButtonElement | HTMLInputElement;
 
@@ -89,7 +98,8 @@ export class Overlay {
 
   text(name: string, value: string, r: Box, size = 14, align: "left" | "center" = "left", describe = true) {
     const text = this.put(new TextBlock(name, value), r);
-    text.fontFamily = "system-ui, sans-serif";
+    text.fontFamily = FONT;
+    text.fontWeight = "600";
     text.fontSize = size;
     text.color = PAPER;
     text.textWrapping = true;
@@ -114,35 +124,61 @@ export class Overlay {
   }
 
   /** A backing sized to its text, which may change every frame: in `slot` against its top or bottom edge, centred
-   *  across it, or anywhere with at(). Hidden while the text is empty. */
+   *  across it, or anywhere with at(). Hidden while the text is empty. With `key`, a key cap leads the text (set's
+   *  second argument, "" for none). */
   pill(name: string, slot: Box, size: number, anchor: "top" | "bottom" = "bottom", describe = true) {
     const back = this.rect(name + "-back", slot, PANEL, 0);
     const text = this.label(name, "", slot, size, "center", describe);
-    const pad = Math.round(size * 0.6), lineH = Math.round(size * 1.3);
-    back.isVisible = false;
-    let w = 0, h = 0;
+    const pad = Math.round(size * 0.6), lineH = Math.round(size * 1.3), capSize = Math.round(size * 1.35);
+    const cap = this.cap(name + "-key", "", box(0, 0, capSize, capSize), Math.round(size * 0.8));
+    back.isVisible = cap.back.isVisible = false;
+    let w = 0, h = 0, lead = 0;
     const pill = {
       back, text, slot,
       /** Width and height for a text, wrapped to the slot's width. */
       measure(value: string) {
-        const room = pill.slot.w - 2 * pad, widths = value.split("\n").map(line => measure(line, size, String(text.fontWeight || "normal")));
+        const room = pill.slot.w - 2 * pad - lead, widths = value.split("\n").map(line => measure(line, size, String(text.fontWeight || "normal")));
         const lines = widths.reduce((n, lw) => n + Math.max(1, Math.ceil(lw / room)), 0);
-        return { w: Math.min(pill.slot.w, Math.ceil(Math.max(...widths)) + 2 * pad + 4), h: lines * lineH + Math.round(pad * 1.2) };
+        return { w: Math.min(pill.slot.w, Math.ceil(Math.max(...widths)) + 2 * pad + 4 + lead), h: Math.max(lines * lineH + Math.round(pad * 1.2), lead ? capSize + pad : 0) };
       },
-      set(value: string) {
-        if (value === text.text && back.isVisible === !!value) return;
-        text.text = value; back.isVisible = !!value;
+      set(value: string, key = "") {
+        if (value === text.text && key === cap.text.text && back.isVisible === !!value) return;
+        text.text = value; back.isVisible = !!value; cap.text.text = key;
+        cap.back.isVisible = !!value && !!key;
+        lead = key ? capSize + Math.round(pad * 0.8) : 0;
         if (!value) return;
         ({ w, h } = pill.measure(value));
         pill.at(pill.slot.x + (pill.slot.w - w) / 2, anchor === "top" ? pill.slot.y : pill.slot.y + pill.slot.h - h);
       },
       at: (x: number, y: number) => {
         x = Math.round(x); y = Math.round(y);
-        this.move(back, box(x, y, w, h)); this.move(text, box(x + pad - 2, y, w - 2 * pad + 4, h));
-        back.cornerRadius = Math.min(RADIUS * 1.6, h / 2);
+        this.move(back, box(x, y, w, h)); this.move(text, box(x + pad - 2 + lead, y, w - 2 * pad + 4 - lead, h));
+        if (lead) cap.at(x + Math.round(pad * 0.7), y + Math.round((h - capSize) / 2));
+        back.cornerRadius = h / 2;
       },
     };
     return pill;
+  }
+
+  /** A key cap: the key in dark ink on a cream rounded square, `r` big; at() moves it. Not read out (the text it
+   *  stands beside says what to do). */
+  cap(name: string, key: string, r: Box, size: number) {
+    const back = this.rect(name, r, CAP.back, CAP.radius);
+    const text = this.text(name + "-letter", key, r, size, "center", false);
+    text.color = CAP.ink; text.fontWeight = "900"; text.textWrapping = false;
+    back.onIsVisibleChangedObservable.add(on => { text.isVisible = on; });
+    // A wider key ("Use", "Tab") widens its cap.
+    const fit = () => Math.max(r.w, Math.ceil(measure(text.text, size, "900")) + Math.round(size * 0.8));
+    const at = (x: number, y: number) => { const w = fit(); this.move(back, box(x, y, w, r.h)); this.move(text, box(x, y, w, r.h)); return w; };
+    at(r.x, r.y);
+    return { back, text, at };
+  }
+
+  /** One of the HUD's icons (icons.ts) in a colour, `r` big. */
+  icon(name: string, which: Icon, r: Box, color: string) {
+    const image = this.put(new Image(name, icon(which, color)), r);
+    image.stretch = Image.STRETCH_UNIFORM;
+    return image;
   }
 
   /** An announcement: a pill in gold, hung from the top of its slot. */
@@ -243,12 +279,12 @@ export const underGoals: { box: Box | undefined } = { box: undefined };
 
 const context = document.createElement("canvas").getContext("2d")!, widths = new Map<string, number>();
 /** Width of a text in px as the HUD draws it, kept per text and size. */
-export function measure(text: string, size: number, weight = "normal") {
+export function measure(text: string, size: number, weight = "600") {
   const key = weight + size + "|" + text;
   let width = widths.get(key);
   if (width === undefined) {
     if (widths.size > 500) widths.clear();
-    context.font = `${weight} ${size}px system-ui, sans-serif`;
+    context.font = `${weight} ${size}px ${FONT}`;
     widths.set(key, width = context.measureText(text).width);
   }
   return width;
@@ -268,5 +304,6 @@ export function onViewport(stage: Stage, layout: (width: number, height: number)
   observer.observe(stage.canvas);
   const cleanup = stage.scene.onDisposeObservable.addOnce(() => observer.disconnect());
   update();
+  void fontReady.then(() => { width = -1; update(); }); // laid out again in the HUD's own face
   return () => { observer.disconnect(); stage.scene.onDisposeObservable.remove(cleanup); };
 }
