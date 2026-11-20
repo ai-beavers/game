@@ -1,13 +1,15 @@
-// Sky watch: a day passing, the same hour for all in a shared world, the lantern at night and from the backpack, deer at dusk, rain and fog.
+// Sky watch: a day passing, the same hour for all in a shared world, the lantern at night, from the backpack and flashed, deer at dusk, rain and fog.
+import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { deerHours, type Deer } from "../../life/brain.ts";
+import { packMotion } from "../../net/protocol.ts";
 import { dayAt } from "../../sky/clock.ts";
 import { hourAt } from "../../sky/day.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 export const skyWatch = (kit: Kit): Station[] => {
-  const { player, world, stage, beaver, live, fast, wait, until, walkTo, flat, expect, sky, hudText } = kit;
+  const { player, world, stage, beaver, live, fast, wait, until, walkTo, flat, expect, sky, hudText, key } = kit;
   return [
     ["A day passes", async () => {
       const s = sky(), hour = s.hour, running = s.running;
@@ -108,6 +110,45 @@ export const skyWatch = (kit: Kit): Station[] => {
         expect(drawn("backpack"), "the backpack went with the lantern");
       } finally {
         s.setHour(hour); s.running = running; s.setWeather("auto");
+      }
+    }, "Sky watch"],
+    // A viewer's wish: a flash. While the lantern is out, L switches it off and on again at once: its light and its
+    // glass go dark together, and the Motion the beaver sends to other players says so (src/features/lantern). By day
+    // L does nothing. Live it plays only at night and never sets the clock; it always leaves the lantern lit.
+    ["Flash the lantern", async () => {
+      const s = sky(), { scene } = stage, game = kit.game;
+      if (live && s.dark <= 0.5) return skip(`not dark enough for the lantern at ${s.hour.toFixed(1)} h`);
+      const lantern = () => game.lantern ?? skip("no lantern");
+      const light = () => scene.getLightByName("lantern-light") ?? skip("no lantern light");
+      const glass = () => (scene.getMaterialByName("lantern-glass") as StandardMaterial | null)?.emissiveColor ?? skip("no lantern glass");
+      const glows = () => glass().r > 0.05, shines = () => light().intensity > 0;
+      const sent = () => packMotion(player.motion).at(-1); // the lantern's switch, last in what the others get
+      const hour = s.hour, running = s.running;
+      try {
+        if (!live) { s.running = false; s.setWeather("fair"); s.setHour(23); }
+        await until(() => lantern().out, 6, `no lantern out at ${s.hour.toFixed(1)} h`);
+        await until(() => shines() && glows(), 3, "the lantern is out but neither shines nor glows");
+        await wait(1); // a look at it lit
+        for (const n of [1, 2]) { // off, on: twice, a flash a friend can read
+          key("KeyL");
+          await until(() => light().intensity === 0 && !glows(), 0.2, `pressed L, the lantern still shines (${light().intensity.toFixed(2)}) or glows (${glass().r.toFixed(2)})`);
+          expect(sent() === 1, `switched off, the beaver tells the others ${sent()}, not 1`);
+          await wait(n === 1 ? 1.2 : 0.4); // a long dark, then a short
+          key("KeyL");
+          await until(() => shines() && glows(), 0.2, "pressed L again, the lantern stays dark");
+          expect(sent() === 0, `switched on again, the beaver tells the others ${sent()}, not 0`);
+          await wait(0.4);
+        }
+        if (live) return;
+        s.setHour(13);
+        await until(() => !lantern().out, 4, "the lantern is still out at noon");
+        key("KeyL");
+        await wait(0.5);
+        expect(!lantern().off && sent() === 0, "pressed L at noon with the lantern in the backpack, it switched off");
+        expect(!lantern().out && light().intensity === 0, "pressed L at noon, the lantern came out or shines");
+      } finally {
+        if (game.lantern?.off) { key("KeyL"); await wait(0.1); } // left lit for whoever comes next
+        if (!live) { s.setHour(hour); s.running = running; s.setWeather("auto"); }
       }
     }, "Sky watch"],
     // Dusk: deer come out of the forest's edge to graze (src/features/life); the beaver runs at one, it bounds off into

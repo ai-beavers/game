@@ -1,7 +1,8 @@
-// The game on Cloudflare: this Worker answers /net and below; every other address is a file of dist/, which
+// The game on Cloudflare: this Worker answers /net and below (/net/events, the House of AI events, itself; the rest
+// through the World); every other address is a file of dist/, which
 // Cloudflare serves without running this (wrangler.jsonc). One Durable Object, World, is the shared world: it runs
 // the same room as server.ts (src/features/net/room.ts) on Cloudflare's WebSockets and keeps the world's work in its
-// own storage.
+// own storage. A second object of the same class is the tour's world (?world=tour, protocol.ts TOUR_WORLD).
 //
 //   bun run build && bunx wrangler dev      the Worker on this machine, port 8787 (no account needed)
 //   bunx wrangler deploy                    what the deploy job of .github/workflows/check.yml runs on main
@@ -14,44 +15,53 @@
 //
 // A deploy ends the object without warning: every player reconnects, and work of the last SAVE_AFTER ms can be lost.
 import { DurableObject } from "cloudflare:workers";
-import { clientAddress, INFO_PATH, PATH, PROXY_HEADERS, RESET_PATH } from "./src/features/net/protocol.ts";
+import { clientAddress, EVENTS_PATH, INFO_PATH, PATH, PROXY_HEADERS, RESET_PATH, TOUR_WORLD, worldOf } from "./src/features/net/protocol.ts";
 import { newRoom, type Socket } from "./src/features/net/room.ts";
+import { houseOfAiEvents } from "./src/features/shop/events.ts";
 
-interface Env { WORLD: DurableObjectNamespace<World>; GIT_SHA?: string; RESET_TOKEN?: string }
+/** HOUSE_OF_AI_FEED (--var): another iCal address for the House of AI events than Luma's (the tests' fixture). */
+interface Env { WORLD: DurableObjectNamespace<World>; GIT_SHA?: string; RESET_TOKEN?: string; HOUSE_OF_AI_FEED?: string }
 
 const KEPT = "world"; // the key the world's work is kept under, as the text server.ts keeps in WORLD_FILE
 const NOT_FOUND = () => new Response("not found", { status: 404 });
+// shortcut: the copy of the events is kept per isolate, so Cloudflare may hold a few; move it into World if Luma minds.
+let events: ReturnType<typeof houseOfAiEvents> | undefined;
 
 export default {
   fetch(req, env) {
-    const { pathname } = new URL(req.url);
+    const { pathname, searchParams } = new URL(req.url);
+    if (pathname === EVENTS_PATH) return (events ??= houseOfAiEvents(env.HOUSE_OF_AI_FEED || undefined))();
     if (pathname !== PATH && pathname !== INFO_PATH && pathname !== RESET_PATH) return NOT_FOUND();
-    // One world for everyone: the same object by its fixed name, placed in western Europe when it is first made.
-    return env.WORLD.get(env.WORLD.idFromName("world"), { locationHint: "weur" }).fetch(req);
+    // One world for everyone, and the tour's beside it: each the same object by its fixed name, placed in western
+    // Europe when it is first made.
+    return env.WORLD.get(env.WORLD.idFromName(worldOf(searchParams) || "world"), { locationHint: "weur" }).fetch(req);
   },
 } satisfies ExportedHandler<Env>;
 
 export class World extends DurableObject<Env> {
-  private room: ReturnType<typeof newRoom>;
+  private made?: ReturnType<typeof newRoom>;
 
-  constructor(ctx: DurableObjectState, env: Env) {
-    super(ctx, env);
-    const saved = ctx.storage.kv.get<string>(KEPT);
-    this.room = newRoom({ version: env.GIT_SHA ?? "", saved, keep: (text) => ctx.storage.kv.put(KEPT, text) });
-    if (this.room.broken) ctx.storage.kv.put(`${KEPT}.bad`, saved); // kept aside, as server.ts keeps a broken file
+  /** The room, made at the first request: only its address says which world this object is. */
+  private roomOf(url: URL) {
+    if (this.made) return this.made;
+    const { ctx, env } = this, saved = ctx.storage.kv.get<string>(KEPT);
+    this.made = newRoom({ version: env.GIT_SHA ?? "", saved, keep: (text) => ctx.storage.kv.put(KEPT, text), sandbox: worldOf(url.searchParams) === TOUR_WORLD });
+    if (this.made.broken) ctx.storage.kv.put(`${KEPT}.bad`, saved); // kept aside, as server.ts keeps a broken file
+    return this.made;
   }
 
   override async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url), addresses = [`${url.origin}/`]; // players share the address they came to
-    if (url.pathname === INFO_PATH) return Response.json(this.room.info(addresses, url.searchParams.has("build")));
+    const room = this.roomOf(url);
+    if (url.pathname === INFO_PATH) return Response.json(room.info(addresses, url.searchParams.has("build")));
     if (url.pathname === RESET_PATH) {
       if (req.method !== "POST" || !(await holdsToken(req.headers.get("authorization"), this.env.RESET_TOKEN))) return NOT_FOUND();
-      this.room.reset();
+      room.reset();
       return new Response("The world is reset.\n");
     }
     // Cloudflare writes the client's address into its header itself: nobody else can.
     const address = clientAddress(req.headers, undefined, PROXY_HEADERS.cloudflare);
-    const refused = this.room.refuse(req.headers.get("origin"), req.headers.get("host"), address);
+    const refused = room.refuse(req.headers.get("origin"), req.headers.get("host"), address);
     if (refused) return refused;
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return new Response("WebSocket only", { status: 400 });
 
@@ -69,9 +79,9 @@ export class World extends DurableObject<Env> {
       send: (text) => { try { ws.send(text); } catch { /* closed meanwhile: its close event takes it out */ } },
       close: (code, reason) => { try { ws.close(code, reason); } catch { /* closed already */ } },
     };
-    const conn = this.room.open(socket, addresses, address);
-    ws.addEventListener("message", (event) => this.room.receive(conn, typeof event.data === "string" ? event.data : ""));
-    const ended = () => { socket.close(1000, ""); this.room.close(conn); };
+    const conn = room.open(socket, addresses, address);
+    ws.addEventListener("message", (event) => room.receive(conn, typeof event.data === "string" ? event.data : ""));
+    const ended = () => { socket.close(1000, ""); room.close(conn); };
     ws.addEventListener("close", ended);
     ws.addEventListener("error", ended);
     return new Response(null, { status: 101, webSocket: client });

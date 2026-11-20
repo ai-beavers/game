@@ -18,6 +18,10 @@ _Avoid_: lake, river
 The deep part of the pond, where the beaver can dive.
 _Avoid_: deep end, pit
 
+**Shore**:
+Where the pond meets the land, all the way round; it moves out as the pond rises. The beaver goes into the water and out of it anywhere along it.
+_Avoid_: edge, side, hole, bank (the bank is the clearing's)
+
 **Building site**:
 The flat ground at the pond where the dam is built.
 _Avoid_: construction zone, build area
@@ -31,7 +35,7 @@ A piece of wood the beaver can carry and build with. Every tree gnawed into wood
 _Avoid_: log, branch, wood item
 
 **Lantern**:
-The light the beaver carries in its left hand, hanging by its handle, while it is dark; by day it rides in the backpack. It glows from dusk until dawn. The right hand stays free for sticks.
+The light the beaver carries in its left hand, hanging by its handle, while it is dark; by day it rides in the backpack. It glows from dusk until dawn, unless the player has switched it off. The right hand stays free for sticks.
 _Avoid_: lamp, torch, light
 
 **Backpack**:
@@ -51,19 +55,23 @@ The small disco-like hut in the clearing with the sign HOUSE OF AI in front; ins
 _Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
 
 **Calendar board**:
-The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked and the hours of each day from morning to midnight, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
+The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked, the hours of each day from morning to midnight, Build Fridays and the House of AI events, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
 _Avoid_: billboard, calendar sign, schedule, week board
 
 **Build Fridays**:
 The weekly event on the Calendar board: every Friday from 16:00 to 23:00, by the viewer's own clock.
 _Avoid_: build day, Friday event
 
+**House of AI events**:
+The real events of the House of AI in Hamburg, the place the shop's sign is named after, as its public Luma calendar lists them; the Calendar board shows those of its week beside Build Fridays, each at its real moment on the viewer's own clock.
+_Avoid_: Luma events, meetups, shop events
+
 **Shopkeeper**:
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.
 _Avoid_: NPC, vendor, merchant
 
 **Mrs. Beaver**:
-The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks at one of a few hiding places out in the meadow, where the clearing's first, smaller bank stood, and her flower lies dropped on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
+The player's own beaver companion, with a flower behind her ear. At the start of each visit she has been carried off and is shut in a pen of sticks under one of the brush piles at the hiding places out in the meadow, where the clearing's first, smaller bank stood, and she left clues on the way there. The player rescues her in a quest, and then she waits at the building site with her flower back. Each player has their own, and no one else sees her.
 _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
 
 **Old Beaver**:
@@ -75,8 +83,16 @@ One short tale the Old Beaver tells about the clearing's past, a few lines long.
 _Avoid_: story, legend, dialogue, quest (a lore asks nothing of the player)
 
 **Quest**:
-A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her, gnaw her pen open. Nothing on the map marks where a step is.
+A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her tracks, find her, gnaw her pen open. Nothing on the map marks where a step is.
 _Avoid_: mission, task, goal (the build goals point the way; a quest does not)
+
+**Clue**:
+A sign Mrs. Beaver left on her way to where she is hidden, which tells the player where to look: first her dropped flower, then her tracks, a short trail of paw prints pointing towards her brush pile.
+_Avoid_: hint, marker, waypoint
+
+**Brush pile**:
+A heap of leafy branches at a hiding place. Each hiding place has one, and they all look alike from outside; only one hides Mrs. Beaver's pen, and only the clues tell which.
+_Avoid_: bush, decoy, hideout
 
 **Step**:
 One line of a quest, ticked when the player has done it.
@@ -89,6 +105,10 @@ _Avoid_: skin, costume, clothes
 **Canoe**:
 The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
 _Avoid_: boat, raft, kayak
+
+**Flag**:
+The cloth with the AI beavers logo on a pole on the bank beside the building site. The player can set it alight; it burns down to a charred rag and a fresh one is raised at the next dawn. The fire never spreads beyond it. Each player has their own.
+_Avoid_: banner, pennant, standard
 
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
@@ -107,6 +127,14 @@ _Avoid_: crouch, rest, kneel
 **Crawl**:
 The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
 _Avoid_: crouch, sneak, prone
+
+**Flash**:
+The player switching the lantern off and on with one button while it is dark, so that other players see it blink. A flash means what the players agree it means; the game gives it no meaning.
+_Avoid_: blink, signal, toggle
+
+**Stare**:
+The beaver turning round on land to look straight into its own player's camera, unblinking, once the player has touched nothing for a minute. Any input ends it. Only that player sees it.
+_Avoid_: AFK, idle animation, look-at
 
 **Remote**:
 Another player's beaver as this browser draws it.
@@ -129,8 +157,16 @@ The points a player earns by building with sticks, one for each stick built in, 
 _Avoid_: XP, coins, money, score
 
 **Saved game**:
-The state of the trees, the dam, the lodge and the cache, and the player's experience and outfits, kept between visits.
+What a player's browser keeps between visits: their experience, outfits and goods. The trees, the dam, the lodge and the cache are not part of it: they are the world's work, which only the server keeps.
 _Avoid_: save file, progress
+
+**World's work**:
+What the beavers have done to the world: trees gnawed and felled, the wood they gave, the dam, the lodge and the cache. The server keeps it, and every player's page starts in the server's.
+_Avoid_: world state, save
+
+**Tour's world**:
+The world the tour plays in, kept by the server beside the players' world, so the tour never changes a game someone plays.
+_Avoid_: test world
 
 ### How the game is put together
 

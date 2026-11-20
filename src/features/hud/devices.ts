@@ -1,6 +1,6 @@
 // The three ways to play and what each control is called on them, for the hints, the prompt and the controls page.
 // The buttons are those src/features/controls gives them (standard gamepad mapping, the touch overlay), plus the
-// HUD's own: M / Y for the map, Tab for the players, and the photo mode's P (features/post; Back and Photo send it).
+// HUD's own: M / LT for the map, Tab for the players, and the photo mode's P (features/post; Back and Photo send it).
 //
 //   CONTROLS.pad      [{ caps: ["A"], what: "Jump" }, …]
 //   USE.touch         "Use": the cap the prompt shows for the context action
@@ -19,7 +19,7 @@ export const CONTROLS: Record<Device, Control[]> = {
     { caps: ["W", "A", "S", "D"], what: "Move" }, { caps: ["Shift"], what: "Run" },
     { caps: ["Space"], what: "Jump" }, { caps: ["E"], what: "Use" },
     { caps: ["Q"], what: "Slap the tail" }, { caps: ["C"], what: "Hold to sit (dive, swimming)" },
-    { caps: ["Y"], what: "Hold to crawl" },
+    { caps: ["Y"], what: "Hold to crawl" }, { caps: ["L"], what: "Flash the lantern" },
     { caps: ["Drag"], what: "Look around" }, { caps: ["Wheel"], what: "Zoom" },
     { caps: ["V"], what: "First / third person" }, { caps: ["M"], what: "Map" }, { caps: ["Tab"], what: "Players", net: true },
     { caps: ["Enter"], what: "Chat", net: true }, { caps: ["P"], what: "Photo mode" }, { caps: ["Esc"], what: "Pause" },
@@ -27,13 +27,15 @@ export const CONTROLS: Record<Device, Control[]> = {
   pad: [
     { caps: ["L"], what: "Move" }, { caps: ["LB"], what: "Run" }, { caps: ["A"], what: "Jump" },
     { caps: ["X"], what: "Use" }, { caps: ["RB"], what: "Slap the tail" }, { caps: ["B"], what: "Hold to sit, or dive swimming" },
+    { caps: ["Y"], what: "Flash the lantern" },
     { caps: ["R"], what: "Look around" }, { caps: ["R", "click"], what: "Zoom" },
-    { caps: ["Y"], what: "Map" }, { caps: ["Back"], what: "Photo mode" }, { caps: ["Start"], what: "Pause" },
+    { caps: ["LT"], what: "Map" }, { caps: ["Back"], what: "Photo mode" }, { caps: ["Start"], what: "Pause" },
   ],
   touch: [
     { caps: ["Left side"], what: "Move" }, { caps: ["Right side"], what: "Look around" },
     { caps: ["Pinch"], what: "Zoom" }, { caps: ["Jump"], what: "Jump" }, { caps: ["Use"], what: "Use: gnaw, carry, build" },
     { caps: ["Run"], what: "Run, until you let go" }, { caps: ["Slap"], what: "the tail" }, { caps: ["Dive"], what: "Hold to sit, or dive swimming" },
+    { caps: ["Light"], what: "Flash the lantern" },
     { caps: ["Map"], what: "Tap to enlarge" }, { caps: ["Photo"], what: "Photo mode" }, { caps: ["Pause"], what: "Menu: settings, players" },
   ],
 };

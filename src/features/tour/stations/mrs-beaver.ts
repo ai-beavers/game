@@ -1,9 +1,10 @@
-// Mrs. Beaver: rescued in a quest, played through input as a person would. The checklist with three steps unticked;
-// her pen found first, where Use offers nothing and nothing ticks; her flower picked up on the way; her pen again, where
-// the find step ticks; the pen gnawed open by holding Use, a slip of the key keeping what is gnawed; the pen fallen into
+// Mrs. Beaver: rescued in a quest, played through input as a person would. The checklist with four steps unticked; a
+// wrong brush pile checked first, where Use offers nothing and nothing ticks; her own pile before any clue, where
+// nothing ticks either; her flower picked up on the way; her tracks walked onto, which ticks; her pile again, where the
+// find step ticks; the pen gnawed open by holding Use, a slip of the key keeping what is gnawed; the pen fallen into
 // loose sticks, her flower back behind her ear, and her walk home to the building site. Only the reset (a new quest,
-// at a hiding place picked anew) and where the pen and the flower are come from the feature's debug handle.
-import { FIND, FLOWER_REACH, HIDING, REACH, type Step, type XZ } from "../../mrs-beaver/rules.ts";
+// at a hiding place picked anew) and where the piles, the pen and the clues are come from the feature's debug handle.
+import { FIND, FLOWER_REACH, HIDING, REACH, TRACKS_REACH, type Step, type XZ } from "../../mrs-beaver/rules.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
@@ -11,6 +12,8 @@ import type { Station } from "../live.ts";
 interface MrsBeaverDebug {
   pen: XZ;
   flower: XZ;
+  tracks: XZ;
+  piles: XZ[];
   step: Step;
   gnawed: number;
   state: "missing" | "freed";
@@ -18,12 +21,12 @@ interface MrsBeaverDebug {
   wears: boolean;
   dropped: boolean;
   her(): XZ | undefined;
-  stand(): XZ;
+  stand(place?: number): XZ;
   reset(at?: number): unknown;
 }
 
 const PICK = "Pick up the flower", GNAW = "Gnaw the pen open";
-const STEPS = ["Find her flower", "Find Mrs. Beaver", "Gnaw the pen open"];
+const STEPS = ["Find her flower", "Find her tracks", "Find Mrs. Beaver", "Gnaw the pen open"];
 
 export const mrsBeaver = (kit: Kit): Station[] => {
   const { player, world, live, wait, until, walkTo, reach, tap, expect, hudText, pickUp, want, stage } = kit;
@@ -39,23 +42,44 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       const her = (window as { mrsBeaver?: MrsBeaverDebug }).mrsBeaver ?? skip("no Mrs. Beaver feature");
       her.reset();
       expect(her.step === "flower", `after a reset the quest is on the step "${her.step}", not "flower"`);
-      await until(() => title() === "Find Mrs. Beaver" && reads(0), 2, `the checklist reads "${title()}" / ${lines().join(" / ")}, not three steps from the first`);
+      await until(() => title() === "Find Mrs. Beaver" && reads(0), 2, `the checklist reads "${title()}" / ${lines().join(" / ")}, not four steps from the first`);
       await until(() => !!her.her(), 20, "her beaver never loaded");
       expect(!her.wears, "she wears her flower while she is missing");
       expect(her.dropped, "her flower does not lie on the ground");
-      const pen = her.pen, flower = her.flower;
+      const pen = her.pen, flower = her.flower, tracks = her.tracks, piles = her.piles;
+      expect(piles.length === 6 && piles.some((p) => near(p, pen) < 0.01), `${piles.length} brush piles, hers ${piles.some((p) => near(p, pen) < 0.01) ? "among" : "not among"} them`);
 
-      // Her pen first, before the flower: Use offers nothing there, and nothing ticks.
-      const stand = her.stand(), approach = off(stand, { x: 2 * stand.x - pen.x, z: 2 * stand.z - pen.z }, 1.5);
-      await walkTo(approach.x, approach.z, { near: 0.5, limit: 90, hop: true });
-      await walkTo(stand.x, stand.z, { near: 0.25, limit: 15 });
-      expect(near(player.feet, pen) <= REACH, `stood ${near(player.feet, pen).toFixed(2)} m from the pen, not within reach`);
+      /** Goes up to the pile of hiding place i from the Clearing's side and stands where its pen would be gnawed. */
+      const visit = async (i: number) => {
+        const p = piles[i]!, stand = her.stand(i), approach = off(stand, { x: 2 * stand.x - p.x, z: 2 * stand.z - p.z }, 1.5);
+        await walkTo(approach.x, approach.z, { near: 0.5, limit: 90, hop: true });
+        await walkTo(stand.x, stand.z, { near: 0.25, limit: 15 });
+        expect(near(player.feet, p) <= REACH, `stood ${near(player.feet, p).toFixed(2)} m from a brush pile, not within reach`);
+      };
+      const mine = piles.findIndex((p) => near(p, pen) < 0.01);
+      // The wrong pile next to hers, as someone guessing would check it.
+      const wrong = piles.map((p, i) => ({ i, d: i === mine ? Infinity : near(p, pen) })).sort((a, b) => a.d - b.d)[0]!.i;
+
+      // A wrong brush pile: Use offers nothing there, it stands solid, and nothing ticks.
+      await visit(wrong);
+      const atWrong = player.offer();
+      expect(!atWrong, `at a wrong brush pile, Use would "${atWrong?.text}", not nothing`);
+      await tap("act");
+      await walkTo(piles[wrong]!.x, piles[wrong]!.z, { near: 0.1, limit: 1.5 }).catch(() => undefined); // push into it
+      expect(near(player.feet, piles[wrong]!) > 0.6, `walked ${near(player.feet, piles[wrong]!).toFixed(2)} m into the middle of a brush pile`);
+      await wait(0.5);
+      expect(her.step === "flower" && reads(0), `at a wrong brush pile the quest went on: ${her.step}, ${lines().join(" / ")}`);
+      if (live) await wait(2);
+
+      // Her own pile before any clue: Use offers nothing there, and nothing ticks.
+      await visit(mine);
       const early = player.offer();
-      expect(!early, `at the pen without her flower, Use would "${early?.text}", not nothing`);
+      expect(!early, `at her pile without her flower, Use would "${early?.text}", not nothing`);
       await tap("act");
       await wait(0.5);
-      expect(her.step === "flower" && reads(0), `at the pen without her flower the quest went on: ${her.step}, ${lines().join(" / ")}`);
+      expect(her.step === "flower" && reads(0), `at her pile without her flower the quest went on: ${her.step}, ${lines().join(" / ")}`);
       if (live) await wait(2);
+      const stand = her.stand();
 
       // Her flower, on the way between the building site and her: Use picks it up, the paws stay free.
       const way = off(flower, her.home, 3);
@@ -65,18 +89,26 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       expect(offer?.action === "use" && offer.text === PICK, `at her flower, Use would "${offer?.text}", not "${PICK}"`);
       expect(near(player.feet, flower) <= FLOWER_REACH, `Use offers her flower ${near(player.feet, flower).toFixed(2)} m from it`);
       await tap("act");
-      await until(() => her.step === "find", 2, `pressed Use at her flower, the quest is on "${her.step}"`);
+      await until(() => her.step === "tracks", 2, `pressed Use at her flower, the quest is on "${her.step}"`);
       await until(() => reads(1), 2, `with her flower the checklist reads ${lines().join(" / ")}`);
       expect(!her.dropped, "her flower still lies on the ground once picked up");
       expect(!player.carrying, "picking up her flower filled the paws");
       if (live) await wait(2);
 
-      // Back to her pen: within a few metres of it she is found.
-      const toward = off(pen, flower, FIND + 2);
-      await walkTo(toward.x, toward.z, { near: 0.6, limit: 60, hop: true });
-      expect(her.step === "find", `${near(player.feet, pen).toFixed(1)} m from the pen she counts as found already`);
+      // On along her way to her tracks: walking onto them ticks the step.
+      const short = off(tracks, flower, TRACKS_REACH + 1.5);
+      await walkTo(short.x, short.z, { near: 0.5, limit: 60, hop: true });
+      expect(her.step === "tracks", `${near(player.feet, tracks).toFixed(1)} m from her tracks they count as found already`);
+      await walkTo(tracks.x, tracks.z, { near: 0.3, limit: 15, arrived: () => her.step === "find" });
+      await until(() => her.step === "find" && reads(2), 2, `on her tracks the quest is on "${her.step}" and the checklist reads ${lines().join(" / ")}`);
+      if (live) await wait(2);
+
+      // Where the tracks point: within a few metres of her pile she is found.
+      const toward = off(pen, tracks, FIND + 1.5);
+      if (near(player.feet, pen) > FIND + 1.5) await walkTo(toward.x, toward.z, { near: 0.6, limit: 60, hop: true });
+      expect(her.step === "find", `${near(player.feet, pen).toFixed(1)} m from her pile she counts as found already`);
       await walkTo(stand.x, stand.z, { near: 0.25, limit: 20, arrived: () => her.step === "gnaw" });
-      await until(() => reads(2), 2, `at her pen the checklist reads ${lines().join(" / ")}`);
+      await until(() => reads(3), 2, `at her pile the checklist reads ${lines().join(" / ")}`);
       await reach("use", () => her.stand());
       const gnawOffer = player.offer();
       expect(gnawOffer?.action === "use" && gnawOffer.text === GNAW, `at the pen once she is found, Use would "${gnawOffer?.text}", not "${GNAW}"`);

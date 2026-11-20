@@ -12,7 +12,7 @@
 //   lodgeGrow(placed): how far the lodge stands out of the pond (after the dam's SLOTS sticks come LODGE onto it)
 //   cachePlan(): where the CACHE sticks of the food cache go, on the pond's bed at CACHE_AT (after the lodge's)
 //
-// The state is plain JSON: it is kept in localStorage and the changes can be sent to other players as they are.
+// The state is plain JSON, and so are the changes: the server keeps them in order and sends them to players as they are.
 import { seeded } from "../../world/noise.ts";
 
 /** Sticks in a finished dam. */
@@ -156,19 +156,6 @@ export function apply(s: BuildState, c: BuildChange, now = Date.now()): boolean 
       s.dam.push(c.stick); // the next free slot, whatever slot the sender saw: two players placing at once both fit
       return true;
   }
-}
-
-/** Reads a saved state; anything broken or of another version gives a fresh one. */
-export function load(text: string | null): BuildState {
-  try {
-    const s = JSON.parse(text ?? "") as BuildState;
-    if (s?.version === 1 && Array.isArray(s.dam) && typeof s.trees === "object" && (s.traded === undefined || Array.isArray(s.traded))) {
-      // Saved before trees grew back: their count starts now.
-      for (const t of Object.values(s.trees)) if (t?.split && typeof t.gone !== "number") t.gone = Date.now();
-      return { ...newState(), ...s };
-    }
-  } catch { /* fresh */ }
-  return newState();
 }
 
 // ---- trees -------------------------------------------------------------------------------------------------------

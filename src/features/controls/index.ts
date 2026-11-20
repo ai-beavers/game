@@ -1,11 +1,11 @@
 // The "controls" feature: play with a gamepad or on a touch screen, beside keyboard and mouse.
 //
-//   createGame(canvas, [create])      the feature alone (lab/controls.html); in the game it is in FEATURES
+//   createGame(canvas, [create])      the feature alone; in the game it is in FEATURES
 //
 // Gamepad (standard mapping): left stick or d-pad moves, as fast as it is pushed (half way walks, all the way runs;
-// a shoulder button, a trigger or a click on the stick runs too), right stick turns the camera (settings.invertY
+// LB, the right trigger or a click on the stick runs too; LT opens the map), right stick turns the camera (settings.invertY
 // flips up and down, for the mouse as well),
-// A jumps (rises under water), X uses, B held dives, RB slaps the tail, a click on the right stick zooms out a step (from the farthest back in),
+// A jumps (rises under water), X uses, B held dives, RB slaps the tail, Y flashes the lantern, a click on the right stick zooms out a step (from the farthest back in),
 // Back sends P for the photo mode, Start sends Escape to open the pause menu. Plugging in or pulling out works any time.
 // Touch: shown on a device with a touch screen, or with ?touch in the address; see touch.ts.
 // Each device fills its own Input, added to the player's keyboard (player.keys.add); the last one used steers.
@@ -31,7 +31,7 @@ export const create: CreateFeature = (game) => {
       if (pad) return padInput(pad, into);
       into.move.x = into.move.y = 0;
       into.run = 0;
-      into.jump = into.act = into.slap = into.dive = false;
+      into.jump = into.act = into.slap = into.dive = into.flash = false;
       return into;
     },
   });
@@ -50,6 +50,7 @@ export const create: CreateFeature = (game) => {
   return {
     update(dt) {
       touch?.show(!stage.paused && !document.body.classList.contains("photo"));
+      touch?.light(!!game.lantern?.out); // the Light button only while the lantern is out
       const pad = pads();
       const was = held, pressed = (b: number) => !!held[b] && !was[b];
       held = pad ? pad.buttons.map((_, i) => down(pad, i)) : [];

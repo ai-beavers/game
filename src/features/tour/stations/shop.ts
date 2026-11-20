@@ -1,10 +1,13 @@
 // The Shop: walk to it, in through the doorway, Use at the counter, buy the cheapest Outfit there is and wear it,
 // then put the default look back on. Played through input as a person would; only the Experience to pay with is
 // given to the tour's own saved game (building enough sticks first is too slow for the fast tour).
-// The Calendar board beside it: walk up the path to it, read the week it shows, and find it solid.
+// The Calendar board beside it: walk up the path to it, read the week it shows with Build Fridays and the House of AI
+// events the tour gives it (as a test it plays without the network; live, the real ones), and find it solid over its
+// whole width.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Look } from "../../../contracts.ts";
 import { DEFAULT, OUTFITS, type ShopState } from "../../shop/rules.ts";
+import type { HouseEvent } from "../../shop/feed.ts";
 import { BUILD_FRIDAYS, dayKey, span, type CalendarEntry, type CalendarWeek } from "../../shop/week.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
@@ -17,7 +20,10 @@ interface ShopDebug {
   door(out?: number): Vector3;
   counter(): Vector3;
   sign(): Vector3;
-  calendar: { week: CalendarWeek; front(d: number): Vector3; toBoard(p: { x: number; z: number }): { x: number; z: number } };
+  calendar: {
+    week: CalendarWeek; events: readonly HouseEvent[]; give(events: HouseEvent[]): boolean;
+    front(d: number, along?: number): Vector3; toBoard(p: { x: number; z: number }): { x: number; z: number };
+  };
 }
 
 const same = (a: Look, b: Look) => [...a.shirt, ...a.hat].every((v, i) => Math.abs(v - [...b.shirt, ...b.hat][i]!) < 1e-3);
@@ -77,6 +83,20 @@ export const shopping = (kit: Kit): Station[] => {
     ["Read the calendar", async () => {
       const shop = (window as { shop?: ShopDebug }).shop ?? skip("no shop feature");
       const board = shop.calendar;
+      // The tour as a test plays without the network: it gives the board House of AI events of this week, on the
+      // browser's clock. Live, the board keeps the real ones the server gave it, for the stream.
+      const now = new Date();
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() + 6) % 7, 12);
+      const at = (day: number, hour: number) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + day, hour, Math.round((hour % 1) * 60)).toISOString();
+      const given: HouseEvent[] = [
+        { name: "Evening Talk", start: at(1, 18.5), end: at(1, 21) }, // Tuesday, at half past
+        { name: "Night Hackathon", start: at(2, 20), end: at(3, 10) }, // Wednesday into Thursday
+        { name: "Workshop", start: at(5, 10), end: at(5, 14) }, // Saturday, two that overlap
+        { name: "Lunch Meetup", start: at(5, 12), end: at(5, 16) },
+        { name: "build fridays hamburg - work on your startup", start: at(4, 16), end: at(4, 23) }, // Luma lists it too
+      ];
+      if (!live) board.give(given);
+
       // Along the path to the shop (hopped over in the fast tour), then up to the board, stopping facing it.
       const door = shop.door(3);
       await walkTo(door.x, door.z, { near: 0.6, limit: 90, hop: true });
@@ -85,31 +105,49 @@ export const shopping = (kit: Kit): Station[] => {
       await walkTo(closer.x, closer.z, { near: 0.3, limit: 10 });
       if (live) await wait(5);
 
-      // The week of the browser's own today, Monday first, today marked once, Build Fridays 16:00 – 23:00 on the Friday only.
-      const now = new Date(), week = board.week, days = week.days;
-      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() + 6) % 7, 12);
+      // The board, 3.6 × 2.1 m.
+      const face = kit.stage.scene.getMeshByName("shop-calendar-face");
+      expect(!!face, "no Calendar board face in the scene");
+      const box = face!.getBoundingInfo().boundingBox, wide = box.extendSize.x * 2 * face!.scaling.x, high = box.extendSize.y * 2 * face!.scaling.y;
+      expect(Math.abs(wide - 3.6) < 0.01 && Math.abs(high - 2.1) < 0.01, `the Calendar board is ${wide.toFixed(2)} × ${high.toFixed(2)} m, not 3.6 × 2.1 m`);
+
+      // The week of the browser's own today, Monday first, today marked once.
+      const week = board.week, days = week.days;
       const keys = Array.from({ length: 7 }, (_, i) => dayKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i, 12)));
       expect(days.map((d) => d.key).join() === keys.join(), `the board shows ${days.map((d) => d.key).join(", ")}, not the week ${keys[0]} … ${keys[6]}`);
       expect(days[0]!.name === "Mon" && days[6]!.name === "Sun", `the board's week runs ${days[0]!.name} … ${days[6]!.name}, not Mon … Sun`);
       const marked = days.filter((d) => d.today);
       expect(marked.length === 1 && marked[0]!.key === dayKey(now), `today is marked on ${marked.map((d) => d.key).join(", ") || "no day"}, not ${dayKey(now)}`);
-      const said = (e: CalendarEntry) => `${e.name} ${span(e)}`;
-      const fridays = said(BUILD_FRIDAYS);
-      expect(days.every((d) => d.entries.map(said).join() === (d.name === "Fri" ? fridays : "")), `entries: ${days.map((d) => `${d.name} [${d.entries.map(said).join(", ")}]`).join(" ")}; only Friday should say "${fridays}"`);
+      // Build Fridays 16:00 – 23:00 on the Friday, once; each House of AI event on its day at its local time, side by side where they overlap.
+      const said = (e: CalendarEntry) => `${e.name} ${span(e)}${e.lanes > 1 ? ` (${e.lane + 1} of ${e.lanes})` : ""}`;
+      const fridays = `${BUILD_FRIDAYS.name} ${span(BUILD_FRIDAYS)}`;
       expect(fridays === "Build Fridays 16:00 – 23:00", `Build Fridays is ${fridays}, not 16:00 – 23:00`);
+      const read = days.map((d) => d.entries.map(said));
+      if (live) {
+        // The real events, whatever they are: Build Fridays on the Friday once, and on no other day.
+        expect(read.every((d, i) => d.filter((e) => e === fridays).length === (i === 4 ? 1 : 0)), `Build Fridays stands on ${days.map((d, i) => `${d.name} ×${read[i]!.filter((e) => e === fridays).length}`).join(" ")}, not once on Friday`);
+      } else {
+        expect(board.events.length === given.length, `the board holds ${board.events.length} House of AI events, ${given.length} were given`);
+        const expected: string[][] = [[], ["Evening Talk 18:30 – 21:00"], ["Night Hackathon 20:00 – 24:00"], ["Night Hackathon 08:00 – 10:00"],
+          [fridays], ["Workshop 10:00 – 14:00 (1 of 2)", "Lunch Meetup 12:00 – 16:00 (2 of 2)"], []];
+        expect(read.every((d, i) => d.join("|") === expected[i]!.join("|")), `entries: ${days.map((d, i) => `${d.name} [${read[i]!.join(", ")}]`).join(" ")}; expected ${expected.map((d, i) => `${days[i]!.name} [${d.join(", ")}]`).join(" ")}`);
+      }
       // The hours of the day, from morning to midnight, down the board's left.
       const hours = span(week.hours);
       expect(hours === "08:00 – 24:00", `the board shows the hours ${hours}, not 08:00 – 24:00`);
       expect(!!week.title, "the board has no month and year over its week");
 
-      // Straight at it and on: it stops the beaver in front of its face.
+      // Straight at it and on, at its middle and near both ends: it stops the beaver in front of its face.
       if (live) return;
-      const behind = board.front(-1.5);
-      want.to = new Vector3(behind.x, 0, behind.z);
-      try { await wait(5); } finally { want.to = undefined; }
-      const at = board.toBoard(player.feet);
-      expect(at.z > 0, `the beaver walked through the Calendar board (${at.z.toFixed(2)} m behind its face)`);
-      expect(at.z < 0.9, `the beaver never got up to the Calendar board (${at.z.toFixed(2)} m in front of it)`);
+      for (const along of [0, -1.5, 1.5]) {
+        const before = board.front(2.2, along), behind = board.front(-1.5, along);
+        await walkTo(before.x, before.z, { near: 0.3, limit: 15 });
+        want.to = new Vector3(behind.x, 0, behind.z);
+        try { await wait(4); } finally { want.to = undefined; }
+        const p = board.toBoard(player.feet);
+        expect(p.z > 0, `the beaver walked through the Calendar board ${along} m from its middle (${p.z.toFixed(2)} m behind its face)`);
+        expect(p.z < 0.9 && Math.abs(p.x - along) < 0.6, `the beaver never got up to the Calendar board ${along} m from its middle (at ${p.x.toFixed(2)}, ${p.z.toFixed(2)} m)`);
+      }
     }, "Shopping"],
   ];
 };

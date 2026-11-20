@@ -83,7 +83,7 @@ const BANDS: [low: number, high: number, names: string[]][] = [
   [-20, -11, ["slap", "splash", "crash", "crack", "creak"]], // the alarm and the big moments
   [-27, -17, ["land", "thump", "shake", "bite", "place", "drop", "pickup", "jump", "murmur"]], // the beaver at work, and the Old Beaver's murmur
   [-30, -22, ["stepGrass", "stepShore", "stepWater", "paddle"]], // under the ambience
-  [-41, -22, ["owl", "deer", "cricket", "frog", "tick", "plip", "bird", "lap"]], // the world around, far off or many
+  [-41, -22, ["owl", "deer", "cricket", "frog", "tick", "plip", "bird", "lap", "crackle"]], // the world around, far off or many
 ];
 const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap", "underwater"];
 const chrome = existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");

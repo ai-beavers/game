@@ -118,13 +118,18 @@ export const create: CreateFeature = (game) => {
   // Half the dam: a chime on the way, so the long middle of the work has a moment too.
   events.on("stickPlaced", ({ count, total }) => { if (count * 2 === total) play("chime", undefined, 1, "sfx", 0.25); });
 
+  // A burning Flag crackles until it is burnt down (src/features/flag).
+  let fire: Vector3 | undefined, crackle = 0;
+  events.on("flagLit", ({ place }) => { fire = place; crackle = 0; });
+  events.on("flagBurnt", () => { fire = undefined; });
+
   // The Old Beaver murmurs a line from where he sits, one slow syllable a word (src/features/old-beaver). Counted in
   // physics steps, so it stops with the pause; a new line (his closing word, when the beaver walks off) cuts the rest
   // of the one before.
   let murmur: { place: Vector3; left: number; next: number; syllable: number } | undefined;
   events.on("oldBeaverSpeaks", ({ place, words, syllable }) => { murmur = words > 0 ? { place, left: words, next: 0, syllable } : undefined; });
 
-  // Lasting sounds: paddling, counted in physics steps so it stops with the pause.
+  // Lasting sounds: paddling and the fire's crackle, counted in physics steps so they stop with the pause.
   let stroke = 0;
   const at = player.node.position, camera = stage.camera, forward = new Vector3(), up = new Vector3(), here = new Vector3();
   let bird = rand(2, 6), owl = rand(8, 20);
@@ -165,6 +170,7 @@ export const create: CreateFeature = (game) => {
         stroke += dt * (0.9 + 1.4 * Math.min(1, motion.speed));
         if (stroke >= 1) { stroke = 0; play("paddle", at, clamp(motion.speed / 1.2)); }
       } else stroke = 0.6;
+      if (fire && (crackle -= dt) <= 0) { crackle = rand(0.25, 0.5); play("crackle", fire, Math.random(), "ambience"); }
     },
     update(dt) {
       if (!live) return;

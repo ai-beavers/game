@@ -14,15 +14,16 @@
 // grows back.
 //
 // Everything that changes the world lives in one plain state object (rules.ts), changed only by named changes
-// through commit(): those are saved in localStorage ("beaver.build") and told to others as the event "buildChange"
-// (remote false); a change from another player comes back in the same event with remote true.
+// through commit(): those are told to others as the event "buildChange" (remote false); a change from another player
+// comes back in the same event with remote true. The feature keeps nothing: it starts in the world it is handed
+// (`start`, the server's, src/features/net), and without one in a fresh world that ends with the page.
 //
 // Debug, for bun shot --eval (window.build): build.at(i) stands at tree i facing it · build.fell(i) · build.split(i)
 // · build.fill(n) puts n sticks into the dam (past 30: onto the lodge, past 40: into the cache) · build.age(i, s) makes
 // tree i's wood gone s seconds longer ago (regrowth sooner) · build.toSite() stands at the dam with a stick in hand ·
 // build.toCache() swims on the pond over the food cache · build.reset()
-// forgets everything and reloads · build.state · build.trees() lists them by distance · build.keepLying() keeps where
-// the loose wood lies now (it is also kept every few seconds and when the page goes).
+// loads the page again (alone: a fresh world; with a server: the server's again) · build.state · build.trees() lists
+// them by distance. age changes only this page's copy: the server lets a tree grow back early in the tour's world only.
 import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Scalar } from "@babylonjs/core/Maths/math.scalar.js";
@@ -31,7 +32,7 @@ import type { CreateFeature } from "../../game.ts";
 import type { Offer } from "../../player/index.ts";
 import { waterOf } from "../../world/water.ts";
 import {
-  apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, type BuildState, DAM, goals, growth, live, load, LODGE, lodgeGrow, pondLevel, pondRise, REGROW, SLOTS, STICKS, used,
+  apply, BITE_TIME, BITES_TO_SPLIT, bitesToFell, type BuildChange, type BuildState, DAM, goals, growth, live, LODGE, lodgeGrow, newState, pondLevel, pondRise, REGROW, SLOTS, STICKS, used,
   woodFrom,
 } from "./rules.ts";
 import type { Scene } from "@babylonjs/core/scene.js";
@@ -40,12 +41,9 @@ import { createDam } from "./dam.ts";
 import { goalsPanel } from "./panel.ts";
 import { BITE_HEIGHT, measure, takeTree, type TreeView } from "./tree.ts";
 
-// The tour (src/features/tour) plays a saved game of its own, so it never uses up the one someone plays.
-const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.build.tour" : "beaver.build";
-// Where the loose wood lies (the world's sticks, and the logs and sticks of felled trees), by name: kept apart from
-// the state, because physics moves it every step (no named change) and each player's copy rolls its own way.
-const LOOSE_KEY = `${KEY}.loose`;
-const KEEP_EVERY = 3; // s between keeping where the loose wood lies
+/** The world the feature starts in, as the changes that make it: whoever keeps the world (src/features/net: the
+ *  server's) puts them here before the features are made. A split with `at` went then by this page's clock. */
+export const start: { changes: BuildChange[] } = { changes: [] };
 /** s for laying one stick; it leaves the hand half way. The trade feature lays a stick on a pile in the same time. */
 export const BUILD_TIME = 1.3;
 const FLIGHT = 0.45; // s from the hand to its place
@@ -70,9 +68,9 @@ export const create: CreateFeature = (game) => {
   const addLoose = world.addLoose, removeLoose = world.removeLoose;
   const water = waterOf(stage.scene), full = world.waterLevel;
   const pondTo = (placed: number, smooth = true) => water?.setLevel(pondLevel(full, placed), smooth);
-  let state = load(localStorage.getItem(KEY));
+  const state = newState();
+  for (const c of start.changes) apply(state, c, c.type === "split" ? c.at : undefined);
   pondTo(state.dam.length, false); // at once, before the features after this one look at the water
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* not kept, still played */ } };
   const panel = goalsPanel(), dam = createDam(stage, world), views = new Map<number, TreeView>();
   const view = (i: number) => views.get(i) ?? views.set(i, takeTree(stage, world, i)).get(i)!;
   // Saplings on stumps, growing; once the tree is back (grow), it takes the old view's place and the stump goes.
@@ -205,7 +203,6 @@ export const create: CreateFeature = (game) => {
   const commit = (c: BuildChange, remote = false, handed?: TransformNode) => {
     const before = goals(state);
     if (!apply(state, c)) return false;
-    save();
     react(c, handed);
     if (!remote) events.emit("buildChange", { change: c, remote: false });
     for (const g of goals(state)) if (g.done && !before.some((b) => b.id === g.id && b.done)) events.emit("goalDone", { goal: g.id, text: g.text });
@@ -242,30 +239,6 @@ export const create: CreateFeature = (game) => {
     panel.show(goals(state));
   };
   restore();
-
-  // Where the loose wood lay at the last visit: put back (wood in the dam or in a hand is left out).
-  type Lying = Record<string, [number, number, number, number, number, number, number]>;
-  const keepLying = () => {
-    const lying: Lying = {};
-    for (const [thing, id] of names) if (!used(state, id) && thing !== player.carrying && thing.body.isEnabled()) {
-      const t = thing.body.translation(), q = thing.body.rotation();
-      lying[id] = [t.x, t.y, t.z, q.x, q.y, q.z, q.w];
-    }
-    try { localStorage.setItem(LOOSE_KEY, JSON.stringify(lying)); } catch { /* not kept, still played */ }
-  };
-  try {
-    const lying = JSON.parse(localStorage.getItem(LOOSE_KEY) ?? "{}") as Lying;
-    for (const [id, pose] of Object.entries(lying)) {
-      const thing = byName.get(id), [x, y, z, qx, qy, qz, qw] = pose;
-      if (!thing || used(state, id) || pose.length !== 7 || !pose.every(Number.isFinite)) continue;
-      thing.body.setTranslation({ x, y, z }, true);
-      thing.body.setRotation({ x: qx, y: qy, z: qz, w: qw }, true);
-      thing.mesh.position.set(x, y, z);
-      thing.mesh.rotationQuaternion!.set(qx, qy, qz, qw);
-    }
-  } catch { /* nothing kept, or broken: where the world puts them */ }
-  addEventListener("pagehide", keepLying);
-  let sinceKept = 0;
 
   // ---- E: gnaw and build ------------------------------------------------------------------------------------------
   type Job = { kind: "gnaw"; tree: number; timer: number } | { kind: "build"; progress: number };
@@ -416,7 +389,7 @@ export const create: CreateFeature = (game) => {
       },
       age(i: number, seconds: number) {
         const t = state.trees[i];
-        if (t?.gone !== undefined) { t.gone -= seconds * 1000; save(); }
+        if (t?.gone !== undefined) t.gone -= seconds * 1000;
         return t?.gone !== undefined && (Date.now() - t.gone) / 1000;
       },
       saplings,
@@ -432,8 +405,7 @@ export const create: CreateFeature = (game) => {
         player.camera.yaw = face + Math.PI;
       },
       trees: () => world.trees!.map((t, i) => ({ i, d: +Math.hypot(t.place.x - feet.x, t.place.z - feet.z).toFixed(1), r: +measure(t).radius.toFixed(2), trunk: +measure(t).trunk.toFixed(1), ...state.trees[i] })).sort((a, b) => a.d - b.d),
-      reset() { removeEventListener("pagehide", keepLying); localStorage.removeItem(KEY); localStorage.removeItem(LOOSE_KEY); state = load(null); location.reload(); },
-      keepLying,
+      reset() { location.reload(); },
       dam,
       views,
     },
@@ -455,7 +427,6 @@ export const create: CreateFeature = (game) => {
     },
     update(dt) {
       const moving = stage.paused ? 0 : dt;
-      if ((sinceKept += moving) > KEEP_EVERY) { sinceKept = 0; keepLying(); }
       // The bite in each standing tree that has been bitten, growing smoothly while the beaver gnaws.
       for (const [key, first] of Object.entries(state.trees)) {
         const i = +key, t = live(first);

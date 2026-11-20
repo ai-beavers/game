@@ -10,8 +10,13 @@ import { GOLD, INK, layout, PANEL, PAPER, RADIUS, SHADOW, type Box } from "./sty
 export const box = (x: number, y: number, w: number, h: number): Box => ({ x, y, w, h });
 export { GOLD, PANEL };
 const EDGE = "#88958a";
+/** A button at rest (not primary, not pressed). */
+export const BUTTON_BACK = "#324540";
 const left = Control.HORIZONTAL_ALIGNMENT_LEFT, top = Control.VERTICAL_ALIGNMENT_TOP;
 type Action = HTMLButtonElement | HTMLInputElement;
+
+/** Whether a modal overlay (a menu or a page) is open over the game now. */
+export const modalOpen = () => !!document.querySelector("dialog.game-dialog[open]");
 
 export class Overlay {
   readonly group: Container;
@@ -165,7 +170,7 @@ export class Overlay {
   }
 
   button(name: string, value: string, r: Box, click: () => void, primary = false) {
-    const panel = this.rect(name, r, primary ? GOLD : "#324540", Math.min(RADIUS, r.h / 2));
+    const panel = this.rect(name, r, primary ? GOLD : BUTTON_BACK, Math.min(RADIUS, r.h / 2));
     panel.thickness = 1;
     panel.color = EDGE;
     const caption = this.text(name + "-label", value, r, 14, "center",false);

@@ -15,8 +15,9 @@
 // is written to the console as "[tour] FAIL <station>: <why>", one that works as "[tour] ok <station>", and every
 // round as "[tour] round <n>: <ok>/<all> ok". window.tour holds the same for --eval.
 //
-// The tour plays its own saved game (the build feature keeps it under "beaver.build.tour") and stays off the
-// network, so it never touches a game someone plays. The saved game lives on across rounds: the dam grows a few
+// The tour plays in a world of its own, which the server keeps beside the players' (src/features/net: ?world=tour),
+// so it never touches a game someone plays. Two tours on one server share that world. It lives on across rounds
+// and page loads, as long as the server keeps it: the dam grows a few
 // sticks a visit (in fast mode half a dam a round), then the lodge, then the food cache; only when the cache is
 // stocked, or (not live) no wood is left, it starts anew (a reload). A station whose feature is missing (a lab page without sky) is skipped.
 // Stations marked stream false test the player's controls (menus, a pad): the live stream leaves them out.
@@ -27,6 +28,7 @@
 // station for a feature that has a file goes into that file, where it belongs in the order; a new feature adds one
 // file and one entry in STATIONS. Live, a station with an activity joins that activity; one without is its own.
 import { Overlay, onViewport, box, hudLayout } from "../hud/overlay.ts";
+import { fitType } from "../hud/style.ts";
 import type { CreateFeature } from "../../game.ts";
 import { bodyPoints, enter, inside, KEEP_OUT, liveDirector, reason, sight, type Moment, type Volume, type XYZ } from "./live.ts";
 import { fader, occluders } from "./clearview.ts";
@@ -49,9 +51,11 @@ import { shopping } from "./stations/shop.ts";
 import { canoeing } from "./stations/canoe.ts";
 import { mrsBeaver } from "./stations/mrs-beaver.ts";
 import { oldBeaver } from "./stations/old-beaver.ts";
+import { flag } from "./stations/flag.ts";
+import { stare } from "./stations/stare.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, dam, trading, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, mrsBeaver, oldBeaver, skyWatch, hud, controls, views, firstSteps];
+const STATIONS = [movement, dam, trading, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, flag, mrsBeaver, oldBeaver, stare, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
@@ -108,10 +112,15 @@ export const create: CreateFeature = (game) => {
   label.fontWeight = "bold";
   label.outlineWidth = 3;
   label.outlineColor = "#182723";
+  // Live: a reason too long for the row gets smaller type, so it stays on the one row its backing has (hud/style.ts).
+  let type = 14, across = 0;
+  const fit = () => { if (backing) label.fontSize = fitType(type, across, label.text.length); };
+  label.onTextChangedObservable.add(fit);
   onViewport(stage,(w,h) => {
     if (!backing) return overlay.move(label,hudLayout(stage).caption);
     const { caption: at, u: size } = hudLayout(stage); // the HUD's top centre and its type (hud/style.ts)
-    label.fontSize = size;
+    type = size; across = at.w;
+    fit();
     overlay.move(backing, at);
     overlay.move(label, at);
   });
@@ -197,11 +206,12 @@ export const create: CreateFeature = (game) => {
         await wait(PAUSE);
       }
       console.log(`[tour] round ${tour.round}: ${ok}/${itinerary.length} ok`);
-      // Its own saved game: start it anew once the cache is stocked; in a test also once no wood is left (live waits for
+      // Its own world: start it anew once the cache is stocked; in a test also once no wood is left (live waits for
       // the trees to grow back).
       if (b && (b.state.dam.length >= STICKS || (!live && !player.carrying && (kit.usedUp || (!loose().length && !standingTrees(b).length))))) {
-        console.log(`[tour] the saved game is ${b.state.dam.length >= STICKS ? "done: the cache is stocked" : "used up"}: starting it anew`);
-        b.reset();
+        console.log(`[tour] the tour's world is ${b.state.dam.length >= STICKS ? "done: the cache is stocked" : "used up"}: starting it anew`);
+        // The server starts the tour's world afresh and tells this page to load again; alone, loading again is enough.
+        if (!(window as { net?: { reset(): boolean } }).net?.reset()) b.reset();
         return;
       }
     }

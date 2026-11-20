@@ -20,8 +20,8 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { World } from "../../contracts.ts";
 import { RAPIER, type Stage } from "../../engine.ts";
+import { RADIUS, SIGN } from "./place.ts";
 
-export const RADIUS = 2.7; // m, inside of the wall
 const WALL = 2.1, THICK = 0.14, LOW = 0.95; // m: wall height, thickness, the lower part always shown
 const WALL_SOLID = 0.95; // m the walls' colliders reach up: over the beaver's reach, under the camera's look
 const SEGMENTS = 24, DOOR = 1; // wall pieces round the hut, and how many are left out on each side of the doorway's middle
@@ -34,8 +34,6 @@ export const TABLES = [{ x: -1.55, z: 0.05, seat: -Math.PI / 2 }, { x: 1.55, z: 
 const TILT = 0.75; // rad the beams point down from level
 /** The shop's wood: its door frame, counter and the sign's post. */
 export const WOOD = new Color3(0.42, 0.26, 0.14);
-/** Where the HOUSE OF AI sign stands in the shop's frame, beside the path to the doorway, turned a little towards it. */
-export const SIGN = { x: 1.6, z: RADIUS + 1.6, yaw: -0.35 }; // m, m, rad
 const BEAM_COLOURS = [new Color3(1, 0.15, 0.55), new Color3(0.2, 0.45, 1), new Color3(0.2, 1, 0.45), new Color3(1, 0.8, 0.15)];
 
 /** Colours a mesh's vertices one colour (the shop's materials multiply them by white). */

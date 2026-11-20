@@ -10,8 +10,8 @@ import { hex } from "../../world/color.ts";
 // dawn, an owl in the far trees at night. A tail slap (the tailSlap event) sends them all off at once
 // (brain.ts: startle); the feature tells how many with the startled event.
 //
-//   createGame(canvas, [create])      on its own (lab/life.html), or in FEATURES with the rest
-//   (await create(game)).animals      the animals' state, for a lab camera; see brain.ts for what each holds
+//   createGame(canvas, [create])      on its own, or in FEATURES with the rest
+//   (await create(game)).animals      the animals' state; see brain.ts for what each holds
 //   window.life                       the same, and `heard`: the calls to sound (src/features/audio plays them)
 //
 // How they decide lives in brain.ts (pure, tested), what they look like in shapes.ts. Here the two meet: once per

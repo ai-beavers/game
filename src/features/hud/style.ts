@@ -113,6 +113,13 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   };
 }
 
+/** A bold character is about this much of its type wide; a line never shrinks below SMALLEST of its type. */
+const WIDE = 0.58, SMALLEST = 0.7;
+/** The type, px, that keeps a line of `chars` bold characters on one row `across` px wide (with some room to spare
+ *  at the ends): `type` when it fits, smaller when not, never below SMALLEST of it (a small screen wraps instead). */
+export const fitType = (type: number, across: number, chars: number) =>
+  Math.floor(Math.max(SMALLEST * type, Math.min(type, (across - type) / (WIDE * Math.max(1, chars)))));
+
 /** The boxes that hold something at all times, to test that none lies on another. The goals' box is the room they may
  *  grow into, the map's and the caption's what they take. */
 export function homes(l: Layout): [string, Box][] {

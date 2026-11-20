@@ -1,6 +1,6 @@
 // Tests for style.ts: every element has a home on screen, no two homes overlap, and the type reads on a stream.
 import { expect, test } from "bun:test";
-import { homes, layout, unit } from "./style.ts";
+import { fitType, homes, layout, unit } from "./style.ts";
 
 const none = { top: 0, right: 0, bottom: 0, left: 0 };
 const screens: [number, number][] = [[640, 360], [1280, 720], [1440, 810], [1920, 1080]];
@@ -54,4 +54,12 @@ test("the Old Beaver's speech box sits over the hints, sharing the breath's home
     expect(l.speech.h, at).toBeGreaterThanOrEqual(l.small * 1.3 + l.u * 1.3);
     expect(l.middle.top < l.middle.bottom, at).toBe(true);
   }
+});
+
+test("a line too long for its row gets smaller type, down to a limit", () => {
+  expect(fitType(24, 800, 30)).toBe(24); // fits as it is
+  const long = fitType(24, 600, 55);
+  expect(long).toBeLessThan(24);
+  expect(long * 0.58 * 55).toBeLessThanOrEqual(600 - 24); // on the one row
+  expect(fitType(24, 300, 55)).toBe(Math.floor(0.7 * 24)); // never smaller than this: it wraps instead
 });

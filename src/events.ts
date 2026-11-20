@@ -53,6 +53,9 @@ export interface GameEvents {
    *  or into the water beside it. */
   canoeIn: { place: Vector3 };
   canoeOut: { place: Vector3; outcome: "bank" | "water" };
+  /** From the flag feature (src/features/flag): the Flag caught fire, and has burnt down to a charred rag. */
+  flagLit: { place: Vector3 };
+  flagBurnt: { place: Vector3 };
   /** From the Old Beaver feature (src/features/old-beaver): he murmurs a line of a lore, or his closing word, one
    *  syllable a word, syllable s apart, from where he sits; for the local player only. words 0: he falls silent. */
   oldBeaverSpeaks: { place: Vector3; words: number; syllable: number };

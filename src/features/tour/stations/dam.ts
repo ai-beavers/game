@@ -59,7 +59,7 @@ export const dam = (kit: Kit): Station[] => {
       expect(splits() && last.treeSplits!.logs + last.treeSplits!.sticks > 0 && !t()?.grown, `tree ${i} grown back gave no wood`);
     }, "Regrowth"],
     ["Carry a stick", () => player.carrying ? skip("a stick is in the hand already") : fetchStick(), "Dam work"],
-    // A few sticks a visit (fast: up to half the dam, then the rest), so the dam grows across rounds; the saved game
+    // A few sticks a visit (fast: up to half the dam, then the rest), so the dam grows across rounds; the kept world
     // lives on, so the lodge follows it.
     ["Build the dam", async () => {
       const n = needBuild().state.dam.length;

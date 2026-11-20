@@ -52,6 +52,7 @@ export const PLAYED: Record<SoundName, { bus: Bus; at: number; amount: number; s
   plip: { bus: "ambience", at: 5, amount: 0.5, seconds: 1 },
   bird: { bus: "ambience", at: 12, amount: 0.5, seconds: 2 },
   lap: { bus: "ambience", at: 5, amount: 0.5, seconds: 2 },
+  crackle: { bus: "ambience", at: CAMERA + 1, amount: 0.5, seconds: 1.5 },
 };
 
 /** A panner as index.ts makes them, `distance` m to the right front of the listener at the origin. */

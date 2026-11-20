@@ -15,8 +15,15 @@ export { DAY_SECONDS, hourAt, START } from "../sky/day.ts";
 import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
+/** The worlds a server holds: the players' ("") and the tour's own, where the beaver that plays by itself
+ *  (src/features/tour) works without touching a game someone plays. A page names the tour's with ?world=tour on PATH
+ *  and INFO_PATH; any other address means the players' world. */
+export const TOUR_WORLD = "tour";
+export const worldOf = (search: URLSearchParams) => search.get("world") === TOUR_WORLD ? TOUR_WORLD : "";
 /** On Cloudflare only (worker.ts): POST with the reset token starts the world afresh. */
 export const RESET_PATH = "/net/reset";
+/** GET: the House of AI events as JSON, [{ name, start, end }] (src/features/shop/events.ts); not part of the room. */
+export const EVENTS_PATH = "/net/events";
 export const MAX_PLAYERS = 16;
 /** Sockets one client address may hold (a household or class behind one router), and how long a new socket has to
  *  say hello before it is closed: the browser says it the moment the socket opens. */
@@ -48,21 +55,23 @@ export const ACTIONS: Action[] = ["none", "pickup", "drop", "gnaw", "build"];
 const BIG = 1e7; // s or m: more than any session reaches
 /** How low the beaver is (Motion.low), as its index: 0 standing (left out), 1 sitting, 2 crawling. */
 export const LOWS = [undefined, "sit", "crawl"] as const;
-/** Field, lowest, highest; booleans travel as 0 / 1, the action as its index in ACTIONS, low as its index in LOWS. */
+/** Field, lowest, highest; booleans travel as 0 / 1, the action as its index in ACTIONS, low as its index in LOWS.
+ *  New fields go last, so the positions of the others stay. */
 const MOTION: [keyof Motion, number, number][] = [
   ["speed", 0, 30], ["distance", -BIG, BIG], ["turning", -100, 100], ["grounded", 0, 1], ["vertical", -100, 100],
   ["airTime", 0, BIG], ["sinceLanding", 0, BIG], ["landingSpeed", 0, 100], ["swimming", 0, 1],
   ["action", 0, ACTIONS.length - 1], ["actionProgress", 0, 1], ["carrying", 0, 1], ["anger", 0, 1], ["time", 0, BIG],
-  ["low", 0, LOWS.length - 1],
+  ["low", 0, LOWS.length - 1], ["lanternOff", 0, 1],
 ];
 
-const LOW_AT = MOTION.findIndex(([key]) => key === "low");
+const LOW_AT = MOTION.findIndex(([key]) => key === "low"), OFF_AT = MOTION.findIndex(([key]) => key === "lanternOff");
 
 export function packMotion(m: Motion): number[] {
   return MOTION.map(([key]) => {
     const v = m[key];
     if (key === "action") return ACTIONS.indexOf(v as Action);
     if (key === "low") return LOWS.indexOf(v as Motion["low"]);
+    if (key === "lanternOff") return v ? 1 : 0; // left out: on
     if (typeof v === "boolean") return v ? 1 : 0;
     return Math.round((v as number) * 1000) / 1000;
   });
@@ -72,6 +81,7 @@ export function unpackMotion(list: number[], into: Motion): Motion {
   MOTION.forEach(([key], i) => {
     const v = list[i]!;
     if (key === "low") { const low = LOWS[Math.round(v)]; if (low) into.low = low; else delete into.low; return; }
+    if (key === "lanternOff") { if (v > 0.5) into.lanternOff = true; else delete into.lanternOff; return; }
     (into as unknown as Record<string, unknown>)[key] = key === "action" ? ACTIONS[v] : key === "grounded" || key === "carrying" ? v > 0.5 : v;
   });
   return into;
@@ -98,8 +108,8 @@ export type ClientMessage =
   | { t: "drop"; s: Place; v: [number, number, number] }
   /** Changes the sender made to the build feature's world, in order. */
   | { t: "build"; c: BuildChange[] }
-  /** The sender's whole saved world, for a server whose world is still empty. */
-  | { t: "bring"; c: BuildChange[] };
+  /** In the tour's world only (room.ts, sandbox): start the world afresh. */
+  | { t: "reset" };
 
 export interface PlayerInfo { id: number; name: string }
 
@@ -124,11 +134,11 @@ export type ServerMessage =
   | { t: "need" }
   /** Build changes the server took, numbered from n in its list; to everyone, the sender (id) too. */
   | { t: "build"; id: number; n: number; c: BuildChange[] }
-  /** The server's whole world, to a player whose "bring" came too late or whose change it refused: take this one. */
+  /** The server's whole world, to a player whose change it refused: take this one. */
   | { t: "world"; epoch: string; build: BuildChange[] }
   /** The server shortened its list (compact): the same world, from now on n changes long under this epoch. */
   | { t: "epoch"; epoch: string; n: number }
-  /** The world was reset on the server: forget yours. */
+  /** The world was reset on the server: start again in the new one. */
   | { t: "reset" };
 
 // ---- checks -----------------------------------------------------------------------------------------------------
@@ -201,7 +211,7 @@ export function parseClient(text: unknown): ClientMessage | undefined {
       const { p, f, c, u } = m, motion = m.m;
       if (!point(p) || !num(f, -1e4, 1e4) || !int(c, -1, MAX_THINGS - 1)) return;
       if (!list(motion, MOTION.length) || !MOTION.every(([, lo, hi], i) => num(motion[i], lo, hi))) return;
-      if (!int(motion[9], 0, ACTIONS.length - 1) || !int(motion[LOW_AT], 0, LOWS.length - 1)) return;
+      if (!int(motion[9], 0, ACTIONS.length - 1) || !int(motion[LOW_AT], 0, LOWS.length - 1) || !int(motion[OFF_AT], 0, 1)) return;
       if (u !== undefined && !(list(u, 4) && int(u[0], 0, MAX_THINGS - 1) && num(u[1], -1, 1) && num(u[2], -1, 1) && num(u[3], 0, 5))) return;
       return { t: "state", p: p as [number, number, number], f, m: motion as number[], c, ...(u ? { u: u as [number, number, number, number] } : {}) };
     }
@@ -215,12 +225,13 @@ export function parseClient(text: unknown): ClientMessage | undefined {
       if (!place(m.s) || !(list(v, 3) && v.every((x) => num(x, -30, 30)))) return;
       return { t: "drop", s: m.s, v: v as [number, number, number] };
     }
-    case "build": case "bring": {
+    case "build": {
       // Each change checked alone: the good ones of a list pass, the rest are left out.
       if (!Array.isArray(m.c) || m.c.length > MAX_CHANGES) return;
       const c = m.c.map(parseChange).filter((x) => x !== undefined);
-      return c.length ? { t: m.t, c } : undefined;
+      return c.length ? { t: "build", c } : undefined;
     }
+    case "reset": return { t: "reset" };
   }
 }
 
@@ -233,14 +244,15 @@ export const MAX_BITES = bitesToFell(Infinity);
  *  twice, a stick not used twice: neither built in twice, traded twice, nor both), no tree takes more bites than any tree needs, and a tree grows back only REGROW
  *  s after its wood went by `now`, the server's clock (rules.ts, the rule). Applies it when it passes; a split it
  *  takes is stamped with now (change.at, whatever the sender wrote), so the log and its file keep when. The log
- *  stays bounded as trees grow back because the server compacts it. */
-export function admit(world: BuildState, change: BuildChange, now = Date.now()): boolean {
+ *  stays bounded as trees grow back because the server compacts it. anytime: a tree may grow back before its time
+ *  (the tour's world, where the tour does not wait REGROW s). */
+export function admit(world: BuildState, change: BuildChange, now = Date.now(), anytime = false): boolean {
   const t = "tree" in change ? world.trees[change.tree] : undefined;
   if (change.type === "bite") {
     const a = live(t);
     if (a && (a.fell === undefined ? a.bites >= MAX_BITES : a.splitBites >= BITES_TO_SPLIT)) return false;
   }
-  if (change.type === "grow" && !(t?.split && now >= (t.gone ?? Infinity) + REGROW * 1000)) return false;
+  if (change.type === "grow" && !(t?.split && (anytime || now >= (t.gone ?? Infinity) + REGROW * 1000))) return false;
   if (!apply(world, change, now)) return false;
   if (change.type === "split") change.at = now;
   return true;

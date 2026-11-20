@@ -1,7 +1,7 @@
 // Tests for the build feature's rules: state changes, trees, wood, the dam plan, goals. Run: bun test src/features/build
 import { describe, expect, test } from "bun:test";
 import {
-  apply, BITES_TO_SPLIT, bitesToFell, CACHE, CACHE_AT, cachePlan, crestHeight, DAM, damPlan, goals, growth, live, load, LODGE, lodgeGrow, moundHeight, newState,
+  apply, BITES_TO_SPLIT, bitesToFell, CACHE, CACHE_AT, cachePlan, crestHeight, DAM, damPlan, goals, growth, live, LODGE, lodgeGrow, moundHeight, newState,
   POND_RISE, pondLevel, pondRise, profile, REGROW, SLOTS, SPROUT, STICKS, woodFrom,
 } from "./rules.ts";
 import { heightAt, POND, WATER_LEVEL } from "../../world/terrain.ts";
@@ -63,20 +63,6 @@ describe("changes", () => {
     expect(s.dam).toEqual(["w1", "w2"]);
     for (let k = 0; k < 70; k++) apply(s, { type: "place", slot: k, stick: `d${k}` });
     expect(s.dam).toHaveLength(SLOTS + LODGE + CACHE);
-  });
-  test("a saved state comes back; a broken one gives a fresh state", () => {
-    const s = newState();
-    apply(s, { type: "find" });
-    apply(s, { type: "fell", tree: 1, direction: 0.5 });
-    expect(load(JSON.stringify(s))).toEqual(s);
-    expect(load("{oops")).toEqual(newState());
-    expect(load(null)).toEqual(newState());
-    expect(load(JSON.stringify({ version: 9 }))).toEqual(newState());
-    // Saved before trees grew back: a tree gone into wood starts its count when loaded.
-    const old = { ...newState(), trees: { 3: { bites: 6, fell: 0, rest: { at: [0, 0, 0], turn: [0, 0, 0, 1] }, splitBites: 4, split: true } } };
-    const before = Date.now(), back = load(JSON.stringify(old));
-    expect(back.trees[3]!.gone).toBeGreaterThanOrEqual(before);
-    expect(back.trees[3]!.gone).toBeLessThanOrEqual(Date.now());
   });
 });
 
@@ -163,9 +149,9 @@ test("goals tick off with the state", () => {
   expect(goals(s).map((g) => [g.id, g.done])).toEqual([["dam", true], ["lodge", false]]);
   expect(goals(s)[0]!.text).toBe("Build the dam: 30 of 30");
   expect(goals(s)[1]!.text).toBe(`Build up the lodge: 2 of ${LODGE}`);
-  // A world saved with the lodge standing (before there was a cache) loads into the cache's goal, at none of CACHE.
+  // With the lodge standing the cache's goal comes, at none of CACHE.
   for (let k = 0; k < LODGE - 2; k++) apply(s, { type: "place", slot: 0, stick: `x${k}` });
-  expect(goals(load(JSON.stringify(s))).map((g) => [g.id, g.done])).toEqual([["dam", true], ["lodge", true], ["cache", false]]);
+  expect(goals(s).map((g) => [g.id, g.done])).toEqual([["dam", true], ["lodge", true], ["cache", false]]);
   expect(goals(s)[1]!.text).toBe(`Build up the lodge: ${LODGE} of ${LODGE}`);
   expect(goals(s)[2]!.text).toBe(`Stock the food cache: 0 of ${CACHE}`);
   for (let k = 0; k < CACHE + 3; k++) apply(s, { type: "place", slot: 0, stick: `x${LODGE + k}` });
@@ -219,14 +205,6 @@ describe("trading sticks away", () => {
     expect(apply(s, { type: "place", slot: 0, stick: "w4" })).toBe(true);
     expect(apply(s, { type: "trade", stick: "w4" })).toBe(false);
     expect(s.traded).toEqual(["w3"]);
-  });
-  test("an old saved game without traded sticks loads, and stays a version 1 game", () => {
-    const old = JSON.stringify({ version: 1, trees: { 2: { bites: 3, splitBites: 0 } }, dam: ["w1"], found: true });
-    const s = load(old);
-    expect(s.traded).toEqual([]);
-    expect(s.dam).toEqual(["w1"]);
-    expect(apply(s, { type: "trade", stick: "w2" })).toBe(true);
-    expect(load(JSON.stringify(s)).traded).toEqual(["w2"]);
   });
   test("a tree grown back brings its traded sticks back with it, never the world's own", () => {
     const s = newState();
