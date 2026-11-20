@@ -19,6 +19,7 @@
 //   camera.yaw                        the way it looks, for steering relative to it
 //   camera.turn(yaw, pitch)           other devices (stick, touch): turn by these radians, pitch kept in range
 //   camera.zoom(scale)                distance times scale, kept in 2 … 8 m (eased in the picture)
+//   camera.touched                    rises with every turn, zoom and press on the picture by the player
 //   camera.invertY = true             mouse drag up and down turned round (settings.invertY; the controls feature sets it)
 //   camera.room                       how far it may stand along a way, for things without a collider (the live tour's).
 //   camera.view                       "third-person" or "first-person"; V switches it, except while paused (a menu,
@@ -203,7 +204,7 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
   const { camera, physics, canvas, engine } = stage;
   const look = new Vector3(), direction = new Vector3(), probe = new Vector3(), ball = new RAPIER.Ball(BALL), rig = newRig();
   const rotation = { x: 0, y: 0, z: 0, w: 1 };
-  let shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0;
+  let shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0, touched = 0;
   let seen: View = "third-person", eyes: TransformNode | undefined, eyeChain: TransformNode[] = [];
   const pitchRange = (pitch: number) => seen === "first-person"
     ? Math.max(-EYE_PITCH, Math.min(EYE_PITCH, pitch)) : Math.max(lowest(rig), Math.min(MAX_PITCH, pitch));
@@ -228,6 +229,8 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
     room: undefined as ((from: Vector3, direction: Vector3, distance: number) => number) | undefined,
     /** How far it really is now, after pulling in for things in the way. */
     get shown() { return shown; },
+    /** How many times the player turned or zoomed the camera or pressed on the picture. Only rises; setting yaw does not. */
+    get touched() { return touched; },
     get view() { return seen; },
     set view(next: View) {
       if (next === seen) return;
@@ -246,11 +249,12 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       for (let n: Node | null = node ?? null; n; n = n.parent) if (n instanceof TransformNode) eyeChain.unshift(n);
     },
     turn(yaw: number, pitch: number) {
-      if (yaw || pitch) idle = 0;
+      if (yaw || pitch) { idle = 0; touched++; }
       state.yaw += yaw;
       state.pitch = pitchRange(state.pitch + pitch);
     },
     zoom(scale: number) {
+      touched++;
       if (seen === "first-person") return; // it would push the camera out of the eyes
       state.distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, state.distance * scale));
     },
@@ -321,6 +325,7 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
 
   let dragging = -1;
   canvas.addEventListener("pointerdown", (e) => {
+    touched++;
     if (e.pointerType === "touch") return;
     dragging = e.pointerId; canvas.setPointerCapture(e.pointerId);
   });

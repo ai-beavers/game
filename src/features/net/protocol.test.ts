@@ -90,6 +90,11 @@ describe("motion", () => {
     expect(unpackMotion(packMotion(newMotion()), into).lanternOff).toBeFalsy();
     expect(unpackMotion(packMotion({ ...newMotion(), lanternOff: false }), into).lanternOff).toBeFalsy();
   });
+  test("a Stare stays with its own player: it never travels", () => {
+    const staring = { ...newMotion(), grounded: true, stare: { weight: 1, yaw: 0.4, pitch: 0.2 } };
+    expect(packMotion(staring)).toEqual(packMotion({ ...newMotion(), grounded: true }));
+    expect(unpackMotion(packMotion(staring), newMotion()).stare).toBeUndefined();
+  });
   test("the server drops a state whose lantern switch is not 0 or 1", () => {
     const m = packMotion(newMotion()), last = m.length - 1;
     for (const v of [0, 1]) expect(parseClient(state({ m: m.map((x, i) => i === last ? v : x) }))).toBeDefined();

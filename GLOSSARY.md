@@ -104,6 +104,10 @@ _Avoid_: crouch, sneak, prone
 The player switching the lantern off and on with one button while it is dark, so that other players see it blink. A flash means what the players agree it means; the game gives it no meaning.
 _Avoid_: blink, signal, toggle
 
+**Stare**:
+The beaver turning round on land to look straight into its own player's camera, unblinking, once the player has touched nothing for a minute. Any input ends it. Only that player sees it.
+_Avoid_: AFK, idle animation, look-at
+
 **Remote**:
 Another player's beaver as this browser draws it.
 _Avoid_: peer, other client

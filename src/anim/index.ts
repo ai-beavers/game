@@ -16,6 +16,7 @@
 //   slap     the tail up and struck down (action "none" with a progress), over all of the above but the carry
 //   carry    the right arm holds the stick in front of the chest, over all of the above
 //   reach    the left paw over the shoulder to the backpack (motion.reachBack), over all of the above, left arm only
+//   stare    the head turned to look along motion.stare's aim, raised and cocked, over all of the above, head only
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
 import { BACKPACK, WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
 import type { SwimMotion } from "../player/state.ts";
@@ -23,7 +24,7 @@ import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
 import { foot, gait, type FootPlan, type Gait } from "./gait.ts";
 import { ANKLE, REACH, aimArm, onChest, placeLeg, reachArm } from "./ik.ts";
-import { axisAngle, clamp, lerp, mul, rotate, smooth, type Quat, type Vec } from "./quat.ts";
+import { add, axisAngle, clamp, inv, lerp, mul, rotate, smooth, type Quat, type Vec } from "./quat.ts";
 import { REST } from "./rest.ts";
 
 export { gait, foot } from "./gait.ts";
@@ -261,6 +262,19 @@ function action(body: Body, what: Action, progress: number, time: number) {
   }
 }
 
+/** How far the head turns to stare, rad: either way, down and up; and the cock, its top tipped to the beaver's right. */
+const STARE_YAW = 1.3, STARE_DOWN = 0.5, STARE_UP = 0.9, COCK = 0.22, NECK = 0.012; // NECK: m the head rises
+
+/** The head looking along yaw and pitch (relative to the body, armature space), cocked: its turn from rest in armature
+ *  space is yaw about up, then pitch about its left, then the cock about its own forward; set as a turn relative to the
+ *  chest as it stands now. Raised a little on its neck. */
+function stare(body: Body, yaw: number, pitch: number) {
+  const chest = body.fk().chest.delta;
+  const look = mul(axisAngle(UP, clamp(yaw, -STARE_YAW, STARE_YAW)), mul(axisAngle(X, -clamp(pitch, -STARE_DOWN, STARE_UP)), axisAngle([0, 0, 1], COCK)));
+  body.turns.head = mul(inv(chest), look);
+  body.move("head", add(body.offsets.head, [0, NECK, 0]));
+}
+
 /** Afloat: level, head up, hind legs paddling, tail steering. */
 function swim(body: Body, phase: number, turning: number) {
   const s = sin(TAU * phase);
@@ -405,6 +419,11 @@ export const createAnimator: CreateAnimator = (): Animator => {
         const placed = layer.fk();
         reachArm(layer, placed, "L", onChest(placed, BACKPACK_REACH), rotate(placed.chest.delta, REACH_POLE), 0.5);
         body.blend(layer, reach, LEFT_ARM);
+      }
+      const staring = clamp(m.stare?.weight ?? 0);
+      if (staring > 0) { // the head at the camera, over whatever the body does: fixed, no look round, no breath in it
+        stare(layer.copy(body), m.stare!.yaw, m.stare!.pitch);
+        body.blend(layer, staring, ["head"]);
       }
       brows_at(body, anger);
       return body.pose();

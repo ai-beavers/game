@@ -48,9 +48,10 @@ import { sitAndCrawl } from "./stations/sit-crawl.ts";
 import { shopping } from "./stations/shop.ts";
 import { canoeing } from "./stations/canoe.ts";
 import { mrsBeaver } from "./stations/mrs-beaver.ts";
+import { stare } from "./stations/stare.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, dam, trading, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, mrsBeaver, skyWatch, hud, controls, views, firstSteps];
+const STATIONS = [movement, dam, trading, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, mrsBeaver, stare, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
@@ -107,10 +108,19 @@ export const create: CreateFeature = (game) => {
   label.fontWeight = "bold";
   label.outlineWidth = 3;
   label.outlineColor = "#182723";
+  // Live: a reason too long for the row gets smaller type, so it stays on the one row its backing has (a bold
+  // character is about WIDE of the type wide, with some room to spare at the ends).
+  const WIDE = 0.58;
+  let type = 14, across = 0;
+  // Never below SMALLEST of the type: on a small screen a long line wraps instead, as before.
+  const SMALLEST = 0.7;
+  const fit = () => { if (backing) label.fontSize = Math.floor(Math.max(SMALLEST * type, Math.min(type, (across - type) / (WIDE * Math.max(1, label.text.length))))); };
+  label.onTextChangedObservable.add(fit);
   onViewport(stage,(w,h) => {
     if (!backing) return overlay.move(label,hudLayout(stage).caption);
     const { caption: at, u: size } = hudLayout(stage); // the HUD's top centre and its type (hud/style.ts)
-    label.fontSize = size;
+    type = size; across = at.w;
+    fit();
     overlay.move(backing, at);
     overlay.move(label, at);
   });
