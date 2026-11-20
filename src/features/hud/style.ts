@@ -30,8 +30,9 @@ export const TRACK = "rgba(255,255,255,0.12)";
 export const RADIUS = 16;
 /** The one face of the HUD, bundled (assets/nunito.woff2, loaded in overlay.ts); weights 600 … 900. */
 export const FONT = "Nunito, system-ui, sans-serif";
-/** A key cap ([E], [M], [T]): a cream rounded square with the key in dark ink. */
-export const CAP = { back: PAPER, ink: INK, radius: 5 };
+/** A key cap ([E], [M], [T]): a raised key, its cream top over a darker side `depth` of its height deep, with a dark
+ *  outline and a drop shadow, the key in dark ink on the top. */
+export const CAP = { back: PAPER, side: "#B09670", edge: "rgba(43,29,18,0.55)", shine: "rgba(255,255,255,0.85)", ink: INK, radius: 5, depth: 0.2 };
 /** The hotbar (src/features/trade, src/player): HOTBAR slots in a row in its box, each `slot` px square. */
 export const HOTBAR = 5;
 export const SLOT = { back: "rgba(255,246,228,0.06)", edge: "rgba(255,246,228,0.16)", chosen: GOLD, radius: 10 };

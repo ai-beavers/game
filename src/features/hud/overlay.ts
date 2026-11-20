@@ -160,16 +160,25 @@ export class Overlay {
     return pill;
   }
 
-  /** A key cap: the key in dark ink on a cream rounded square, `r` big; at() moves it. Not read out (the text it
-   *  stands beside says what to do). */
+  /** A key cap: a raised key `r` big, its top cream with the key in dark ink over a darker side (CAP); at() moves it.
+   *  `back` is the top: its visibility is the whole cap's. Not read out (the text it stands beside says what to do). */
   cap(name: string, key: string, r: Box, size: number) {
+    const depth = Math.max(2, Math.round(r.h * CAP.depth));
+    const side = this.rect(name + "-side", r, CAP.side, CAP.radius);
+    side.thickness = 1; side.color = CAP.edge;
+    side.shadowColor = "rgba(0,0,0,0.45)"; side.shadowOffsetY = 1; side.shadowBlur = 3;
     const back = this.rect(name, r, CAP.back, CAP.radius);
+    back.thickness = 1; back.color = CAP.shine;
     const text = this.text(name + "-letter", key, r, size, "center", false);
     text.color = CAP.ink; text.fontWeight = "900"; text.textWrapping = false;
-    back.onIsVisibleChangedObservable.add(on => { text.isVisible = on; });
+    back.onIsVisibleChangedObservable.add(on => { text.isVisible = side.isVisible = on; });
     // A wider key ("Use", "Tab") widens its cap.
     const fit = () => Math.max(r.w, Math.ceil(measure(text.text, size, "900")) + Math.round(size * 0.8));
-    const at = (x: number, y: number) => { const w = fit(); this.move(back, box(x, y, w, r.h)); this.move(text, box(x, y, w, r.h)); return w; };
+    const at = (x: number, y: number) => {
+      const w = fit(), top = box(x + 1, y + 1, w - 2, r.h - depth - 1);
+      this.move(side, box(x, y, w, r.h)); this.move(back, top); this.move(text, top);
+      return w;
+    };
     at(r.x, r.y);
     return { back, text, at };
   }
