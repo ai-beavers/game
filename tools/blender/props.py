@@ -5,7 +5,7 @@
 #
 # One node per variant, named <prop>_<n> (tree_1 …), everything it needs as children; each stands on the ground
 # (glTF y = 0) around its own origin, metres. Sticks and logs lie along glTF z (Blender y), middle at the origin,
-# resting on the ground. src/props/index.ts loads the file; lab/props.html shows it.
+# resting on the ground. src/props/index.ts loads the file.
 #
 # Every texture is drawn here with numpy and kept small; they are shared: bark, birch bark, end grain, wood grain,
 # stone, and one leaf atlas (sprays of broad and birch leaves, a crown's skin, a reed blade) with alpha. Vertex colours

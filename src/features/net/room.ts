@@ -9,12 +9,15 @@
 //   room.info(addresses, withBuild)                   what GET /net/info answers
 //   room.reset() · room.save()                        the world afresh; the world kept now (before the process ends)
 //
+// The room's world is the only one: a page starts in what info() answers and never brings a world of its own. It lives
+// in memory; with keep it comes back after a restart.
+//
 // The room is the trust boundary: every message is checked by parseClient (protocol.ts), each socket is rate limited,
 // a player only ever speaks as itself, and only the host may move the loose things.
 import { newState, type BuildChange } from "../build/rules.ts";
 import {
   admit, bucket, compact, HELLO_TIME, hostOf, hourAt, MAX_PLAYERS, newEpoch, parseClient, PER_ADDRESS, restore, sameOrigin, START, uniqueName,
-  type PlayerInfo, type ServerMessage, type Work,
+  type Place, type PlayerInfo, type ServerMessage, type Work,
 } from "./protocol.ts";
 
 const RATE = 60, BURST = 120, CHAT_RATE = 1, CHAT_BURST = 4; // messages a second
@@ -38,10 +41,11 @@ export interface Conn {
 }
 
 /** version: the build (a commit), "" in development. publicUrl: pages from there may open the socket too. saved and
- *  keep: the world's work over restarts; without keep nothing is kept. */
-export interface Home { version: string; publicUrl?: string; saved?: string; keep?: (text: string) => void }
+ *  keep: the world's work over restarts; without keep nothing is kept. sandbox: the tour's world (protocol.ts
+ *  TOUR_WORLD), where any player may start the world afresh and a tree may grow back before its time. */
+export interface Home { version: string; publicUrl?: string; saved?: string; keep?: (text: string) => void; sandbox?: boolean }
 
-export function newRoom({ version, publicUrl, saved, keep }: Home) {
+export function newRoom({ version, publicUrl, saved, keep, sandbox = false }: Home) {
   // ---- the world's work -------------------------------------------------------------------------------------------
 
   const work: Work = { epoch: newEpoch(), world: newState(), log: [] };
@@ -57,6 +61,11 @@ export function newRoom({ version, publicUrl, saved, keep }: Home) {
     compact(work); // kept from before the room compacted
   }
 
+  // Where the loose things lie, as the host last said. A host that followed nobody (the first in, or the only player
+  // after a reload) is told, so the wood lies where it was left. In memory only: after a restart it lies where the
+  // world puts it.
+  const places = new Map<number, Place>();
+
   let saving: ReturnType<typeof setTimeout> | undefined;
   /** Keeps the world now. */
   function save() {
@@ -71,7 +80,7 @@ export function newRoom({ version, publicUrl, saved, keep }: Home) {
    *  that does not fit was already applied by its sender (a grow asked too early, a tree felled by two at once): it
    *  gets the room's world again, to take that instead. */
   function build(conn: Conn, changes: BuildChange[]) {
-    const taken = changes.filter((c) => admit(work.world, c)), n = work.log.length;
+    const taken = changes.filter((c) => admit(work.world, c, Date.now(), sandbox)), n = work.log.length;
     if (taken.length) {
       work.log.push(...taken);
       everyone({ t: "build", id: conn.peer!.id, n, c: taken });
@@ -81,9 +90,10 @@ export function newRoom({ version, publicUrl, saved, keep }: Home) {
     if (taken.length < changes.length && conn.resend.take()) send(conn, { t: "world", epoch: work.epoch, build: work.log });
   }
 
-  /** Starts the world afresh: every player's saved world is forgotten too. */
+  /** Starts the world afresh: every player's page starts again in it. */
   function reset() {
     Object.assign(work, { epoch: newEpoch(), world: newState(), log: [] });
+    places.clear();
     everyone({ t: "reset" });
     changed();
     console.log("The world is reset.");
@@ -141,6 +151,7 @@ export function newRoom({ version, publicUrl, saved, keep }: Home) {
       if (name !== m.name) send(conn, { t: "name", id: me.id, name }); // the name it is known by
       others(conn, { t: "join", id: me.id, name: me.name });
       conn.listening = true;
+      if (host === conn && places.size) send(conn, { t: "things", l: [...places.values()] });
       if (host && host !== conn) send(host, { t: "need" });
       console.log(`${me.name} joined (${peers.size} in)`);
       return;
@@ -171,18 +182,19 @@ export function newRoom({ version, publicUrl, saved, keep }: Home) {
       case "drop":
         if (peer.carry !== m.s[0]) return;
         peer.carry = -1;
+        places.set(m.s[0], m.s);
         others(conn, { ...m, id: peer.id });
         return;
       case "things":
-        if (conn === host) others(conn, m);
+        if (conn !== host) return;
+        for (const p of m.l) places.set(p[0], p);
+        others(conn, m);
         return;
       case "build":
         build(conn, m.c);
         return;
-      case "bring":
-        // Only into an empty world; one that came too late gets the world there is.
-        if (work.log.length) send(conn, { t: "world", epoch: work.epoch, build: work.log });
-        else build(conn, m.c);
+      case "reset":
+        if (sandbox && conn.resend.take()) reset(); // under the rate of whole worlds: each makes every page load again
         return;
     }
   }
@@ -225,7 +237,7 @@ export function newRoom({ version, publicUrl, saved, keep }: Home) {
   /** Small for health checks and the join screen; the changes only when asked (the page asks once as it loads). */
   function info(addresses: string[], withBuild: boolean) {
     const { epoch, log } = work, small = { addresses, players: peers.size, max: MAX_PLAYERS, epoch, changes: log.length, version };
-    return withBuild ? { ...small, build: log } : small;
+    return withBuild ? { ...small, build: log, now: Date.now() } : small; // now: the clock the splits' times are on
   }
 
   return { broken, refuse, open, receive, close, info, reset, save };

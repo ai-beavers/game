@@ -7,7 +7,7 @@
 // A particle fades in after birth and out before death (and quickly when told to `vanish`), so nothing pops.
 
 /** Shapes the shader knows. Keep in step with SHAPES in particles.ts. */
-export const KIND = { puff: 0, drop: 1, ring: 2, chip: 3, blade: 4, leaf: 5, mote: 6, foam: 7, seed: 8 } as const;
+export const KIND = { puff: 0, drop: 1, ring: 2, chip: 3, blade: 4, leaf: 5, mote: 6, foam: 7, seed: 8, flame: 9, smoke: 10 } as const;
 /** How the quad stands: facing the camera, flat on the water, flat on the ground, or stretched along its velocity. */
 export const MODE = { face: 0, water: 1, ground: 2, streak: 3 } as const;
 /** What happens when it reaches the ground (or the water, for drops). */

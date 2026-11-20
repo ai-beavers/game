@@ -11,6 +11,8 @@
 //   const game = await createGame(canvas, [create]);      see src/game.ts
 //   fxOf(game.stage.scene)?.splash(place, size)            for other features: a splash in the pond (size 1: a beaver
 //   fxOf(game.stage.scene)?.ring(place, size)              jumping in; 0.2: a fish), a ring on the water (size: metres)
+//   fxOf(game.stage.scene)?.fire(place, strength)          flames and smoke rising from a place, called each frame
+//                                                          while something burns (strength 1: a hand-sized fire)
 //
 // All of it is one pool of particles (sim.ts) drawn in one call (particles.ts). Fewer particles at lower
 // settings.quality; nothing moves while stage.paused. The pond's level is read each time (it rises behind the dam);
@@ -50,7 +52,14 @@ const clamp = (v: number) => Math.min(1, Math.max(0, v));
 export interface Fx {
   splash(place: Vector3, size?: number): void;
   ring(place: Vector3, size?: number): void;
+  /** Flames and smoke from a place for this frame: about `strength` flames a frame at high quality (fractions count
+   *  over frames), a third as much smoke. Call it every frame while something burns; the flames rise and turn from
+   *  yellow to orange, the smoke grows grey and drifts with the sky's wind. */
+  fire(place: Vector3, strength?: number): void;
 }
+/** The way the sky's wind blows over the ground (the grass sways along x): smoke drifts and a flag waves that way. */
+export const WIND = { x: 1, z: 0 } as const;
+const FLAME_HOT = new Color3(1.7, 1.15, 0.4), FLAME_COOL = new Color3(1.4, 0.4, 0.06), SMOKE = new Color3(0.13, 0.125, 0.12);
 /** The fx of a scene, once the fx feature runs (as daylightOf for the light). */
 export const fxOf = (scene: Scene) => scene.metadata.fx as Fx | undefined;
 
@@ -200,9 +209,45 @@ export const create: CreateFeature = (game) => {
     ring(at.x, at.z, 0.15 * wide, 1.0 * wide, 1.3, 0.4);
     for (let i = 0; i < 6; i++) { const a = i * 1.05, r = 0.25 * wide; foam(at.x + Math.cos(a) * r, at.z + Math.sin(a) * r, Math.cos(a) * 0.4 * wide, Math.sin(a) * 0.4 * wide, 0.3 * wide); }
   }
+  // ---- fire: tongues of flame licking up, smoke rising over them --------------------------------------------------
+  let flames = 0, smokes = 0;
+  function fire(place: Vector3, strength = 1) {
+    flames += strength * budget.rate;
+    smokes += strength * budget.rate / 3;
+    for (; flames >= 1; flames--) {
+      const s = random(0.7, 1.2);
+      make({
+        kind: KIND.flame, x: place.x + random(-0.04, 0.04), y: place.y + random(-0.02, 0.04), z: place.z + random(-0.04, 0.04),
+        vx: random(-0.08, 0.08), vy: random(0.5, 0.9), vz: random(-0.08, 0.08), gravity: -0.02, drag: 1.2,
+        life: random(0.4, 0.7), fadeIn: 0.05, fadeOut: 0.3, size: 0.24 * s, grow: 0.1 * s, squash: random(0.55, 0.75), rot: random(-0.15, 0.15),
+        r: FLAME_HOT.r, g: FLAME_HOT.g, b: FLAME_HOT.b, a: 0.9,
+      });
+    }
+    for (; smokes >= 1; smokes--) {
+      const shade = random(0.8, 1.2);
+      make({
+        kind: KIND.smoke, x: place.x + random(-0.05, 0.05), y: place.y + 0.3, z: place.z + random(-0.05, 0.05),
+        vx: random(-0.05, 0.05), vy: random(0.45, 0.7), vz: random(-0.05, 0.05), gravity: -0.01, drag: 0.4,
+        life: random(2.6, 3.6), fadeIn: 0.6, fadeOut: 1.8, size: random(0.15, 0.22), grow: random(0.8, 1.1), spin: random(-0.4, 0.4),
+        r: SMOKE.r * shade, g: SMOKE.g * shade, b: SMOKE.b * shade, a: 0.4,
+      });
+    }
+  }
+  /** What fire's particles do as they live: a flame cools from yellow to orange; smoke is carried off by the wind. */
+  function burning(p: Particle, dt: number) {
+    if (p.kind === KIND.flame) {
+      const t = Math.min(1, p.age / p.life);
+      p.r = FLAME_HOT.r + (FLAME_COOL.r - FLAME_HOT.r) * t; p.g = FLAME_HOT.g + (FLAME_COOL.g - FLAME_HOT.g) * t; p.b = FLAME_HOT.b + (FLAME_COOL.b - FLAME_HOT.b) * t;
+    } else if (p.kind === KIND.smoke) {
+      const wind = (game.sky?.wind ?? 0.25) * 1.6, k = Math.min(1, dt * 0.8);
+      p.vx += (WIND.x * wind - p.vx) * k; p.vz += (WIND.z * wind - p.vz) * k;
+    }
+  }
+
   const fx: Fx = {
     splash,
     ring: (place, size = 1) => ring(place.x, place.z, size * 0.1, size, 0.8 + size * 0.6, 0.45),
+    fire,
   };
   stage.scene.metadata.fx = fx;
 
@@ -545,6 +590,7 @@ export const create: CreateFeature = (game) => {
             p.vanish = 14;
             if (p.size > 0.025) ring(p.x, p.z, 0.03, 0.25, 0.8, 0.3);
           }
+          if (p.kind >= KIND.flame) burning(p, dt);
           advance(p, dt, p.kind === KIND.drop ? surfaceAt : groundAt);
           if (p.kind === KIND.drop && p.vanish && !p.landed) { p.landed = true; splat(p); }
         }

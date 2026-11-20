@@ -298,6 +298,12 @@ const RECIPES = {
       for (let i = 0; i < 10; i++) tone(ctx, out, t, { at: i * 0.045, freq: 4600 * v, to: 3800 * v, attack: 0.004, decay: 0.03, peak: 0.16 + 0.008 * i });
     }
   },
+  /** A fire's crackle (src/features/flag): a few dry snaps over a soft breath of flame. */
+  crackle(ctx, out, t, amount) {
+    const n = 2 + Math.floor(rand(0, 4));
+    for (let i = 0; i < n; i++) burst(ctx, out, t, { at: rand(0, 0.35), filter: "bandpass", freq: rand(1800, 4200), q: 2, attack: 0.001, decay: rand(0.008, 0.02), peak: rand(0.25, 0.6) * (0.6 + 0.4 * amount) });
+    burst(ctx, out, t, { filter: "lowpass", freq: 900, attack: 0.12, decay: 0.4, peak: 0.08 + 0.06 * amount });
+  },
   /** One wave against the shore. */
   lap(ctx, out, t, amount) {
     burst(ctx, out, t, { filter: "bandpass", freq: 450, to: 220, q: 1.2, attack: 0.15, decay: 0.5, peak: 0.3 + amount * 0.2 });

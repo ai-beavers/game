@@ -10,23 +10,27 @@
 //
 // The room keeps the world's work (the build feature's changes: trees gnawed and felled, wood, the dam) in order, as long
 // as it runs (with WORLD_FILE over restarts too), checked by admit() against its own copy of the world; a joiner gets the list,
-// kept as short as the present world (compact). A player whose change it refuses gets the whole world again. While its world is still
-// empty, the first player with a saved world brings it. It keeps the day too: 16:00 when it starts, one day every 720 s,
-// told to each player in welcome (not saved). Type `reset` and Enter in its terminal to start the world
-// afresh: every player's saved world is forgotten too.
+// kept as short as the present world (compact). A player whose change it refuses gets the whole world again. Its
+// world is the only one: a page keeps none of its own, so without WORLD_FILE a restart starts the world afresh for
+// everyone. It keeps the day too: 16:00 when it starts, one day every 720 s, told to each player in welcome (not
+// saved). Type `reset` and Enter in its terminal to start the world afresh. There are two rooms: the players' world
+// and the tour's own (?world=tour, protocol.ts TOUR_WORLD), which the beaver that plays by itself works in.
 //
 // On the internet (all optional; without them it behaves as on a LAN):
 //   PUBLIC_URL=https://beaver.example/   the address players are told to share, instead of this machine's; pages
 //                                        from there may open the socket too (else only those from the Host asked)
 //   TRUST_PROXY=cloudflare | fly         the client's address comes from that proxy's header (for the per-address limit)
-//   WORLD_FILE=/data/world.json          keeps the world's work there over restarts
+//   WORLD_FILE=/data/world.json          keeps the world's work there over restarts (the tour's world beside it,
+//                                        in /data/world.json.tour)
 //   GIT_SHA=<commit>                     the build; a page from another build reloads once when it reconnects
 // GET /net/info answers 200 with JSON while the server runs: it is the health check too. Its changes come only with
-// ?build (the page asks once as it loads).
+// ?build (the page asks once as it loads). GET /net/events answers the House of AI events for the Calendar board
+// (src/features/shop/events.ts), from Luma's feed or HOUSE_OF_AI_FEED=<iCal address> (the tests' fixture).
 import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { networkInterfaces, hostname } from "node:os";
 import index from "./index.html";
-import { clientAddress, INFO_PATH, MAX_MESSAGE, PATH, PROXY_HEADERS } from "./src/features/net/protocol.ts";
+import { clientAddress, EVENTS_PATH, INFO_PATH, MAX_MESSAGE, PATH, PROXY_HEADERS, TOUR_WORLD, worldOf } from "./src/features/net/protocol.ts";
+import { houseOfAiEvents } from "./src/features/shop/events.ts";
 import { newRoom, type Conn } from "./src/features/net/room.ts";
 import type { Built } from "./tools/build.ts";
 
@@ -78,26 +82,34 @@ async function bundle() {
 
 // ---- the world ----------------------------------------------------------------------------------------------------
 
-/** Writes the world: to a new file first, so a crash mid-write leaves the old one whole. */
-function keep(text: string) {
-  try {
-    writeFileSync(`${WORLD_FILE}.new`, text);
-    renameSync(`${WORLD_FILE}.new`, WORLD_FILE!);
-  } catch (error) { console.error(`Could not keep the world in ${WORLD_FILE}:`, error); }
+/** One world's room. With WORLD_FILE its work comes back after a restart, from `file`; a file that is no world at all
+ *  is kept aside as .bad. */
+function roomFor(file: string | undefined, sandbox: boolean) {
+  /** Writes the world: to a new file first, so a crash mid-write leaves the old one whole. */
+  const keep = (text: string) => {
+    try {
+      writeFileSync(`${file}.new`, text);
+      renameSync(`${file}.new`, file!);
+    } catch (error) { console.error(`Could not keep the world in ${file}:`, error); }
+  };
+  const room = newRoom({
+    version: VERSION, publicUrl: process.env.PUBLIC_URL, sandbox,
+    saved: file && existsSync(file) ? readFileSync(file, "utf8") : undefined, keep: file ? keep : undefined,
+  });
+  if (room.broken) {
+    copyFileSync(file!, `${file}.bad`);
+    console.warn(`${file} holds no world (kept as ${file}.bad): starting afresh.`);
+  }
+  return room;
 }
-// With WORLD_FILE, the world comes back after a restart; a file that is no world at all is kept aside as .bad.
-const room = newRoom({
-  version: VERSION, publicUrl: process.env.PUBLIC_URL,
-  saved: WORLD_FILE && existsSync(WORLD_FILE) ? readFileSync(WORLD_FILE, "utf8") : undefined, keep: WORLD_FILE ? keep : undefined,
-});
-if (room.broken) {
-  copyFileSync(WORLD_FILE!, `${WORLD_FILE}.bad`);
-  console.warn(`${WORLD_FILE} holds no world (kept as ${WORLD_FILE}.bad): starting afresh.`);
-}
-if (WORLD_FILE) for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { room.save(); process.exit(0); });
+const rooms = { "": roomFor(WORLD_FILE, false), [TOUR_WORLD]: roomFor(WORLD_FILE && `${WORLD_FILE}.${TOUR_WORLD}`, true) };
+if (WORLD_FILE) for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { for (const room of Object.values(rooms)) room.save(); process.exit(0); });
 
-/** address: what the per-address limit counts the socket under; conn: the room's side of it, once it is open. */
-interface Data { address?: string; conn?: Conn }
+const events = houseOfAiEvents(process.env.HOUSE_OF_AI_FEED || undefined);
+
+/** address: what the per-address limit counts the socket under; room: the world it asked for; conn: the room's side
+ *  of it, once it is open. */
+interface Data { address?: string; room: ReturnType<typeof newRoom>; conn?: Conn }
 
 const server = Bun.serve<Data>({
   port: PORT,
@@ -105,14 +117,15 @@ const server = Bun.serve<Data>({
   development: process.env.NODE_ENV !== "production",
   routes,
   fetch(req, server) {
-    const url = new URL(req.url);
+    const url = new URL(req.url), room = rooms[worldOf(url.searchParams)];
     // Not rate limited, since it costs less than the page itself.
     if (url.pathname === INFO_PATH) return Response.json(room.info(addresses, url.searchParams.has("build")));
+    if (url.pathname === EVENTS_PATH) return events();
     if (url.pathname === PATH) {
       const address = clientAddress(req.headers, server.requestIP(req)?.address, PROXY_HEADER);
       const refused = room.refuse(req.headers.get("origin"), req.headers.get("host"), address);
       if (refused) return refused;
-      return server.upgrade(req, { data: { address } }) ? undefined : new Response("WebSocket only", { status: 400 });
+      return server.upgrade(req, { data: { address, room } }) ? undefined : new Response("WebSocket only", { status: 400 });
     }
     return new Response("not found", { status: 404 });
   },
@@ -123,12 +136,12 @@ const server = Bun.serve<Data>({
     // default); 1 MB is many seconds of a full world's traffic.
     backpressureLimit: 1024 * 1024,
     closeOnBackpressureLimit: true,
-    open(ws) { ws.data.conn = room.open(ws, addresses, ws.data.address); },
-    message(ws, text) { room.receive(ws.data.conn!, typeof text === "string" ? text : ""); },
-    close(ws) { room.close(ws.data.conn!); },
+    open(ws) { ws.data.conn = ws.data.room.open(ws, addresses, ws.data.address); },
+    message(ws, text) { ws.data.room.receive(ws.data.conn!, typeof text === "string" ? text : ""); },
+    close(ws) { ws.data.room.close(ws.data.conn!); },
   },
 });
 
 console.log(`Beaver on port ${server.port}. Open on this network:\n${addresses.map((a) => `  ${a}`).join("\n")}`);
 console.log("Type reset and Enter to start the world afresh.");
-for await (const line of console) if (line.trim() === "reset") room.reset();
+for await (const line of console) if (line.trim() === "reset") rooms[""].reset();
