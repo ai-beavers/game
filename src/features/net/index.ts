@@ -39,6 +39,7 @@ import {
   INFO_PATH, packMotion, PATH, replay, sameWorld, SEND_RATE, shouldReload, stickId, TOUR_WORLD, type ClientMessage, type Place, type ServerMessage,
 } from "./protocol.ts";
 import { remoteLanterns } from "../lantern/remote.ts";
+import { VOICE_RATE } from "../old-beaver/rules.ts";
 import { createRemote, type Remote } from "./remote.ts";
 import { createThings } from "./things.ts";
 import { createUi } from "./ui.ts";
@@ -189,6 +190,9 @@ export const create: CreateFeature = (game) => {
     adopt(m.build);
   };
 
+  // The Old Beaver tells once for the whole world: the room hears how near this player is to him.
+  events.on("oldBeaverNear", ({ near }) => send({ t: "near", near }));
+
   const history: string[] = []; // joins, leaves and host changes, for tests (window.net.history)
   function receive(m: ServerMessage) {
     if (m.t === "welcome" || m.t === "join" || m.t === "leave" || m.t === "host") history.push(`${Math.round(performance.now())} ${m.t} ${m.id}${m.t === "welcome" ? ` host ${m.host}` : ""}`);
@@ -240,6 +244,7 @@ export const create: CreateFeature = (game) => {
         return;
       case "world": shared.epoch = m.epoch; adopt(m.build); return;
       case "epoch": shared.epoch = m.epoch; shared.have = m.n; return; // the same world, its changes numbered anew
+      case "lore": events.emit("oldBeaverTold", { told: m }); return;
       case "full": full = `Server full (${m.players}/${m.max}), playing alone`; return;
       case "reset": if (building) reload(); return;
     }
@@ -248,16 +253,23 @@ export const create: CreateFeature = (game) => {
   function connect() {
     if (!settings.values.name || socket) return;
     const ws = socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${PATH}?${WORLD}`);
+    ws.binaryType = "arraybuffer"; // the one binary message: a piece of the Old Beaver's voice
     ws.onopen = () => {
       named = settings.values.name;
       ws.send(JSON.stringify({ t: "hello", name: named, ...(shared.epoch ? { epoch: shared.epoch, have: shared.have } : {}) } satisfies ClientMessage));
     };
-    ws.onmessage = (e) => { try { receive(JSON.parse(e.data)); } catch (error) { console.warn("net:", error); } };
+    ws.onmessage = (e) => {
+      try {
+        if (typeof e.data === "string") receive(JSON.parse(e.data));
+        else events.emit("oldBeaverVoice", { pcm: e.data, rate: VOICE_RATE });
+      } catch (error) { console.warn("net:", error); }
+    };
     ws.onclose = () => {
       if (socket !== ws) return;
       socket = undefined;
       const was = connected;
       connected = false;
+      events.emit("oldBeaverTold", {}); // the room's Old Beaver is gone with it: he tells this player alone
       if (!OWN_DAY) game.sky?.alone();
       for (const id of [...remotes.keys()]) removeRemote(id);
       role();

@@ -79,15 +79,15 @@ The player's own beaver companion, with a flower behind her ear. At the start of
 _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
 
 **Old Beaver**:
-An old, grey-muzzled beaver who sits hidden at the foot of the bank, among the trees at the clearing's edge, always in the same place. No player steers him and, unlike an animal, he never leaves his place or flees. When a player comes close he turns to them and tells a lore in his voice, its words shown in the HUD. Everyone finds him in the same place; what he tells, each player hears alone.
+An old, grey-muzzled beaver who sits hidden at the foot of the bank, among the trees at the clearing's edge, always in the same place. No player steers him and, unlike an animal, he never leaves his place or flees. When a player comes close he turns to them and tells a lore in his voice, its words shown in the HUD of every player near him. Everyone finds him in the same place, and he tells once for all: whoever is near hears the same lore at the same moment.
 _Avoid_: elder, sage, wise beaver, NPC, Shopkeeper
 
 **Lore**:
-One short tale the Old Beaver tells about the clearing's past, a few lines long. He tells them in turn, a new one each time a player comes close again.
+One short tale the Old Beaver tells about the clearing's past, a few lines long. He tells them in turn, and the turn is the world's, not each player's: a new one each time a player comes close after everyone has left his side, whoever heard the last.
 _Avoid_: story, legend, dialogue, quest (a lore asks nothing of the player)
 
 **Voice**:
-The Old Beaver's lines said aloud in real English words, low and slow, heard from where he sits. A lore that has no voice yet he murmurs: a low hum without words, one beat a word.
+The lines a creature of the world says aloud in real words, heard from where it is by every player near it, quieter the farther off and not at all out of earshot. The Old Beaver has one: English, low and slow. A voice is made once each time the creature says a line, for all who listen, and no recording of it is kept anywhere. Where none is made, the creature murmurs the line instead: a low hum without words, one beat a word.
 _Avoid_: TTS, speech, narration, voice-over, voice chat (no player's voice is ever heard)
 
 **Quest**:
@@ -163,10 +163,6 @@ _Avoid_: blink, signal, toggle
 **Chat**:
 The lines players in the same world write to each other. A line shows over its beaver's head for a few seconds and in the log. It is not the stream's chat, where viewers write wishes.
 _Avoid_: messages, talk, stream chat, Twitch chat
-
-**Dictation**:
-Saying a chat line instead of typing it. The game listens only from when the player turns the microphone on until they turn it off, a few seconds at most, and writes what it heard into the chat's field; the player sends or changes it like a typed line. No one hears the player's voice: not other players, not the stream.
-_Avoid_: voice chat, voice command, speech-to-text, STT, push-to-talk
 
 **Stare**:
 The beaver turning round on land to look straight into its own player's camera, unblinking, once the player has touched nothing for a minute, and then creeping slowly up to it until its face nearly touches the lens, the camera holding still for it. Any input ends it. Only that player sees the beaver look into their camera; others see it only walk a little way.

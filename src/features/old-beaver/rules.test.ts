@@ -6,7 +6,7 @@ import { HILL, heightAt, pondRatio, RIM, SITE, slopeAt, sunsetGap, WATER_LEVEL }
 import { SHOP } from "../shop/place.ts";
 import { POST } from "../trade/place.ts";
 import { FLOWER, HIDING } from "../mrs-beaver/rules.ts";
-import { BREAK, LINE_MAX, lineTime, LORES, newVisit, PLACE, START, tell, type Visit } from "./rules.ts";
+import { BREAK, EARSHOT, LINE_MAX, lineTime, LORES, newVisit, PLACE, START, tell, type Visit } from "./rules.ts";
 
 const far = (p: { x: number; z: number }, q: { x: number; z: number }, d: number) => expect(Math.hypot(p.x - q.x, p.z - q.z)).toBeGreaterThan(d);
 
@@ -99,12 +99,16 @@ test("after the last lore, the next approach begins the first again", () => {
   expect(begun).toEqual([...LORES.map((_, i) => i), 0, 1]);
 });
 
-test("walking beyond the break-off distance mid-lore breaks off exactly once, and he is ready for the next lore", () => {
+test("walking off mid-lore he tells on as far as a voice carries; out of earshot he breaks off exactly once, and is ready for the next lore", () => {
+  expect(EARSHOT).toBeGreaterThanOrEqual(15); // a talking voice over a clearing
+  expect(EARSHOT).toBeLessThanOrEqual(30);
   const visit = newVisit();
   stay(visit, 2, lineTime(LORES[0]![0]!) + 0.5);
-  expect(stay(visit, BREAK - 0.5, 0.5)).toEqual([]); // still within earshot: he goes on
-  expect(stay(visit, BREAK + 0.5, 1)).toEqual([{ kind: "broke", lore: 0 }]);
-  expect(stay(visit, BREAK + 3, 5)).toEqual([]);
+  expect(stay(visit, BREAK + 0.5, 0.5)).toEqual([]); // left his side, still within earshot: he goes on
+  expect(stay(visit, EARSHOT - 0.5, 0.5)).toEqual([]);
+  expect(tell(visit, { distance: EARSHOT - 0.5, land: false }, 0.1)).toEqual([]); // heard from the water, too
+  expect(stay(visit, EARSHOT + 0.5, 1)).toEqual([{ kind: "broke", lore: 0 }]);
+  expect(stay(visit, EARSHOT + 3, 5)).toEqual([]);
   expect(visit.state).toBe("idle");
   expect(stay(visit, 3, 0.1)[0]).toEqual({ kind: "lore", lore: 1 });
 });

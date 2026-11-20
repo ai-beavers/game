@@ -8,6 +8,7 @@ import { measure, render } from "../../../tools/listen.ts";
 import { heightAt, POND, WATER_LEVEL } from "../../world/terrain.ts";
 import { findWater, groundAt } from "./ground.ts";
 import { composer, HIGHEST, LOWEST, pitch } from "./music.ts";
+import { carried } from "./mix.ts";
 import { SOUNDS } from "./sounds.ts";
 
 test("the tune stays in range, moves in small steps and is slow", () => {
@@ -126,4 +127,18 @@ test("the meters: a full-scale 1 kHz sine at 48 kHz reads -3 LUFS and 0 dBFS", (
   expect(m.peak).toBeCloseTo(0, 1);
   expect(m.centroid).toBeGreaterThan(950);
   expect(m.centroid).toBeLessThan(1050);
+});
+
+test("a talking voice: full beside the speaker, half at twice the distance, faint at the edge of earshot and gone a little beyond", () => {
+  const dB = (d: number) => 20 * Math.log10(carried(d, 20));
+  expect(carried(1, 20)).toBe(1);
+  expect(carried(3, 20)).toBe(1);
+  expect(dB(6)).toBeCloseTo(-6, 0); // the open-air law while the words can be followed
+  expect(dB(8)).toBeLessThan(-7);
+  expect(dB(8)).toBeGreaterThan(-10);
+  expect(dB(15)).toBeLessThan(-20); // words no longer followed
+  expect(dB(20)).toBeLessThan(-40); // where he breaks off: as good as nothing
+  expect(carried(22, 20)).toBe(0);
+  expect(carried(60, 20)).toBe(0); // across the clearing: nothing
+  for (let d = 1; d < 30; d += 0.5) expect(carried(d + 0.5, 20), `${d} m`).toBeLessThanOrEqual(carried(d, 20)); // never louder farther off
 });

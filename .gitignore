@@ -6,3 +6,4 @@ shots/
 *.blend1
 recordings/
 .wrangler/
+.env*

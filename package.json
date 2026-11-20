@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun server.ts",
+    "dev": "VOICE=1 bun server.ts",
     "build": "bun tools/build.ts",
     "shot": "bun tools/shot.ts",
     "tour": "bun tools/tour.ts",

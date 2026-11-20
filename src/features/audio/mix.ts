@@ -6,6 +6,8 @@
 //   const wind = createWind(ctx, mix.ambience);   wind.update(ctx.currentTime, strength) every frame or so
 //   rain.update(now, rain, nearWater) · night.update(now, crickets, frogs) · music.night(dark, now)
 //   mix.under(cameraUnderWater, now)         muffles the whole mix and brings up the hum of the pond
+//   mix.speech(now, until, depth)            someone speaks real words: ambience and music step back until then
+//   carried(distance, earshot)               how much of a talking voice is heard that far off, 0 to 1
 //
 // Lasting sounds follow the sky by gliding their gains (setTargetAtTime), never by switching.
 import { composer, pitch } from "./music.ts";
@@ -21,6 +23,21 @@ export const LEVELS = {
   music: { gain: 0.16, reverb: 0.6 },
   drive: 7,
 };
+
+/** How far the ambience and the music step back while someone speaks real words: 10 dB, so every word is understood. */
+export const SPEECH = 0.32;
+
+/** m from a speaker within which a talking voice is heard in full. */
+const BESIDE = 3;
+/** How much of a talking voice is heard d m away in the open, 0 to 1, when it carries earshot m: full beside the
+ *  speaker, then half at twice the distance, as sound falls in the open. That law alone never reaches silence, and a
+ *  game's voice is far louder against its ambience than a real one against wind and water: so from a third of
+ *  earshot on it thins out as well, and just beyond earshot nothing is left. For 20 m: -9 dB at 8 m, -12 dB at 10 m,
+ *  -22 dB at 15 m, -32 dB at 18 m, silence from 22 m. */
+export function carried(d: number, earshot: number) {
+  const t = Math.min(1, Math.max(0, (d - earshot * 0.3) / (earshot * 0.8)));
+  return Math.min(1, BESIDE / d) * (1 - t * t * (3 - 2 * t));
+}
 
 export function createMix(ctx: BaseAudioContext) {
   const master = ctx.createGain(), limiter = ctx.createDynamicsCompressor(), reverb = ctx.createConvolver(), wet = ctx.createGain();
@@ -68,12 +85,26 @@ export function createMix(ctx: BaseAudioContext) {
     gain.connect(send).connect(reverb);
     return gain;
   };
-  const ambience = bus(LEVELS.ambience);
-  /** An event starts at t: the ambience steps back 5 dB for a moment, so a bite or a knock reads over rain and wind. */
+  const ambience = bus(LEVELS.ambience), music = bus(LEVELS.music);
+  let spoken = 0; // the context's time until which someone speaks (speech)
+  /** An event starts at t: the ambience steps back 5 dB for a moment, so a bite or a knock reads over rain and wind.
+   *  While someone speaks it is back already, and stays there until they have finished. */
   const duck = (t: number) => {
+    if (t < spoken) return;
     ambience.gain.cancelScheduledValues(t);
     ambience.gain.setTargetAtTime(LEVELS.ambience.gain * 0.56, t, 0.015);
     ambience.gain.setTargetAtTime(LEVELS.ambience.gain, t + 0.25, 0.35);
+  };
+  /** Someone speaks real words from t until `until` (the Old Beaver's Voice): the ambience and the music step back
+   *  under them (to `depth` of their level: SPEECH for a speaker close by, 1 for one too far off to follow), and
+   *  come back when they have finished. Called again for the same line, it only moves the end. */
+  const speech = (t: number, until: number, depth = SPEECH) => {
+    spoken = until;
+    for (const [gain, level] of [[ambience.gain, LEVELS.ambience.gain], [music.gain, LEVELS.music.gain]] as const) {
+      gain.cancelScheduledValues(t);
+      gain.setTargetAtTime(level * depth, t, 0.08);
+      gain.setTargetAtTime(level, until, 0.4);
+    }
   };
   // The pond's own sound under water: a low, slowly swelling rush, silent until the camera goes under.
   const hum = noise(ctx), humTone = ctx.createBiquadFilter(), humLevel = ctx.createGain(), swell = ctx.createOscillator(), swellDepth = ctx.createGain();
@@ -95,7 +126,7 @@ export function createMix(ctx: BaseAudioContext) {
     humLevel.gain.setTargetAtTime(on ? UNDER.hum : 0, t, UNDER.ease);
     swellDepth.gain.setTargetAtTime(on ? UNDER.hum * 0.35 : 0, t, UNDER.ease);
   };
-  return { master, limiter, duck, under, steps: bus(LEVELS.steps), sfx: bus(LEVELS.sfx), ambience, music: bus(LEVELS.music) };
+  return { master, limiter, duck, speech, under, steps: bus(LEVELS.steps), sfx: bus(LEVELS.sfx), ambience, music };
 }
 
 /** Under water: the master's low-pass (Hz, its resonance Q), how fast it eases (time constant: about there in 0.2 s), the hum's level. */

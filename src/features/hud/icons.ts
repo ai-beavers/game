@@ -1,7 +1,7 @@
 // The HUD's few icons as inline SVG, 24 units square, drawn in one colour: no font and no file to fetch.
 //
 //   overlay.icon("avatar-paw", "paw", box, PAPER)     icon("sun", GOLD) → a data: URL for a Babylon Image
-export type Icon = "paw" | "sun" | "moon" | "cloud" | "rain" | "fog" | "flower" | "stick" | "chat" | "chevron";
+export type Icon = "paw" | "sun" | "moon" | "cloud" | "rain" | "fog" | "flower" | "stick" | "chat" | "chevron" | "speaker";
 
 const STROKE = 'fill="none" stroke="C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 const SHAPES: Record<Icon, string> = {
@@ -15,6 +15,7 @@ const SHAPES: Record<Icon, string> = {
   stick: `<g ${STROKE}><path d="M3 18L20 7M12 12.5l1.5 4M8 15l-3-1.5M16 9.5l3.5 1"/></g>`,
   chat: `<path ${STROKE} d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/>`,
   chevron: `<path ${STROKE} d="M9 6l6 6-6 6"/>`,
+  speaker: `<g ${STROKE}><path d="M3.5 9.5h3L11 6v12l-4.5-3.5h-3z"/><path d="M14.5 9.5a3.5 3.5 0 0 1 0 5M17 7a7 7 0 0 1 0 10"/></g>`,
 };
 
 /** A data: URL of the icon in `color` (any CSS colour). */

@@ -37,7 +37,8 @@ async function startWorker(env: Record<string, string>) {
   const vars = ["GIT_SHA", "RESET_TOKEN", "HOUSE_OF_AI_FEED"].flatMap((key) => env[key] ? ["--var", `${key}:${env[key]}`] : []);
   const kept = env.WORLD_FILE ? dirname(env.WORLD_FILE) : mkdtempSync(join(tmpdir(), "beaver-"));
   const server = running = Bun.spawn(["bun", "x", "wrangler", "dev", "--port", String(port), "--inspector-port", "0", "--persist-to", kept, ...vars], {
-    cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: "false" }, stdin: "ignore", stdout: "ignore", stderr: "inherit",
+    // Without the last one wrangler reads .env, where a developer's ElevenLabs key lies: the Worker speaks whenever it has one.
+    cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: "false", CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "false" }, stdin: "ignore", stdout: "ignore", stderr: "inherit",
   });
   for (let i = 0; i < 300; i++, await Bun.sleep(100)) {
     if (server.exitCode !== null) break;
@@ -60,7 +61,7 @@ function client(port: number, ip?: string, world = "") {
   const messages: ServerMessage[] = [];
   const opened = new Promise<boolean>((resolve) => { ws.onopen = () => resolve(true); ws.onerror = () => resolve(false); });
   const closed = new Promise<number>((resolve) => { ws.onclose = (e) => resolve(e.code); });
-  ws.onmessage = (e) => messages.push(JSON.parse(String(e.data)));
+  ws.onmessage = (e) => { if (typeof e.data === "string") messages.push(JSON.parse(e.data)); }; // not the Old Beaver's voice, which is binary
   const next = async (t: string) => { for (let i = 0; i < 100; i++) { const m = messages.find((x) => x.t === t); if (m) return m; await Bun.sleep(20); } };
   const hello = () => ws.send(JSON.stringify({ t: "hello", name: "Tester" }));
   return { ws, messages, opened, closed, next, hello };

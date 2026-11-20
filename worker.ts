@@ -12,15 +12,19 @@
 //   RESET_TOKEN   (secret, `bunx wrangler secret put RESET_TOKEN`) lets its holder start the world afresh:
 //                 curl -X POST -H "Authorization: Bearer $RESET_TOKEN" https://<address>/net/reset
 //                 Without the secret, or with another token, that address answers 404 like any unknown one.
+//   ELEVENLABS_API_KEY (secret, `bunx wrangler secret put ELEVENLABS_API_KEY`) the Old Beaver says his lores in his
+//                 voice (src/features/old-beaver/voice.ts); without it he murmurs. Every talk with ElevenLabs is in
+//                 the Worker's logs.
 //
 // A deploy ends the object without warning: every player reconnects, and work of the last SAVE_AFTER ms can be lost.
 import { DurableObject } from "cloudflare:workers";
 import { clientAddress, EVENTS_PATH, INFO_PATH, PATH, PROXY_HEADERS, RESET_PATH, TOUR_WORLD, worldOf } from "./src/features/net/protocol.ts";
 import { newRoom, type Socket } from "./src/features/net/room.ts";
+import { voiceWith } from "./src/features/old-beaver/voice.ts";
 import { houseOfAiEvents } from "./src/features/shop/events.ts";
 
 /** HOUSE_OF_AI_FEED (--var): another iCal address for the House of AI events than Luma's (the tests' fixture). */
-interface Env { WORLD: DurableObjectNamespace<World>; GIT_SHA?: string; RESET_TOKEN?: string; HOUSE_OF_AI_FEED?: string }
+interface Env { WORLD: DurableObjectNamespace<World>; GIT_SHA?: string; RESET_TOKEN?: string; HOUSE_OF_AI_FEED?: string; ELEVENLABS_API_KEY?: string }
 
 const KEPT = "world"; // the key the world's work is kept under, as the text server.ts keeps in WORLD_FILE
 const NOT_FOUND = () => new Response("not found", { status: 404 });
@@ -45,7 +49,10 @@ export class World extends DurableObject<Env> {
   private roomOf(url: URL) {
     if (this.made) return this.made;
     const { ctx, env } = this, saved = ctx.storage.kv.get<string>(KEPT);
-    this.made = newRoom({ version: env.GIT_SHA ?? "", saved, keep: (text) => ctx.storage.kv.put(KEPT, text), sandbox: worldOf(url.searchParams) === TOUR_WORLD });
+    this.made = newRoom({
+      version: env.GIT_SHA ?? "", saved, keep: (text) => ctx.storage.kv.put(KEPT, text), sandbox: worldOf(url.searchParams) === TOUR_WORLD,
+      speak: voiceWith(env.ELEVENLABS_API_KEY || undefined),
+    });
     if (this.made.broken) ctx.storage.kv.put(`${KEPT}.bad`, saved); // kept aside, as server.ts keeps a broken file
     return this.made;
   }
@@ -76,7 +83,7 @@ export class World extends DurableObject<Env> {
     // room's limit of sockets, per address and in all. A message over MAX_MESSAGE is dropped by parseClient, not
     // closed for.
     const socket: Socket = {
-      send: (text) => { try { ws.send(text); } catch { /* closed meanwhile: its close event takes it out */ } },
+      send: (data) => { try { ws.send(data); } catch { /* closed meanwhile: its close event takes it out */ } },
       close: (code, reason) => { try { ws.close(code, reason); } catch { /* closed already */ } },
     };
     const conn = room.open(socket, addresses, address);
