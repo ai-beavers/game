@@ -1,7 +1,7 @@
 // When the beaver does a Stare: after a minute of nobody touching the controls, eased up slowly, and released at once
 // (within RELEASE s) by any input or by a moment where a stare is not allowed. Fixed frames of 1/60 s.
 import { expect, test } from "bun:test";
-import { approaching, newStare, RELEASE, stepApproach, stepStare, THRESHOLD, TURN, STOP } from "./stare.ts";
+import { approaching, CREEP, creepSpeed, newStare, RELEASE, stepApproach, stepStare, THRESHOLD, TURN, STOP } from "./stare.ts";
 
 const DT = 1 / 60;
 /** Steps s for `seconds`, nobody touching anything, a stare allowed; the last weight. */
@@ -106,4 +106,11 @@ test("blocked on the way, it stops walking after about a second and stares on", 
   expect(creep(s, 3, 0, () => 2)).toBe(false);
   expect(stepStare(s, DT, false, true)).toBe(1);
   expect(approaching(s)).toBe(true);
+});
+
+test("the approach is a slow walk, slower still over its last stretch, and never stands still on the way", () => {
+  expect(creepSpeed(4)).toBe(CREEP);
+  expect(CREEP).toBeLessThan(1); // well under a walk
+  expect(creepSpeed(STOP + 0.1)).toBeLessThan(CREEP);
+  expect(creepSpeed(STOP + 0.01)).toBeGreaterThan(0);
 });

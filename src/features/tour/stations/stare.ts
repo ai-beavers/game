@@ -6,15 +6,16 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { inv, rotate } from "../../../anim/quat.ts";
 import { REST } from "../../../anim/rest.ts";
 import { REST_DISTANCE } from "../../../player/camera.ts";
-import { THRESHOLD, TURN } from "../../stare/stare.ts";
+import { CREEP, THRESHOLD, TURN } from "../../stare/stare.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 const ACTIVITY = "Left alone";
 const AIMED = (15 * Math.PI) / 180; // rad between the face and the way to the camera that counts as looking into it
 const CLOSE = 0.5; // m from the eyes to the lens that counts as face to face
-/** s of game time the creep up to the lens may take: from the resting camera distance at its slow walk, and a margin. */
-const APPROACH = 16;
+/** s of game time the creep up to the lens may take: from the resting camera distance at its slow walk, and a margin
+ *  for its slower last stretch. */
+const APPROACH = REST_DISTANCE / CREEP + 7;
 /** The face's forward on the head bone: the way the head looks at rest (+z, as the beaver faces). */
 const FACE = Vector3.FromArray(rotate(inv(REST.head.armatureRotation), [0, 0, 1]));
 

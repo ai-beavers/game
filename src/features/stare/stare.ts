@@ -3,12 +3,15 @@
 // Pure logic, after the lantern's stow.ts; the stare feature (index.ts) feeds it and turns the beaver by it.
 //
 //   const s = newStare();   each frame: const weight = stepStare(s, dt, touched, allowed);   0 … 1, Motion.stare.weight
-//                                       const walk = stepApproach(s, dt, off, distance);    walk towards the lens now
+//                                       const walk = stepApproach(s, dt, off, distance);    walk towards the lens now,
+//                                                                                           at creepSpeed(distance) m/s
 //                                       approaching(s)                                       the camera holds still for it
 //
 // The approach, the Stare's second phase: once the stare is full and the body faces the camera within FACING rad, the
 // beaver walks up to the lens until its eyes are STOP m from it, or until it has not got closer for BLOCKED s
-// (something in the way). Then it stands and stares on. It ends with the stare, at once.
+// (something in the way). Then it stands and stares on. It ends with the stare, at once. The distance is measured
+// across the ground: the held camera keeps its place across but sinks to the eyes, so the distance through the air
+// would still shrink while the beaver stands against a tree.
 import { smoothstep } from "../../world/noise.ts";
 
 /** s of game time with nothing touched before a stare; s it takes to come on fully; s to let it go again. */
@@ -17,6 +20,12 @@ export const THRESHOLD = 60, TURN = 3.5, RELEASE = 0.3;
 /** rad off the camera that counts as facing it; m from the eyes to the lens where the approach stops; s without
  *  getting closer that counts as blocked; m closer that counts as progress. */
 export const FACING = 0.2, STOP = 0.28, BLOCKED = 1, PROGRESS = 0.02;
+/** m/s of the creep up to the lens, well under a walk, and the least it slows to; 1/s: slower over its last stretch,
+ *  so it arrives softly. */
+export const CREEP = 0.5, CREEP_LEAST = 0.12, ARRIVE = 1.5;
+
+/** m/s the beaver creeps at with its eyes distance m across from the lens. */
+export const creepSpeed = (distance: number) => Math.max(CREEP_LEAST, Math.min(CREEP, (distance - STOP) * ARRIVE));
 
 export interface Stare {
   /** s nothing has been touched while a stare was allowed. */
@@ -38,7 +47,7 @@ export const newStare = (): Stare => ({ still: 0, staring: false, on: 0, approac
 export const approaching = (s: Stare) => s.approach !== "none";
 
 /** One frame of the approach, after stepStare: off, rad between the body's facing and the way to the camera; distance,
- *  m from the eyes to the lens. Returns whether the beaver walks towards the lens now. */
+ *  m across the ground from the eyes to the lens. Returns whether the beaver walks towards the lens now. */
 export function stepApproach(s: Stare, dt: number, off: number, distance: number): boolean {
   if (!s.staring) { s.approach = "none"; return false; }
   if (s.approach === "none" && s.on >= 1 && Math.abs(off) < FACING) { s.approach = "walking"; s.closest = distance; s.stuck = 0; }

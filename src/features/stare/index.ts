@@ -14,13 +14,11 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
 import { modalOpen } from "../hud/overlay.ts";
-import { approaching, newStare, STOP, stepApproach, stepStare } from "./stare.ts";
+import { approaching, creepSpeed, newStare, stepApproach, stepStare } from "./stare.ts";
 
 /** rad/s the body turns at most while it comes round to the camera, and 1/s: slower as it gets there, so it arrives
  *  softly. About three seconds for a whole half turn. */
 const TURN_RATE = 1.3, SETTLE = 2;
-/** m/s of the creep up to the lens, well under a walk; 1/s: slower over its last stretch, so it arrives softly. */
-const CREEP = 0.5, ARRIVE = 1.5, CREEP_LEAST = 0.12;
 
 export const create: CreateFeature = (game) => {
   const { stage, player, beaver } = game, motion = player.motion, stare = newStare();
@@ -42,9 +40,9 @@ export const create: CreateFeature = (game) => {
       const camera = stage.camera.position, feet = player.feet;
       eyes.copyFrom(beaver.eyes.getAbsolutePosition());
       const heading = Math.atan2(camera.x - feet.x, camera.z - feet.z), off = Math.atan2(Math.sin(heading - player.facing), Math.cos(heading - player.facing));
-      const distance = Vector3.Distance(eyes, camera), walk = stepApproach(stare, dt, off, distance);
+      const distance = Math.hypot(camera.x - eyes.x, camera.z - eyes.z), walk = stepApproach(stare, dt, off, distance);
       if (stare.staring) {
-        const speed = walk ? Math.max(CREEP_LEAST, Math.min(CREEP, (distance - STOP) * ARRIVE)) : undefined;
+        const speed = walk ? creepSpeed(distance) : undefined;
         player.turnTo = { heading, rate: Math.min(TURN_RATE * Math.min(1, stare.on * 4), SETTLE * Math.abs(off) + 0.05), speed };
       } else player.turnTo = undefined;
       player.camera.hold = approaching(stare) ? eyes : undefined;
