@@ -2,12 +2,12 @@
 // with empty paws E offers "Set the Flag alight"; the fire climbs the cloth for about eight seconds and leaves a charred
 // rag that E cannot light again; a fresh Flag is raised at the next dawn. Live, the beaver burns it when it is whole and
 // never sets the clock: the rag stays until the day's own dawn.
-import { BURN_SECONDS, DAWN } from "../../flag/state.ts";
+import { BURN_SECONDS, DAWN, type FlagState } from "../../flag/state.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 /** What the flag feature puts on window for tools (src/features/flag/index.ts); only the part the tour needs. */
-interface FlagDebug { state: "whole" | "burning" | "charred"; pole: { x: number; z: number } }
+interface FlagDebug { state: FlagState; pole: { x: number; z: number } }
 
 export const flag = (kit: Kit): Station[] => {
   const { player, live, until, tap, expect, after, reach, wait, sky } = kit;

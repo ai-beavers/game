@@ -111,6 +111,8 @@ export const create: CreateFeature = (game) => {
   // ---- light: one warm point light on the ground and the pole, dark until it burns ---------------------------------
   // Made once and always on at intensity 0 (src/features/lantern does the same): switching a light on recompiles the
   // materials that take it. It reaches only the ground and the pole (the cloth has its own glow).
+  // shortcut: the grass, leaves and animals around the pole stay unlit by the fire (their shaders take no Babylon light),
+  // upgrade to a term like LANTERN_GLSL in src/light.ts when a lasting fire (a campfire) comes.
   const light = new PointLight("flag-fire", foot.clone(), scene);
   light.diffuse.copyFrom(WARM);
   light.specular.copyFrom(WARM).scaleInPlace(0.2);
@@ -176,9 +178,9 @@ export const create: CreateFeature = (game) => {
       const b = flag.burnt, strength = 0.6 + Math.sin(Math.PI * Math.min(1, b * 1.3)) * 0.8;
       const middle = at(0.5, front(0.5));
       light.position.copyFrom(middle).addInPlaceFromFloats(0, 0.1, -0.6); // a little out from the cloth, so the pole is lit from the side, not burnt white
+      if (stage.paused) return; // the light holds as it was, like the fire
       const flicker = 0.75 + 0.25 * Math.sin(time * 23) * Math.sin(time * 7.3 + 1) + 0.15 * Math.random();
       light.intensity = (1.2 + 0.3 * (game.sky?.dark ?? 0)) * strength * flicker;
-      if (stage.paused) return;
       const fx = fxOf(scene);
       if (!fx) return;
       for (let i = 0; i < 6; i++) {
@@ -200,7 +202,7 @@ function ragged() {
 }
 
 /** The cloth's picture: the logo printed dark on cream as on the beaver's shirt (src/beaver), and a glow for the fire.
- *  paint(burnt, front, glowing) blackens it towards the fire's edge, cuts it away below the edge (alpha test) and
+ *  paint(burnt, front, glowing, time) blackens it towards the fire's edge, cuts it away below the edge (alpha test) and
  *  makes the edge glow. */
 function drawCloth(scene: Scene) {
   const W = 512, H = 320, canvas = document.createElement("canvas"), glowCanvas = document.createElement("canvas");

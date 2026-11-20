@@ -98,6 +98,10 @@ _Avoid_: skin, costume, clothes
 The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
 _Avoid_: boat, raft, kayak
 
+**Flag**:
+The cloth with the AI beavers logo on a pole on the bank beside the building site. The player can set it alight; it burns down to a charred rag and a fresh one is raised at the next dawn. The fire never spreads beyond it. Each player has their own.
+_Avoid_: banner, pennant, standard
+
 **Dam**, **Lodge**, **Food cache**:
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
 _Avoid_: base, house, storage
