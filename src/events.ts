@@ -53,6 +53,14 @@ export interface GameEvents {
    *  or into the water beside it. */
   canoeIn: { place: Vector3 };
   canoeOut: { place: Vector3; outcome: "bank" | "water" };
+  /** From the race feature (src/features/race), the local player's own race only: the canoe crossed the start line,
+   *  passed buoy `index` (in order), finished lap `lap`, finished the race in `time` s (best: the visit's best now;
+   *  newBest: this one set it), or the beaver got out mid-race. */
+  raceStart: Record<string, never>;
+  buoyPassed: { index: number };
+  lap: { lap: number };
+  raceFinish: { time: number; best: number; newBest: boolean };
+  raceAbandon: Record<string, never>;
   /** From the flag feature (src/features/flag): the Flag caught fire, and has burnt down to a charred rag. */
   flagLit: { place: Vector3 };
   flagBurnt: { place: Vector3 };
