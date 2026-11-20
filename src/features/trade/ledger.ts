@@ -5,7 +5,7 @@
 //   const l = load(localStorage.getItem(KEY));
 //   pay(l, "feather")      → { good, paid, bought, count }: one stick onto its pile; at the price the pile empties into
 //                            one good more (undefined: no such good)
-//   offerText(l, "feather") "Trade for feather, 1/2" · backpackLine(l) "Pinecone ×2   Feather ×1"
+//   offerText(l, "feather") "Trade for feather, 1/2"     (the hotbar shows the goods owned: hold.ts shelf)
 //
 // The goods are data: a later good (one made by combining others) is one more entry, not a special case.
 
@@ -46,11 +46,6 @@ export function pay(l: Ledger, id: string): { good: string; paid: number; bought
 
 /** What E says at a good's spot with a stick in hand: the good and the sticks paid towards it so far. */
 export const offerText = (l: Ledger, id: string) => `Trade for ${goodOf(id)!.name}, ${l.paid[id] ?? 0}/${goodOf(id)!.price}`;
-
-const title = (name: string) => name[0]!.toUpperCase() + name.slice(1);
-/** The backpack row: each good owned, with its count; "" while there are none. */
-export const backpackLine = (l: Ledger) =>
-  GOODS.filter((g) => (l.owned[g.id] ?? 0) > 0).map((g) => `${title(g.name)} ×${l.owned[g.id]}`).join("   ");
 
 const counts = (v: unknown, most: (id: string) => number) => {
   const out: Record<string, number> = {};

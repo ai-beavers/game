@@ -19,7 +19,7 @@ export const CONTROLS: Record<Device, Control[]> = {
     { caps: ["W", "A", "S", "D"], what: "Move" }, { caps: ["Shift"], what: "Run" },
     { caps: ["Space"], what: "Jump" }, { caps: ["E"], what: "Use" },
     { caps: ["Q"], what: "Slap the tail" }, { caps: ["C"], what: "Hold to sit (dive, swimming)" },
-    { caps: ["Y"], what: "Hold to crawl" }, { caps: ["L"], what: "Flash the lantern" },
+    { caps: ["Y"], what: "Hold to crawl" }, { caps: ["L"], what: "Flash the lantern" }, { caps: ["1", "…", "5"], what: "Hotbar: hold a good" },
     { caps: ["Drag"], what: "Look around" }, { caps: ["Wheel"], what: "Zoom" },
     { caps: ["V"], what: "First / third person" }, { caps: ["M"], what: "Map" }, { caps: ["Tab"], what: "Players", net: true },
     { caps: ["T"], what: "Chat (Enter too)", net: true }, { caps: ["P"], what: "Photo mode" }, { caps: ["Esc"], what: "Pause" },
@@ -27,7 +27,7 @@ export const CONTROLS: Record<Device, Control[]> = {
   pad: [
     { caps: ["L"], what: "Move" }, { caps: ["LB"], what: "Run" }, { caps: ["A"], what: "Jump" },
     { caps: ["X"], what: "Use" }, { caps: ["RB"], what: "Slap the tail" }, { caps: ["B"], what: "Hold to sit, or dive swimming" },
-    { caps: ["Y"], what: "Flash the lantern" },
+    { caps: ["Y"], what: "Flash the lantern" }, { caps: ["D-pad ◀ ▶"], what: "Hotbar: hold a good" },
     { caps: ["R"], what: "Look around" }, { caps: ["R", "click"], what: "Zoom" },
     { caps: ["LT"], what: "Map" }, { caps: ["Back"], what: "Photo mode" }, { caps: ["Start"], what: "Pause" },
   ],
@@ -35,7 +35,7 @@ export const CONTROLS: Record<Device, Control[]> = {
     { caps: ["Left side"], what: "Move" }, { caps: ["Right side"], what: "Look around" },
     { caps: ["Pinch"], what: "Zoom" }, { caps: ["Jump"], what: "Jump" }, { caps: ["Use"], what: "Use: gnaw, carry, build" },
     { caps: ["Run"], what: "Run, until you let go" }, { caps: ["Slap"], what: "the tail" }, { caps: ["Dive"], what: "Hold to sit, or dive swimming" },
-    { caps: ["Light"], what: "Flash the lantern" },
+    { caps: ["Light"], what: "Flash the lantern" }, { caps: ["Slot"], what: "Tap: hold a good" },
     { caps: ["Map"], what: "Tap to enlarge" }, { caps: ["Photo"], what: "Photo mode" }, { caps: ["Pause"], what: "Menu: settings, players" },
   ],
 };

@@ -119,6 +119,7 @@ export function createPost(stage: Stage, world: World) {
     good: (i: number) => models[i]!,
     copy(i: number) {
       const copy = models[i]!.clone(`${GOODS[i]!.id} taken`, null)!;
+      copy.parent = null; // a clone keeps the post as its parent: in the world, where the position below says
       models[i]!.computeWorldMatrix(true).decompose(copy.scaling, undefined, copy.position);
       copy.rotationQuaternion = null;
       copy.rotation.set(0, root.rotation.y, 0);

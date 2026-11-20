@@ -2,8 +2,12 @@
 // viewer's wish). Carry a stick to a good's spot and press E: the beaver lays it on that good's pile, and the stick
 // leaves the world for everyone (a "trade" build change, through the build feature: buildOf(scene).trade). When the
 // pile reaches the good's price, the pile goes, the beaver takes the good, reaches over its shoulder and puts it in
-// its backpack (the lantern's reach, Motion.reachBack), and the backpack row on the HUD counts it. Goods can be
+// its backpack (the lantern's reach, Motion.reachBack), and the hotbar on the HUD counts it. Goods can be
 // bought again and again; a traded stick comes back when its tree grows back (rules.ts "grow").
+// The hotbar (hotbar.ts, hold.ts): slot 1 is what the beaver carries, 2 … 5 the goods. Keys 1 … 5, the d-pad's left
+// and right or a tap on a slot select one: a good comes out of the backpack with the same reach into the left paw (a
+// stick carried is put down first); slot 1 or the same slot again puts it back. E at a stick puts it back first
+// (Player.hold). A good in the paw does nothing else yet, and only this player sees it: nothing of it is sent.
 //
 //   import { create as trade } from "./features/trade/index.ts";     after build: it shares E with it (firstOf)
 //
@@ -12,7 +16,7 @@
 //
 // Debug, for bun shot --eval (window.trade): trade.at("feather") stands at the feather's spot facing it (with no
 // stick in the hand, one is put down right beside it: E picks it up, E again pays) · trade.state the ledger ·
-// trade.reset() forgets every good and pile and reloads.
+// trade.held the good in the paw · trade.reset() forgets every good and pile and reloads.
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -21,9 +25,11 @@ import type { CreateFeature } from "../../game.ts";
 import { firstOf } from "../../player/actors.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import { BUILD_TIME, buildOf } from "../build/index.ts";
-import { hudLayout, onViewport, Overlay } from "../hud/overlay.ts";
-import { reachAt, RISE, HOLD, FALL } from "../lantern/stow.ts";
-import { backpackLine, GOODS, load, offerText, pay } from "./ledger.ts";
+import { OWN_LAYER } from "../../player/camera.ts";
+import { busy, reachAt, RISE, HOLD, FALL } from "../lantern/stow.ts";
+import { full, newHold, shelf, SLOTS, stepHold } from "./hold.ts";
+import { createHotbar, type SlotView } from "./hotbar.ts";
+import { GOODS, load, offerText, pay } from "./ledger.ts";
 import { FACING, spotFor, standAt } from "./place.ts";
 import { createPost } from "./post.ts";
 
@@ -41,16 +47,19 @@ export const create: CreateFeature = (game) => {
   const post = createPost(stage, world);
   GOODS.forEach((good, i) => post.fill(i, ledger.paid[good.id] ?? 0));
 
-  // ---- the backpack row on the HUD: what is in it, hidden while nothing is ------------------------------------------
-  const overlay = new Overlay(stage, "backpack-row");
-  let row: ReturnType<Overlay["pill"]> | undefined, shown = backpackLine(ledger);
-  onViewport(stage, () => {
-    overlay.clear();
-    const at = hudLayout(stage);
-    row = overlay.pill("backpack", at.hotbar, at.small, "top");
-    row.set(shown);
-  });
-  const showBackpack = () => { shown = backpackLine(ledger); row?.set(shown); };
+  // ---- the hotbar: a slot selected brings its good into the paw, or puts it back ----------------------------------
+  const hold = newHold(), motion = player.motion;
+  player.hold = { get full() { return full(hold); }, free() { hold.want = undefined; } };
+  const selected = () => hold.want ? shelf(ledger).indexOf(hold.want) + 2 : 1;
+  const select = (n: number) => {
+    const good = n === 1 ? undefined : shelf(ledger)[n - 2];
+    if (n !== 1 && !good) return; // an empty slot
+    if (!good || good === hold.want) { hold.want = undefined; putting = false; return; }
+    hold.want = good;
+    putting = !!player.carrying; // the stick goes down first, as soon as it can
+  };
+  const bar = createHotbar(stage, select);
+  let slotHeld = 0, shiftHeld = 0, putting = false;
 
   // ---- E at a spot: lay the stick on its pile -----------------------------------------------------------------------
   const feet = player.feet;
@@ -105,7 +114,6 @@ export const create: CreateFeature = (game) => {
     taking.mesh.dispose();
     taking.done = true;
     const good = GOODS[spot]!.id;
-    showBackpack();
     events.emit("goodTraded", { good, count: ledger.owned[good] ?? 0 });
   };
   const take = (spot: number) => {
@@ -118,6 +126,7 @@ export const create: CreateFeature = (game) => {
   Object.assign(window, {
     trade: {
       get state() { return ledger; },
+      get held() { return hold.held; },
       at(good: string) {
         const i = GOODS.findIndex((g) => g.id === good);
         if (i < 0) return `no good "${good}": ${GOODS.map((g) => g.id).join(", ")}`;
@@ -136,9 +145,18 @@ export const create: CreateFeature = (game) => {
     },
   });
 
+  let heldMesh: Mesh | undefined, inPaw: string | undefined; // the hotbar's good in the paw, and which good it is
   return {
+    step() {
+      // The moment a slot key or a d-pad side goes down, once per press (as the lantern's flash).
+      const slot = player.input.slot ?? 0, shift = player.input.shift ?? 0;
+      if (slot && slot !== slotHeld) select(slot);
+      if (shift && shift !== shiftHeld) { const n = 1 + shelf(ledger).length; select((selected() - 1 + shift + n) % n + 1); }
+      slotHeld = slot; shiftHeld = shift;
+    },
     update(dt) {
       const moving = stage.paused ? 0 : dt;
+      let reach = 0;
       // Sticks on their way from the hand onto a pile: a little arc, shrinking to their length there.
       for (const f of [...flights]) {
         f.t = Math.min(1, f.t + moving / FLIGHT);
@@ -165,15 +183,32 @@ export const create: CreateFeature = (game) => {
           } else taking.mesh.position.copyFrom(hand);
           if (t - TAKE >= RISE) intoBackpack(taking.spot); // at the backpack: in it goes
         }
-        // The reach over the shoulder, as the lantern's: the left paw up to the backpack and back down. The lantern
-        // feature writes reachBack before this one each picture; the larger reach is drawn.
-        const motion = player.motion;
-        if (t >= TAKE && t < TAKE + REACH) motion.reachBack = reached = Math.max(motion.reachBack ?? 0, reachAt(t - TAKE));
-        else if (t >= TAKE + REACH) {
-          if (motion.reachBack === reached) motion.reachBack = 0;
-          taking = undefined;
-        }
+        if (t >= TAKE && t < TAKE + REACH) reach = reachAt(t - TAKE);
+        else if (t >= TAKE + REACH) taking = undefined;
       }
+      // The hotbar's good: a stick selected away is put down, a stick picked up puts the good away; the reach waits
+      // while the paws or the body are busy.
+      if (!stage.paused) {
+        if (!player.carrying) putting = false;
+        else if (putting) player.putDown();
+        else hold.want = undefined;
+        stepHold(hold, dt, busy(motion, player.diving) || !!player.carrying || !!taking);
+      }
+      if (inPaw !== hold.held) {
+        heldMesh?.dispose();
+        inPaw = hold.held;
+        heldMesh = inPaw === undefined ? undefined : post.copy(GOODS.findIndex((g) => g.id === inPaw));
+        if (heldMesh) { heldMesh.scaling.setAll(1); heldMesh.layerMask = OWN_LAYER; } // life-sized, out of the first-person picture
+      }
+      if (heldMesh) { heldMesh.position.copyFrom(pawAt()); heldMesh.rotation.y = player.facing; }
+      // The reach over the shoulder, as the lantern's: the left paw up to the backpack and back down. The lantern
+      // feature writes reachBack before this one each picture; the larger reach is drawn.
+      reach = Math.max(reach, hold.reach);
+      if (reach > 0) motion.reachBack = reached = Math.max(motion.reachBack ?? 0, reach);
+      else if (reached) { if (motion.reachBack === reached) motion.reachBack = 0; reached = 0; }
+      const goods = shelf(ledger);
+      bar.show(Array.from({ length: SLOTS }, (_, i): SlotView => i === 0 ? { icon: player.carrying ? "stick" : undefined }
+        : { icon: goods[i - 1], count: goods[i - 1] ? ledger.owned[goods[i - 1]!] : undefined }), selected());
     },
   };
 };
