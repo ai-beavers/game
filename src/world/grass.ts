@@ -98,6 +98,8 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
   const parts: Mesh[] = [];
   for (const tile of tiles.values()) {
     const part = mesh.clone("grass tile");
+    // Instance buffers live on the geometry: shared, the weeds' buffers (set last) drew every tile and the GL refused.
+    part.makeGeometryUnique();
     parts.push(part);
     part.thinInstanceSetBuffer("matrix", new Float32Array(tile.matrices), 16, true);
     part.thinInstanceSetBuffer("ground", new Float32Array(tile.grounds), 4, true);
