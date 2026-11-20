@@ -1,10 +1,10 @@
 // Walking, running and jumping round the clearing, over a log in the way, and a run out to its far meadow.
 import { placeAll } from "../../../world/place.ts";
-import type { Kit } from "../kit.ts";
+import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 export const movement = (kit: Kit): Station[] => {
-  const { player, world, walkTo, expect, after, tap, wait } = kit;
+  const { player, world, walkTo, expect, after, tap, wait, press } = kit;
   return [
     ["Walk", async () => {
       const steps = after("footstep");
@@ -22,6 +22,20 @@ export const movement = (kit: Kit): Station[] => {
       for (let i = 0; i < 3; i++) { await tap("jump", 0.3); await wait(0.7); }
       expect(jumped() && landed(), "no jump, or no landing");
     }, "Around the clearing"],
+    // The camera follows the beaver, the mouse looks round: a look holds while the beaver stands, and walking on (W
+    // and D, half away from the camera) the camera swings round behind it again.
+    ["Camera follows", async () => {
+      if (player.camera.view === "first-person") skip("the first-person view looks where the player looks");
+      await walkTo(world.spawn.x + 1, world.spawn.z + 3);
+      player.camera.turn(0.8, 0);
+      const looked = player.camera.yaw;
+      await wait(1.5);
+      expect(player.camera.yaw === looked, "looked round with the beaver standing, the camera did not hold that look");
+      press("KeyW", "keydown"); press("KeyD", "keydown");
+      try { await wait(2.5); } finally { press("KeyW", "keyup"); press("KeyD", "keyup"); }
+      const swung = Math.abs(Math.atan2(Math.sin(player.camera.yaw - looked), Math.cos(player.camera.yaw - looked)));
+      expect(swung > 0.4, `walked half away from the camera for 2.5 s, it swung only ${swung.toFixed(2)} rad round behind`);
+    }, undefined, false],
     ["Jump over a log", async () => {
       // The meadow log nearest the spawn (about 0.3 m high, under a jump's 0.6 m), crossed square to its length: its
       // template lies along z, turned about y. Up to it from the spawn's side, then straight over to as far past it.

@@ -75,12 +75,16 @@ The player's own beaver companion, with a flower behind her ear. At the start of
 _Avoid_: wife, mate, partner, NPC, Shopkeeper (that is the beaver behind the shop's counter)
 
 **Old Beaver**:
-An old, grey-muzzled beaver who sits hidden at the foot of the bank, among the trees at the clearing's edge, always in the same place. No player steers him and, unlike an animal, he never leaves his place or flees. When a player comes close he turns to them and tells a lore in a low murmur, its words shown in the HUD. Everyone finds him in the same place; what he tells, each player hears alone.
+An old, grey-muzzled beaver who sits hidden at the foot of the bank, among the trees at the clearing's edge, always in the same place. No player steers him and, unlike an animal, he never leaves his place or flees. When a player comes close he turns to them and tells a lore in his voice, its words shown in the HUD. Everyone finds him in the same place; what he tells, each player hears alone.
 _Avoid_: elder, sage, wise beaver, NPC, Shopkeeper
 
 **Lore**:
 One short tale the Old Beaver tells about the clearing's past, a few lines long. He tells them in turn, a new one each time a player comes close again.
 _Avoid_: story, legend, dialogue, quest (a lore asks nothing of the player)
+
+**Voice**:
+The Old Beaver's lines said aloud in real English words, low and slow, heard from where he sits. A lore that has no voice yet he murmurs: a low hum without words, one beat a word.
+_Avoid_: TTS, speech, narration, voice-over, voice chat (no player's voice is ever heard)
 
 **Quest**:
 A short list of steps the player works through in order, shown as a checklist in the HUD; a step counts only once the ones before it are done. Rescuing Mrs. Beaver is one: find her flower, find her tracks, find her, gnaw her pen open. Nothing on the map marks where a step is.
@@ -128,9 +132,21 @@ _Avoid_: crouch, rest, kneel
 The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
 _Avoid_: crouch, sneak, prone
 
+**Bound**:
+How the beaver runs on land: down on all fours, long and low, the hind feet pushing off together and the front paws landing between, the back humping and stretching with each stride. Walking it stays upright; it drops into a bound as it speeds up and rises again as it slows. Carrying a stick it runs upright.
+_Avoid_: gallop, sprint, dash
+
 **Flash**:
 The player switching the lantern off and on with one button while it is dark, so that other players see it blink. A flash means what the players agree it means; the game gives it no meaning.
 _Avoid_: blink, signal, toggle
+
+**Chat**:
+The lines players in the same world write to each other. A line shows over its beaver's head for a few seconds and in the log. It is not the stream's chat, where viewers write wishes.
+_Avoid_: messages, talk, stream chat, Twitch chat
+
+**Dictation**:
+Saying a chat line instead of typing it. The game listens only from when the player turns the microphone on until they turn it off, a few seconds at most, and writes what it heard into the chat's field; the player sends or changes it like a typed line. No one hears the player's voice: not other players, not the stream.
+_Avoid_: voice chat, voice command, speech-to-text, STT, push-to-talk
 
 **Stare**:
 The beaver turning round on land to look straight into its own player's camera, unblinking, once the player has touched nothing for a minute. Any input ends it. Only that player sees it.

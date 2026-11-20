@@ -1,9 +1,10 @@
 // The planted foot stands still in the world: the animator's Pose, put through forward kinematics from the rest
-// data, keeps the sole of a foot in stance on y = 0 and moves it backwards at ground speed, at several speeds.
+// data, keeps the sole of a foot in stance on y = 0 and moves it backwards at ground speed, at several speeds
+// (running, the toes for the whole stance: the heel rolls up off them in its second half to push off).
 import { expect, test } from "bun:test";
 import { BONES, RUN_SPEED, WALK_SPEED, type Bone, type Motion, type Pose } from "../contracts.ts";
 import { foot, gait } from "./gait.ts";
-import { createAnimator } from "./index.ts";
+import { SPLIT, createAnimator } from "./index.ts";
 import { add, inv, mul, rotate, type Quat, type Vec } from "./quat.ts";
 import { REST } from "./rest.ts";
 
@@ -37,10 +38,12 @@ for (const [speed, anger] of [[0.3, 0], [WALK_SPEED, 0], [1.3, 0], [RUN_SPEED, 0
       m.distance += speed * dt;
       const now = soles(animator.pose(m, dt)), phase = m.distance / g.cycle;
       if (i > 600 && previous) {
-        for (const [lr, offset] of [["L", 0], ["R", 0.5]] as const) {
+        // running it bounds on all fours: the right hind foot lands just after the left (as it settles there)
+        for (const [lr, offset] of [["L", 0], ["R", SPLIT.hind[0] + (SPLIT.hind[1] - SPLIT.hind[0]) * g.run]] as const) {
           const plan = foot(phase + offset, g), p = (phase + offset) % 1;
           if (!plan.planted || p - (speed * dt) / g.cycle < 0.01 * g.duty || p > 0.99 * g.duty) continue; // this frame and the last in stance
           for (let k = 0; k < 2; k++) {
+            if (k === 0 && g.run > 0 && p > 0.5 * g.duty) continue; // bounding the heel rolls up off the toes to push off
             worstHeight = Math.max(worstHeight, Math.abs(now[lr][k]![1]));
             // backwards at ground speed: it moves -speed·dt along z, so in the world it stands still
             worstSlip = Math.max(worstSlip, Math.abs((now[lr][k]![2] - previous[lr][k]![2]) / (speed * dt) + 1), Math.abs(now[lr][k]![0] - previous[lr][k]![0]) / (speed * dt));

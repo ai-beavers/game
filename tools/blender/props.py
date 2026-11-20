@@ -1,5 +1,5 @@
 # Builds the things that stand around in the beaver's world, in Blender from nothing, and exports them as one glb:
-# trees (oak, birch, poplar), bushes, stumps (gnawed, sawn), logs, sticks, rocks, a crate and reeds.
+# trees (oak, birch, poplar, norfolk pine), bushes, stumps (gnawed, sawn), logs, sticks, rocks, a crate and reeds.
 #
 #   blender -b --factory-startup -P props.py -- props.glb [--save props.blend]
 #
@@ -138,12 +138,11 @@ def stone_texture():
 
 
 def leaf_texture():
-    """Leaf atlas, 2 x 2 cells: broad leaves and birch leaves, each a spray of leafy twigs from the bottom middle of
-    its cell; a crown's skin (leaves painted over each other in soft dabs, no holes); and one reed blade filling its
-    cell from bottom to a point at the top. Where there is no leaf, the colour is the cell's mean leaf colour, so
-    mipmaps do not draw dark rims. All of it a light, warm green: vertex colours tint it per tree and bush."""
-    S, C = 1024, 512
-    rgba = np.zeros((S, S, 4))
+    """Leaf atlas, 3 x 2 cells: broad leaves, birch leaves, araucaria upright comb; crown skin, reed blade, araucaria
+    cupped rosette fan. Where there is no leaf, the colour is the cell's mean leaf colour, so mipmaps do not draw dark
+    rims. All of it a light, warm green: vertex colours tint it per tree and bush."""
+    COLS, ROWS, C = 3, 2, 512
+    rgba = np.zeros((ROWS * C, COLS * C, 4))
     y, x = (np.mgrid[0:C, 0:C] + 0.5) / C
     rng = np.random.default_rng(20)
 
@@ -199,7 +198,7 @@ def leaf_texture():
     def place(cell, layer):
         mean = (layer[..., :3] * layer[..., 3:]).sum((0, 1)) / max(1.0, layer[..., 3].sum())
         layer[..., :3] = np.where(layer[..., 3:] > 0, layer[..., :3], mean)
-        cx, cy = cell % 2, cell // 2
+        cx, cy = cell % COLS, cell // COLS
         rgba[cy * C:(cy + 1) * C, cx * C:(cx + 1) * C] = layer
 
     def skin(cell, count, colour):
@@ -222,18 +221,85 @@ def leaf_texture():
             tone = np.asarray(colour) * rng.uniform(0.9, 1.1) * np.array((rng.uniform(0.95, 1.08), 1, rng.uniform(0.85, 1.0)))
             patch = layer[ys, xs]
             patch[..., :3] = patch[..., :3] * (1 - cover[..., None]) + tone * lit[..., None] * cover[..., None]
-        rgba[(cell // 2) * C:(cell // 2 + 1) * C, (cell % 2) * C:(cell % 2 + 1) * C] = layer
+        rgba[(cell // COLS) * C:(cell // COLS + 1) * C, (cell % COLS) * C:(cell % COLS + 1) * C] = layer
+
+    def pine_cord(layer, pts, cord_w, needle_len, n_pairs, colour):
+        """One bristly Araucaria heterophylla cord: thick fuzzy stem + overlapping curved awl scale-needles
+        sized to survive GPU mipmapping with alpha-test at clearing and backdrop distances."""
+        def paint(cover, rgb):
+            layer[..., :3] = layer[..., :3] * (1 - cover[..., None]) + rgb * cover[..., None]
+            layer[..., 3] = np.maximum(layer[..., 3], cover)
+
+        n = len(pts) - 1
+        for i in range(n):
+            t = (i + 0.5) / n
+            w = cord_w * (1.0 - 0.32 * t)
+            c_stem = np.asarray(colour) * (0.62 + 0.32 * t)
+            paint(segment(pts[i], pts[i + 1], w), c_stem)
+        for k in range(n_pairs):
+            t = 0.04 + 0.92 * k / max(1, n_pairs - 1)
+            fi = t * n
+            i0 = min(n - 1, int(fi))
+            f = fi - i0
+            at = (pts[i0][0] * (1 - f) + pts[i0 + 1][0] * f, pts[i0][1] * (1 - f) + pts[i0 + 1][1] * f)
+            dx, dy = pts[i0 + 1][0] - pts[i0][0], pts[i0 + 1][1] - pts[i0][1]
+            heading = math.atan2(dy, dx)
+            env = math.sin(math.pi * (0.14 + 0.80 * t)) ** 0.40
+            nl = needle_len * env * rng.uniform(0.88, 1.12)
+            tone = np.asarray(colour) * (0.76 + 0.36 * t) * rng.uniform(0.90, 1.12)
+            for sgn in (-1, 1):
+                ang = heading + sgn * math.radians(38 + rng.uniform(-7, 7))
+                tip = (at[0] + math.cos(ang) * nl, at[1] + math.sin(ang) * nl)
+                paint(segment(at, tip, cord_w * 0.78), tone)
+
+    def pine_comb(cell, colour):
+        """Upright row of 11 bold, separated fuzzy vertical Araucaria cords along the bottom edge, with crisp alpha gaps."""
+        layer = np.zeros((C, C, 4))
+        stem = segment((0.02, 0.04), (0.98, 0.04), 0.036)
+        layer[..., :3] = layer[..., :3] * (1 - stem[..., None]) + np.array((0.32, 0.36, 0.16)) * stem[..., None]
+        layer[..., 3] = np.maximum(layer[..., 3], stem)
+        n_cords = 11
+        for i in range(n_cords):
+            u = (i + 0.5) / n_cords
+            bx = 0.05 + 0.90 * u + rng.uniform(-0.008, 0.008)
+            h = (0.76 + 0.20 * math.sin(math.pi * (0.18 + 0.74 * u)) ** 0.55) * rng.uniform(0.90, 1.03)
+            h = min(0.95, h)
+            lean = (-0.015 + 0.045 * (u ** 2)) + rng.uniform(-0.012, 0.012)
+            pts = [(bx + lean * (t ** 1.3), 0.03 + h * t) for t in np.linspace(0, 1, 6)]
+            tone = np.asarray(colour) * rng.uniform(0.88, 1.12)
+            pine_cord(layer, pts, 0.026, 0.052, 16, tone)
+        place(cell, layer)
+
+    def pine_rosette(cell, colour):
+        """Lush upward-curving cupped fan spray of 11 bold bristly Araucaria cords for lower bowl-rosettes and plumes."""
+        layer = np.zeros((C, C, 4))
+        n_cords = 11
+        for i in range(n_cords):
+            u = i / (n_cords - 1) - 0.5
+            ang0 = u * math.radians(96) + rng.uniform(-0.04, 0.04)
+            length = (0.88 - 0.16 * (2 * abs(u)) ** 1.5) * rng.uniform(0.92, 1.05)
+            pts = []
+            for t in np.linspace(0, 1, 6):
+                a = ang0 * (1.0 - 0.50 * (t ** 1.4))
+                px = 0.50 + math.sin(a) * length * t * 0.58
+                py = 0.03 + math.cos(a) * length * t
+                pts.append((px, min(0.96, py)))
+            tone = np.asarray(colour) * (0.84 + 0.28 * (1.0 - 2 * abs(u))) * rng.uniform(0.92, 1.10)
+            pine_cord(layer, pts, 0.034, 0.068, 15, tone)
+        place(cell, layer)
 
     # broad: round, broadest beyond the middle, blunt tip; birch: small, triangular, pointed, toothed.
     spray(0, 4, 7, 0.16, 0.46, lambda t: np.sin(math.pi * t ** 1.3) ** 0.7, (0.50, 0.66, 0.22), 55)
     spray(1, 5, 8, 0.11, 0.36, lambda t: np.sin(math.pi * t ** 0.6) ** 0.9, (0.56, 0.68, 0.22), 55, serrate=0.06)
-    skin(2, 1500, (0.52, 0.68, 0.22))
+    pine_comb(2, (0.48, 0.66, 0.20))
+    skin(3, 1500, (0.52, 0.68, 0.22))
     t = np.clip(y, 0, 1)
     half = 0.44 * (1 - t ** 3) ** 0.5
     cover = np.clip((half - np.abs(x - 0.5)) * C + 0.5, 0, 1) * (y < 0.995)
     veins = 0.92 + 0.08 * np.cos((x - 0.5) / 0.44 * 7 * math.pi)
     blade = mix((0.40, 0.54, 0.16), (0.78, 0.70, 0.36), ramp(0.6, 1.0, t)) * veins[..., None]
-    place(3, np.dstack((blade, cover)))
+    place(4, np.dstack((blade, cover)))
+    pine_rosette(5, (0.48, 0.66, 0.20))
     return save("leaves", rgba)
 
 
@@ -243,11 +309,11 @@ end_img, end_nrm = end_grain_texture()
 wood_img, wood_nrm = wood_texture()
 stone_img, stone_nrm = stone_texture()
 leaf_img = leaf_texture()
-CELLS = {"broad": 0, "birch": 1, "skin": 2, "reed": 3}
+CELLS = {"broad": 0, "birch": 1, "pine_comb": 2, "skin": 3, "reed": 4, "pine_rosette": 5}
 
 
 def cell_uv(cell, u, v):
-    return ((cell % 2 + u) * 0.5, (cell // 2 + v) * 0.5)
+    return ((cell % 3 + u) / 3.0, (cell // 3 + v) / 2.0)
 
 
 # ---- materials -------------------------------------------------------------------------------------------------
@@ -589,6 +655,253 @@ def tree(name, kind):
     print(f"{name} ({kind}): wood {wood.tris()} + leaves {leaves.tris()} triangles, {len(wood.co) + len(leaves.co)} vertices, knee {knee:.3f} m")
 
 
+def araucaria(name):
+    """Norfolk Island pine (Araucaria heterophylla): tall bare dark trunk, upward-sweeping lower V-cradle with
+    distinct cupped bowl-rosettes, bare-stemmed middle paintbrush plumes, and a slender upper ladder of wide curved
+    saucer-bow combs with open sky gaps between tiers."""
+    node = variant(name)
+    rng = np.random.default_rng(7751)
+    wood, leaves = Mesh(), Mesh()
+    TOTAL_H = 11.8
+    CROWN_C = Vector((0.0, 0.0, 4.6))
+    PINE_TONE = (0.60, 0.74, 0.34)  # rich warm olive-pine multiplier over the light-green leaf atlas
+    BARK_TONE = (0.48, 0.44, 0.40)  # dark weathered charcoal-brown bark
+
+    # 15 tiers calibrated to the real-life proportions (tall bare trunk ~20%, upward lower V-cradle, wide upper bows)
+    # (z, reach, n_br, slope_in, lift_up, power, shoot_h, mode, s_start)
+    whorls = [
+        (2.35, 2.75, 5, 0.08, 0.30, 2.10, 0.42, "rosette", 0.24),
+        (2.98, 3.00, 6, 0.11, 0.34, 2.10, 0.45, "rosette", 0.24),
+        (3.66, 2.68, 5, 0.14, 0.38, 2.10, 0.46, "rosette", 0.28),
+        (4.38, 2.35, 5, 0.15, 0.41, 2.15, 0.48, "rosette", 0.32),
+        (5.12, 2.04, 5, 0.14, 0.44, 2.20, 0.54, "plume",   0.44),
+        (5.86, 1.74, 4, 0.12, 0.45, 2.25, 0.52, "plume",   0.45),
+        (6.60, 1.50, 5, 0.09, 0.44, 2.30, 0.47, "plume",   0.42),
+        (7.32, 1.30, 5, 0.06, 0.42, 2.35, 0.42, "comb",    0.34),
+        (8.02, 1.14, 5, 0.04, 0.41, 2.40, 0.39, "comb",    0.30),
+        (8.70, 0.99, 4, 0.03, 0.40, 2.40, 0.36, "comb",    0.26),
+        (9.35, 0.86, 5, 0.03, 0.39, 2.40, 0.34, "comb",    0.24),
+        (9.98, 0.72, 5, 0.04, 0.39, 2.35, 0.31, "comb",    0.20),
+        (10.56, 0.57, 4, 0.06, 0.39, 2.30, 0.28, "comb",   0.16),
+        (11.10, 0.41, 5, 0.10, 0.38, 2.25, 0.24, "comb",   0.12),
+        (11.52, 0.23, 4, 0.16, 0.36, 2.15, 0.19, "comb",   0.08),
+    ]
+    w_zs = np.array([w[0] for w in whorls])
+
+    # Trunk: straight, dark rugged bark, root flare, subtle whorl collar swelling
+    zs = [-0.15, 0.0, 0.08, 0.20, 0.38, 0.65, 1.0, 1.4, 1.85, 2.30] + list(np.linspace(2.65, TOTAL_H, 24))
+    trunk_pts = [Vector((0.06 * (max(z, 0) / TOTAL_H) ** 1.6 + 0.03 * math.sin(z * 1.1 + 0.5),
+                         0.02 * math.cos(z * 0.9 + 1.1), z)) for z in zs]
+
+    def trunk_r(z):
+        u = max(z, 0.0) / TOTAL_H
+        swell = 1.0 + 0.06 * float(np.exp(-((z - w_zs) / 0.12) ** 2).sum())
+        return (0.142 * (1.0 - u) ** 1.05 + 0.015) * swell
+
+    def trunk_at(z):
+        for i in range(len(zs) - 1):
+            if zs[i] <= z <= zs[i + 1]:
+                f = (z - zs[i]) / max(1e-6, zs[i + 1] - zs[i])
+                return trunk_pts[i].lerp(trunk_pts[i + 1], f)
+        return trunk_pts[-1].copy()
+
+    flare = lambda i, a: (1.0 + 0.38 * math.exp(-max(zs[i], 0) / 0.24) * (0.4 + 0.6 * (0.5 + 0.5 * math.cos(5 * a + 0.7)) ** 2)
+                          + 0.025 * math.sin(6 * a + zs[i] * 3.0))
+    trunk_col = lambda i, a, q: mul(BARK_TONE, 0.65 + 0.35 * smooth(-0.1, 0.8, q.z))
+    tube(wood, trunk_pts, [trunk_r(z) for z in zs], 12, BARK, trunk_col, u_tiles=2.5, v_per_m=1.6, shape=flare)
+
+    def branch_pts(origin, horiz, reach, slope_in, lift_up, side, sway, steps, power):
+        out = []
+        for k in range(steps + 1):
+            s = k / steps
+            r = reach * (s - 0.06 * (s ** 3.2))
+            dz = reach * (slope_in * s + lift_up * (s ** power))
+            lat = sway * reach * math.sin(s * math.pi)
+            out.append(origin + horiz * r + side * lat + UP * dz)
+        return out
+
+    def leaf_col(tier_t, radial_s, shade=1.0):
+        b = (0.56 + 0.44 * (tier_t ** 0.8)) * (0.68 + 0.42 * radial_s) * shade
+        return mul(PINE_TONE, b)
+
+    def soft_normal(pos, local_n):
+        out = pos - CROWN_C
+        out = out.normalized() if out.length > 1e-5 else UP
+        return (local_n * 0.40 + out * 0.30 + UP * 0.42).normalized()
+
+    def add_comb_ribbon(pts, s_start, height, tier_t, tilt_side=0.0, flare_out=0.0, cell_name="pine_comb", segs=4, shade=1.0):
+        """A curved vertical ribbon following pts[s_start..1.0], mapped to the alpha-tested comb or rosette sprite."""
+        n_p = len(pts) - 1
+        cum = [0.0]
+        for i in range(n_p):
+            cum.append(cum[-1] + (pts[i + 1] - pts[i]).length)
+        total = cum[-1]
+        if total < 0.05:
+            return
+
+        def sample(frac):
+            target = frac * total
+            for i in range(n_p):
+                if cum[i] <= target <= cum[i + 1]:
+                    f = (target - cum[i]) / max(1e-6, cum[i + 1] - cum[i])
+                    return pts[i].lerp(pts[i + 1], f), (pts[i + 1] - pts[i]).normalized()
+            return pts[-1].copy(), (pts[-1] - pts[-2]).normalized()
+
+        cell = CELLS[cell_name]
+        prev = None
+        for k in range(segs + 1):
+            u = k / segs
+            s = s_start + (1.0 - s_start) * u
+            p, tan = sample(s)
+            horiz_t = Vector((tan.x, tan.y, 0.0))
+            horiz_t = horiz_t.normalized() if horiz_t.length > 1e-5 else Vector((1, 0, 0))
+            side = UP.cross(horiz_t).normalized()
+            # Top of ribbon rises strictly vertical (+Z), optionally tilted slightly left/right or flared at tip
+            top_dir = (UP + side * tilt_side + horiz_t * (flare_out * (u ** 1.6))).normalized()
+            h_here = height * (0.88 + 0.16 * u)
+            p_bot = p - UP * 0.02
+            p_top = p_bot + top_dir * h_here
+            n_bot = soft_normal(p_bot, side * (1.0 if tilt_side >= 0 else -1.0))
+            n_top = soft_normal(p_top, (top_dir + UP) * 0.5)
+            c_bot = leaf_col(tier_t, s, shade * 0.72)
+            c_top = leaf_col(tier_t, s, shade * 1.15)
+            i_bot = leaves.vert(p_bot, c_bot, n_bot, 0.08 + 0.25 * s)
+            i_top = leaves.vert(p_top, c_top, n_top, 0.35 + 0.65 * s)
+            if prev is not None:
+                u0, u1 = (k - 1) / segs, u
+                leaves.face((prev[0], i_bot, i_top, prev[1]),
+                            (cell_uv(cell, u0, 0.0), cell_uv(cell, u1, 0.0), cell_uv(cell, u1, 1.0), cell_uv(cell, u0, 1.0)), LEAVES)
+            prev = (i_bot, i_top)
+
+    def add_cupped_rosette(center, horiz_d, side_d, pad_r, shoot_h, tier_t, radial_s):
+        """A distinct 3D cupped bowl rosette of 6 curved upward-cupped fan cards + bright sky-lit inner cup."""
+        cell = CELLS["pine_rosette"]
+        n_petals = 6
+        a0 = rng.uniform(0, 6.28)
+        for j in range(n_petals):
+            ang = a0 + j * 2 * math.pi / n_petals + rng.uniform(-0.18, 0.18)
+            rad = (horiz_d * (math.cos(ang) * 1.1) + side_d * (math.sin(ang) * 0.95)).normalized()
+            tang = UP.cross(rad).normalized()
+            w = pad_r * 0.76 * rng.uniform(0.9, 1.12)
+            h = shoot_h * rng.uniform(0.88, 1.12)
+            # Bent 2-segment cupped fan card: base near center -> sweeps out -> curves UP into rim!
+            p0 = center + rad * (pad_r * 0.08) - UP * 0.04
+            p1 = center + rad * (pad_r * 0.68) + UP * (h * 0.34)
+            p2 = center + rad * (pad_r * 0.92) + UP * (h * 1.02)
+            c0 = leaf_col(tier_t, radial_s, 0.56)   # deep dark shadowed bowl underside
+            c1 = leaf_col(tier_t, radial_s, 0.92)   # mid bowl wall
+            c2 = leaf_col(tier_t, radial_s, 1.24)   # bright sunlit cup rim tips
+            rows = []
+            for p_c, r_w, col, fl, vv in ((p0, w * 0.42, c0, 0.12, 0.0), (p1, w * 0.92, c1, 0.48, 0.48), (p2, w * 1.05, c2, 0.95, 1.0)):
+                n_v = soft_normal(p_c, (UP * 0.75 + rad * 0.45).normalized())
+                rows.append((leaves.vert(p_c - tang * r_w, col, n_v, fl), leaves.vert(p_c + tang * r_w, col, n_v, fl), vv))
+            for r0, r1 in ((rows[0], rows[1]), (rows[1], rows[2])):
+                leaves.face((r0[0], r0[1], r1[1], r1[0]),
+                            (cell_uv(cell, 0.0, r0[2]), cell_uv(cell, 1.0, r0[2]), cell_uv(cell, 1.0, r1[2]), cell_uv(cell, 0.0, r1[2])), LEAVES)
+        # Bright sunlit upright cross inside the cup center
+        for k in range(2):
+            ang = a0 + k * math.pi * 0.5 + 0.4
+            tang = (horiz_d * math.cos(ang) + side_d * math.sin(ang)).normalized()
+            w = pad_r * 0.62
+            h = shoot_h * 0.88
+            p0, p1 = center - UP * 0.02, center + UP * h
+            c0, c1 = leaf_col(tier_t, radial_s, 0.88), leaf_col(tier_t, radial_s, 1.32)
+            n0, n1 = soft_normal(p0, UP), soft_normal(p1, UP)
+            q = [leaves.vert(p0 - tang * w, c0, n0, 0.2), leaves.vert(p0 + tang * w, c0, n0, 0.2),
+                 leaves.vert(p1 + tang * w, c1, n1, 0.85), leaves.vert(p1 - tang * w, c1, n1, 0.85)]
+            leaves.face(q, (cell_uv(cell, 0, 0), cell_uv(cell, 1, 0), cell_uv(cell, 1, 1), cell_uv(cell, 0, 1)), LEAVES)
+
+    # Generate all 15 whorls with real-life irregularity
+    n_whorls = len(whorls)
+    bark_branch = mul(BARK_TONE, 0.78)
+    for wi, (z_w, reach_w, n_br, slope_in, lift_up, pwr, shoot_h, mode, s_start) in enumerate(whorls):
+        tier_t = wi / max(1, n_whorls - 1)
+        whorl_az = 0.18 + wi * 0.72 + rng.uniform(-0.22, 0.22)
+        for bi in range(n_br):
+            az = whorl_az + bi * 2 * math.pi / n_br + rng.uniform(-0.25, 0.25)
+            origin = trunk_at(z_w + rng.uniform(-0.09, 0.09))
+            horiz = Vector((math.cos(az), math.sin(az), 0.0))
+            side = Vector((-math.sin(az), math.cos(az), 0.0))
+            asym = 1.0 + 0.10 * math.cos(az * 2.0 - 0.3) + rng.uniform(-0.14, 0.16)
+            reach = reach_w * asym
+            sl = slope_in + rng.uniform(-0.035, 0.04)
+            lf = lift_up + rng.uniform(-0.045, 0.045)
+            sway = rng.uniform(-0.04, 0.04)
+            steps = 5 if reach > 1.0 else 4
+            b_pts = branch_pts(origin, horiz, reach, sl, lf, side, sway, steps, pwr)
+            r0 = max(0.008, min(0.044, 0.042 * (1.0 - 0.68 * tier_t) * (reach / max(0.25, reach_w))))
+            tube(wood, b_pts, [max(0.0035, r0 * (1.0 - 0.80 * k / steps) ** 0.9) for k in range(steps + 1)],
+                 5 if tier_t < 0.45 else 4, BARK, bark_branch, u_tiles=1.0, v_per_m=2.0)
+
+            if mode == "comb":
+                # Crisp curved saucer-bow vertical comb + gentle cross-angle twin so it reads full from 360 deg!
+                add_comb_ribbon(b_pts, s_start, shoot_h, tier_t, tilt_side=0.04, flare_out=0.10, cell_name="pine_comb", segs=4, shade=1.05)
+                add_comb_ribbon(b_pts, s_start + 0.04, shoot_h * 0.92, tier_t, tilt_side=-0.26, flare_out=0.14, cell_name="pine_comb", segs=3, shade=0.92)
+            elif mode == "plume":
+                # Bare inner dark stem + wide upward-flared paintbrush plume on outer 55%
+                add_comb_ribbon(b_pts, s_start, shoot_h, tier_t, tilt_side=0.0, flare_out=0.22, cell_name="pine_comb", segs=4, shade=1.04)
+                add_comb_ribbon(b_pts, s_start + 0.06, shoot_h * 0.96, tier_t, tilt_side=0.30, flare_out=0.24, cell_name="pine_comb", segs=3, shade=0.95)
+                add_comb_ribbon(b_pts, s_start + 0.06, shoot_h * 0.96, tier_t, tilt_side=-0.30, flare_out=0.24, cell_name="pine_comb", segs=3, shade=0.90)
+                if wi <= 5:
+                    # One pair of short outer plume forks
+                    sub_orig = b_pts[3]
+                    sub_len = reach * 0.28 * rng.uniform(0.85, 1.15)
+                    for sgn in (-1.0, 1.0):
+                        fa = math.radians(30.0 * rng.uniform(0.85, 1.15))
+                        sh = (horiz * math.cos(fa) + side * (sgn * math.sin(fa))).normalized()
+                        ss = Vector((-sh.y, sh.x, 0.0))
+                        s_pts = branch_pts(sub_orig, sh, sub_len, sl, lf * 1.05, ss, 0.0, 3, 2.1)
+                        tube(wood, s_pts, [0.009, 0.007, 0.005, 0.003], 4, BARK, bark_branch)
+                        add_comb_ribbon(s_pts, 0.20, shoot_h * 0.84, tier_t, tilt_side=sgn * 0.15, flare_out=0.18, cell_name="pine_comb", segs=2, shade=0.96)
+            else:  # "rosette": upward-sweeping lower V-cradle with distinct cupped bowl-rosettes!
+                add_comb_ribbon(b_pts, s_start, shoot_h * 0.92, tier_t, tilt_side=0.24, flare_out=0.10, cell_name="pine_comb", segs=3, shade=0.86)
+                add_comb_ribbon(b_pts, s_start, shoot_h * 0.92, tier_t, tilt_side=-0.24, flare_out=0.10, cell_name="pine_comb", segs=3, shade=0.82)
+                tip_p = b_pts[-1]
+                mid_p = b_pts[3]
+                add_cupped_rosette(tip_p, horiz, side, 0.44 * rng.uniform(0.88, 1.14), shoot_h * 0.96, tier_t, 1.0)
+                add_cupped_rosette(mid_p, horiz, side, 0.36 * rng.uniform(0.88, 1.12), shoot_h * 0.86, tier_t, 0.65)
+                for frac in ([0.38, 0.68] if wi <= 2 else [0.52]):
+                    fi = frac * steps
+                    i0 = min(steps - 1, int(fi))
+                    sub_orig = b_pts[i0].lerp(b_pts[i0 + 1], fi - i0)
+                    sub_len = reach * (0.36 - 0.14 * frac) * rng.uniform(0.85, 1.15)
+                    if sub_len < 0.24:
+                        continue
+                    for sgn in (-1.0, 1.0):
+                        if rng.random() < 0.08:
+                            continue
+                        fa = math.radians((40.0 - 10.0 * frac) * rng.uniform(0.85, 1.15))
+                        sh = (horiz * math.cos(fa) + side * (sgn * math.sin(fa))).normalized()
+                        ss = Vector((-sh.y, sh.x, 0.0))
+                        s_pts = branch_pts(sub_orig, sh, sub_len, sl * 0.9, lf * 1.05, ss, 0.0, 3, 2.0)
+                        sr0 = max(0.005, r0 * (1.0 - 0.45 * frac) * 0.54)
+                        tube(wood, s_pts, [max(0.003, sr0 * (1.0 - 0.70 * k / 3)) for k in range(4)], 4, BARK, bark_branch)
+                        add_cupped_rosette(s_pts[-1], sh, ss, 0.30 * rng.uniform(0.88, 1.14), shoot_h * 0.82, tier_t, 0.92)
+
+    # Bristly upper central trunk / leader spire (z = 6.8..11.8 m)
+    cell_r = CELLS["pine_rosette"]
+    for z_l in np.linspace(7.0, TOTAL_H - 0.35, 12):
+        u_top = (z_l - 7.0) / (TOTAL_H - 7.0)
+        p_tr = trunk_at(z_l)
+        w = (0.16 - 0.07 * u_top)
+        h = (0.42 - 0.16 * u_top)
+        ang = z_l * 2.3
+        for k in range(2):
+            a = ang + k * math.pi * 0.5
+            tang = Vector((math.cos(a), math.sin(a), 0.0))
+            c0, c1 = leaf_col(0.85 + 0.15 * u_top, 0.7, 0.85), leaf_col(0.85 + 0.15 * u_top, 0.95, 1.15)
+            n0, n1 = soft_normal(p_tr, tang), soft_normal(p_tr + UP * h, UP)
+            q = [leaves.vert(p_tr - tang * w, c0, n0, 0.2), leaves.vert(p_tr + tang * w, c0, n0, 0.2),
+                 leaves.vert(p_tr + tang * w + UP * h, c1, n1, 0.75), leaves.vert(p_tr - tang * w + UP * h, c1, n1, 0.75)]
+            leaves.face(q, (cell_uv(cell_r, 0, 0), cell_uv(cell_r, 1, 0), cell_uv(cell_r, 1, 1), cell_uv(cell_r, 0, 1)), LEAVES)
+
+    wood.build(name + "_wood", node)
+    leaves.build(name + "_leaves", node, custom_normals=True)
+    knee = min(math.hypot(x, y) for x, y, z in wood.co + leaves.co if 0.6 < z < 1.4)
+    assert knee <= 0.12, f"{name}: trunk {knee:.3f} m at the knee, its collider would grow"
+    print(f"{name} (araucaria): wood {wood.tris()} + leaves {leaves.tris()} triangles, {len(wood.co) + len(leaves.co)} vertices, knee {knee:.3f} m")
+
+
 def bush(name, seed, masses, tone):
     """A bush on the bank: low masses sunk into the ground (src/world sinks it 0.35 m), small leaf cards round them."""
     node, rng, m = variant(name), np.random.default_rng(seed), Mesh()
@@ -876,6 +1189,7 @@ def reed(name, seed, blades, height, width, cattails):
 tree("tree_1", "oak")
 tree("tree_2", "birch")
 tree("tree_3", "poplar")
+araucaria("tree_4")
 counts = {
     # three bushes unlike each other: a round mound, a long low hedge on a curve, a tall one with a skirt; tints apart
     "bush_1": bush("bush_1", 101, [((0, 0, 0.62), (0.75, 0.7, 0.62)), ((0.62, 0.28, 0.42), (0.5, 0.48, 0.42)), ((-0.48, 0.42, 0.4), (0.5, 0.45, 0.4))], (0.9, 0.95, 0.6)),

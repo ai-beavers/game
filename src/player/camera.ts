@@ -1,10 +1,12 @@
 // The player's camera, in the third-person view (the usual one) or the first-person view (V switches; see the end).
 // The third-person view: orbits a point above the beaver's feet, drag to turn it, wheel to zoom (2 … 8 m).
-// At rest it stands low behind the beaver and looks a little over it, so the beaver sits in the lower third, a bit left
-// of the middle, with the horizon, the sky and the pond in the picture. It follows with a little lag on a critically
+// At rest it stands low behind the beaver and looks a little over it, so the beaver sits in the lower third, in the middle
+// across, with the horizon, the sky and the pond in the picture. It follows with a little lag on a critically
 // damped spring, looks ahead where the beaver goes, stands back a touch at a run, goes lower over the water and closer
 // and to the side for gnawing and building. All of that is a pure function of the beaver's state (rig, stepRig), tested
-// in camera.test.ts; the player's own look (drag, stick, finger) is 1:1 and only nudged back to rest after LEFT_ALONE s.
+// in camera.test.ts; the player's own look (drag, stick, finger) is 1:1. It holds while the beaver stands; once the
+// beaver goes, LEFT_ALONE s after the last look input, the camera swings round behind it and back to the rest pitch
+// (follow), so mouse and following combine: drag to look, walk on and it follows again.
 // It never passes through the ground or things: a small ball is cast in Rapier from the beaver to where the camera
 // wants to be; when something comes in between the camera moves in quickly but smoothly (at once only when it would be
 // inside it), and goes out again slowly. Over the pond it stays above the water. While the beaver dives it goes under
@@ -42,7 +44,7 @@ const LOOK_HEIGHT = 0.7; // m above the feet
 const MIN_DISTANCE = 2, MAX_DISTANCE = 8;
 const MIN_PITCH = -0.05, MAX_PITCH = 1.35; // rad above the horizon: even at 8 m the camera stays above the feet
 const UNDER_PITCH = -0.7; // rad: diving, the camera may go below the beaver and look up at the surface
-export const REST_PITCH = 0.24, REST_DISTANCE = 4.5; // rad, m: low enough for the horizon, high enough to see the ground ahead
+export const REST_PITCH = 0.22, REST_DISTANCE = 3.2; // rad, m: close over the shoulder, low enough for the horizon, high enough to see the ground ahead
 const LET_OUT = 3; // 1/s, how fast the camera goes back out once the view is free
 const LET_IN = 14; // 1/s, how fast it comes in when something comes between
 const CLOSE = 1.4, ROOMY = 2; // m: when the view has less room than this (above, under water), it tries other angles
@@ -51,20 +53,20 @@ const BALL = 0.18; // m, radius of the cast ball: keeps the near plane out of wa
 // The player's framing.
 export const FOV = Math.PI / 4; // rad, vertical, as engine.ts sets it
 const MIN_WIDE = 0.95, MAX_FOV = 1.15; // rad: a tall phone opens the view to see this much across, but not wider than this
-const LOW = 0.27, LEFT = 0.12; // the look point this far below and left of the middle (fractions of half the screen)
+const LOW = 0.2, LEFT = 0; // the look point this far below and left of the middle (fractions of half the screen): centred across
 const LAG = 7, LAG_UP = 3, LAG_DOWN = 5; // 1/s: the look point follows the feet sideways, up and down (jumps barely move it), and so diving
 const LEAD = 0.35, LEAD_EASE = 3; // s of travel it looks ahead, and 1/s how fast that lead changes
 const RUN_WIDEN = 0.08, RUN_FOV = 0.04, MOOD = 2.5; // at a run: farther (fraction) and wider (rad); 1/s for all such moods
 const RAMP = 0.7; // 1/s: swimming and working come in no faster than this, so a sudden change never jolts the camera
-const SWIM_PITCH = 0.13, SWIM_BACK = 0.08; // lower (rad) and farther (fraction) while swimming
+const SWIM_PITCH = 0.13, SWIM_BACK = 0.15; // lower (rad) and farther (fraction) while swimming
 const WORK_CLOSE = 0.22, WORK_SIDE = 0.45; // closer (fraction) and round to the side (rad) while gnawing or building
 const ZOOM = 6; // 1/s, the eased zoom
-const LEFT_ALONE = 3, CENTRE = 0.5, AHEAD = 0.5; // s without look input, 1/s back to rest, rad within which it swings behind
+const LEFT_ALONE = 0.5, CENTRE = 2.5; // s without look input before it follows, 1/s round behind and back to rest
 const WATER_GAP = 0.3, UNDER_GAP = 0.25; // m the camera keeps above the water, and below it while the beaver dives
 const DIVE_RAMP = 1.0; // 1/s: how fast the camera goes under and up again (under in about a second, through the surface in a third)
-// Under water: the look point lower (m, at the diving body), the camera level with it (rad lower), a little nearer
+// Under water: the look point lower (m, at the diving body), the camera level with it (rad lower), farther back as before the closer rest (DIVE_CLOSE < 0)
 // (fraction), round to the side (rad), the lens a little wider (rad), the beaver in the middle of the height (fraction of LOW kept).
-const DIVE_LOOK = 0.4, DIVE_LEVEL = 0.07, DIVE_CLOSE = 0.1, DIVE_SIDE = 0.3, DIVE_FOV = 0.12, DIVE_LOW = 0.2;
+const DIVE_LOOK = 0.4, DIVE_LEVEL = 0.07, DIVE_CLOSE = -0.35, DIVE_SIDE = 0.3, DIVE_FOV = 0.12, DIVE_LOW = 0.2;
 const ROOF = 2; // m: under the surface, looking down, the camera rises to it no further than this from the look point
 const PEER_PITCH = 0.35, PEER_CLOSE = 0.25; // diving with no room under: higher (rad) and nearer (fraction), to look down through the surface
 // The first-person view.
@@ -149,9 +151,21 @@ export function stepRig(rig: Rig, dt: number, feet: Vector3, going: Going, yaw: 
     /** 0 above the water … 1 under it with the diving beaver (beneath, underWater). */
     under,
     fov: wide,
-    /** rad the view looks above and right of the look point, so the beaver sits low and left of the middle. */
+    /** rad the view looks above and right of the look point, so the beaver sits low in the picture (LEFT: and to the left). */
     rise: Math.atan(LOW * half) * (1 - (1 - DIVE_LOW) * under), across: Math.atan(LEFT * half * aspect),
   };
+}
+
+/** The player's yaw and pitch dt s on, `idle` s after the last look input, as the beaver goes at velocity (m/s):
+ *  standing, or within LEFT_ALONE, they stay; going, they ease back to the rest pitch and round behind it, most when
+ *  it goes straight away from the camera, less sideways (so A and D walk a wide circle, as in GTA), not at all from
+ *  120° on (S walks towards the camera without spinning it round). Returns [yaw, pitch]. */
+export function follow(yaw: number, pitch: number, velocity: { x: number; z: number }, idle: number, dt: number): [number, number] {
+  const moving = Math.hypot(velocity.x, velocity.z);
+  if (idle <= LEFT_ALONE || moving <= 0.3) return [yaw, pitch];
+  const k = 1 - Math.exp(-CENTRE * dt * Math.min(1, moving / WALK_SPEED)), behind = Math.atan2(velocity.x, velocity.z) + Math.PI;
+  const off = Math.atan2(Math.sin(behind - yaw), Math.cos(behind - yaw));
+  return [yaw + off * k * Math.max(0, Math.cos(0.75 * off)), pitch + (REST_PITCH - pitch) * k];
 }
 
 /** Under water (under 1) the surface is a ceiling, as the ground is a floor: the camera at pitch and distance from a
@@ -269,14 +283,7 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
         return;
       }
       state.pitch = pitchRange(state.pitch);
-      const v = going.velocity, moving = Math.hypot(v.x, v.z);
-      // Left alone for a while: back to the rest pitch, and round behind when it goes nearly away from the camera.
-      if ((idle += dt) > LEFT_ALONE && moving > 0.3) {
-        const k = 1 - Math.exp(-CENTRE * dt * Math.min(1, moving / WALK_SPEED));
-        state.pitch += (REST_PITCH - state.pitch) * k;
-        const off = Math.atan2(Math.sin(Math.atan2(v.x, v.z) + Math.PI - state.yaw), Math.cos(Math.atan2(v.x, v.z) + Math.PI - state.yaw));
-        if (Math.abs(off) < AHEAD) state.yaw += off * k;
-      }
+      [state.yaw, state.pitch] = follow(state.yaw, state.pitch, going.velocity, idle += dt, dt);
       const aspect = engine.getAspectRatio(camera) || 16 / 9;
       // Diving: how far back from the beaver, just under the surface, the water has room for the camera (the bed and
       // the bank are ground, with a collider).
@@ -317,7 +324,7 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       // Pulled in close (something in the way), it looks at the beaver itself, so the beaver never leaves the picture.
       const near = Math.min(1, shown / shot.distance);
       const at = look.add(rig.lead.scale(near));
-      // The view turned up and to the side of that point by rise and across: the beaver low and left of the middle.
+      // The view turned up and to the side of that point by rise and across: the beaver low, centred across.
       camera.setTarget(view(camera.position, at, shot.rise, shot.across).addInPlace(camera.position));
     },
   };
