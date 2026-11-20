@@ -19,7 +19,7 @@ const toBoard = (p: { x: number; z: number }) => {
   return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
 };
 import { POST } from "../trade/place.ts";
-import { BENDS, done, FIND, FLOWER, follow, GNAW, find, gnaw, HIDING, HOME, offered, pick, REACH, rows, take, TRACKS, TRACKS_FACING, TRACKS_REACH, TRAIL, wayHome } from "./rules.ts";
+import { BENDS, done, FIND, FLOWER, follow, GNAW, find, gnaw, HIDING, HOME, offered, pick, REACH, rows, take, TRACKS, TRACKS_FACING, TRACKS_REACH, TRAIL, wayHome, wayOut } from "./rules.ts";
 
 test("each visit picks one of the six hiding places from the random number given, and starts on the flower step", () => {
   expect(HIDING).toHaveLength(6);
@@ -59,11 +59,16 @@ test("the brush pile stands clear of the trees, rocks, stumps, logs, bushes and 
   for (const p of HIDING) for (const { s, r } of things) expect(Math.hypot(s.x - p.x, s.z - p.z)).toBeGreaterThan(r);
 });
 
-test("from every hiding place a way of straight legs over dry land leads home, past nothing laid out solid", () => {
+/** All that stands solid in the clearing, each with the m to keep from its middle. */
+function solids() {
   const layout = placeAll();
-  const solid = [...layout.tree.map((s) => ({ s, r: 0.8 })), ...layout.rock.map((s) => ({ s, r: 0.5 * s.scale + 0.3 })),
+  return [...layout.tree.map((s) => ({ s, r: 0.8 })), ...layout.rock.map((s) => ({ s, r: 0.5 * s.scale + 0.3 })),
     ...layout.stump.map((s) => ({ s, r: 0.6 })), ...layout.log.map((s) => ({ s, r: 1.3 })), ...layout.crate.map((s) => ({ s, r: 0.5 })),
     { s: SHOP, r: 3.5 }, { s: POST, r: 1.6 }, { s: SIGN_POST, r: 0.4 }];
+}
+
+test("from every hiding place a way of straight legs over dry land leads home, past nothing laid out solid", () => {
+  const solid = solids();
   expect(Math.hypot(HOME.x - SITE.x, HOME.z - SITE.z)).toBeLessThan(SITE.radius + 2);
   expect(BENDS).toHaveLength(HIDING.length);
   HIDING.forEach((p, i) => {
@@ -88,6 +93,35 @@ test("from every hiding place a way of straight legs over dry land leads home, p
     }
     expect(walked).toBeLessThan(Math.hypot(HOME.x - p.x, HOME.z - p.z) + 1); // a bend is no long way round
   });
+});
+
+test("from her flower a way of straight legs leads to a point short of her tracks and on to them, past nothing solid", () => {
+  // The tour's station walks these legs with her flower picked up. Straight from the north flower to its tracks the
+  // Calendar board stands in the way: a point on that line lay 0.2 m from the board, where no beaver gets.
+  const solid = solids(), d = TRACKS_REACH + 1.5;
+  HIDING.forEach((_, i) => {
+    const tracks = TRACKS[i]!, way = wayOut(i, FLOWER[i]!, tracks, d), short = way.at(-1)!, on = wayOut(i, short, tracks);
+    expect(Math.hypot(short.x - tracks.x, short.z - tracks.z)).toBeGreaterThan(TRACKS_REACH + 1); // not found from there
+    expect(Math.hypot(short.x - tracks.x, short.z - tracks.z)).toBeLessThan(d + 0.5); // her tracks lie a little off her way
+    for (const p of [...way, ...on]) expect(onWay(i, p).off).toBeLessThan(1e-6);
+    expect(Math.hypot(on[0]!.x - short.x, on[0]!.z - short.z)).toBeLessThan(1e-6); // on from where it stopped
+    expect(onWay(i, short).share).toBeLessThan(onWay(i, tracks).share); // nearer home than her tracks
+    expect(way.length).toBeLessThanOrEqual(3);
+    let from = FLOWER[i]!;
+    for (const to of [...way, ...on, tracks]) {
+      for (let t = 0; t <= 1; t += 0.01) {
+        const x = from.x + (to.x - from.x) * t, z = from.z + (to.z - from.z) * t;
+        expect(heightAt(x, z)).toBeGreaterThan(WATER_LEVEL + 0.03);
+        expect(pondRatio(x, z)).toBeGreaterThan(1.2);
+        for (const { s, r } of solid) expect(Math.hypot(s.x - x, s.z - z)).toBeGreaterThan(r);
+        expect(toBoard({ x, z })).toBeGreaterThan(0.4);
+      }
+      from = to;
+    }
+  });
+  // The north one: onto her way first, then round the bend at the board's east end to her tracks.
+  expect(wayOut(2, FLOWER[2]!, TRACKS[2]!, d).length).toBe(2);
+  expect(wayOut(2, wayOut(2, FLOWER[2]!, TRACKS[2]!, d).at(-1)!, TRACKS[2]!)).toContainEqual(BENDS[2]![0]!);
 });
 
 /** Where p lies along her way from HOME out to hiding place i: the share of the way walked to its nearest point on

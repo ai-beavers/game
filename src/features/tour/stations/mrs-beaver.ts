@@ -4,7 +4,7 @@
 // find step ticks; the pen gnawed open by holding Use, a slip of the key keeping what is gnawed; the pen fallen into
 // loose sticks, her flower back behind her ear, and her walk home to the building site. Only the reset (a new quest,
 // at a hiding place picked anew) and where the piles, the pen and the clues are come from the feature's debug handle.
-import { FIND, FLOWER_REACH, HIDING, REACH, TRACKS_REACH, type Step, type XZ } from "../../mrs-beaver/rules.ts";
+import { FIND, FLOWER_REACH, HIDING, REACH, TRACKS_REACH, wayOut, type Step, type XZ } from "../../mrs-beaver/rules.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
@@ -95,11 +95,12 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       expect(!player.carrying, "picking up her flower filled the paws");
       if (live) await wait(2);
 
-      // On along her way to her tracks: walking onto them ticks the step.
-      const short = off(tracks, flower, TRACKS_REACH + 1.5);
-      await walkTo(short.x, short.z, { near: 0.5, limit: 60, hop: true });
+      // On along her way to her tracks: walking onto them ticks the step. Along her way, not straight from her flower:
+      // from the north flower a straight line to her tracks runs through the Calendar board.
+      const short = wayOut(mine, flower, tracks, TRACKS_REACH + 1.5);
+      for (const p of short) await walkTo(p.x, p.z, { near: 0.5, limit: 60, hop: true });
       expect(her.step === "tracks", `${near(player.feet, tracks).toFixed(1)} m from her tracks they count as found already`);
-      await walkTo(tracks.x, tracks.z, { near: 0.3, limit: 15, arrived: () => her.step === "find" });
+      for (const p of [...wayOut(mine, short.at(-1)!, tracks), tracks]) await walkTo(p.x, p.z, { near: 0.3, limit: 15, arrived: () => her.step === "find" });
       await until(() => her.step === "find" && reads(2), 2, `on her tracks the quest is on "${her.step}" and the checklist reads ${lines().join(" / ")}`);
       if (live) await wait(2);
 
