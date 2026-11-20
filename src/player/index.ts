@@ -71,6 +71,12 @@ export interface PlayerControls extends Player {
   readonly carrying: Stick | undefined;
   /** Lets go of the stick at once, without the drop motion (someone else got it first). */
   drop(): void;
+  /** Puts the carried stick down with the drop motion, as E does; false when it cannot now (nothing carried, another
+   *  action under way, in the air, in the canoe). */
+  putDown(): boolean;
+  /** Something another part puts in the paws instead of a stick (src/features/trade: a good from the hotbar). E at a
+   *  stick while it is full calls free() and starts the pickup once it no longer is. */
+  hold: { readonly full: boolean; free(): void } | undefined;
   /** A part that uses the context key for lasting actions (gnaw, build); see Actor. */
   actor: Actor | undefined;
   /** Gives the carried stick away (into the dam) without putting it down: no longer carried, its body stays
@@ -140,6 +146,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   const lift = new Vector3(); // m the picture still lags behind the last steps up (and a climb out of the water)
   let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false, under = false;
   let actor: Actor | undefined, aim: number | undefined, ride: Ride | undefined; // aim: where a lasting action turns the beaver
+  let hold: PlayerControls["hold"], freeing = false; // freeing: a pickup waits for the paws to be free
   let turnTo: PlayerControls["turnTo"], turned = 0; // turned: rad turnTo turned this step
   const desired = new Vector3(), forward = new Vector3();
 
@@ -280,8 +287,15 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const pressed = input.act && !actHeld && slap.progress === 0; // E waits while the tail is up
     actHeld = input.act;
 
-    // The carry sequence.
+    // The carry sequence. E at a stick with something else in the paws: that goes away first, then the pickup starts.
     if (act.action === "none" && pressed && !act.carrying) target = (grounded || afloat) && !ride ? inReach() : undefined;
+    let pick = pressed && !freeing;
+    if (target && pick && hold?.full) { hold.free(); freeing = true; pick = false; }
+    else if (freeing && !hold?.full) {
+      freeing = false;
+      target = act.action === "none" && !act.carrying && (grounded || afloat) && !ride ? inReach() : undefined;
+      pick = !!target;
+    }
     // A lasting action of another part (gnaw, build) when there is nothing to pick up; it comes before a drop.
     const offer = act.action === "none" && pressed && !target && (grounded || afloat) ? actor?.begin(act.carrying) : undefined;
     if (offer) { act.action = offer.action; act.progress = 0; aim = offer.face; }
@@ -289,7 +303,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       const progress = actor?.step(dt, input.act);
       if (progress === undefined) { act.action = "none"; act.progress = 0; aim = undefined; } else act.progress = progress;
     }
-    const event = stepAction(act, dt, pressed && !offer && (grounded || afloat), !!target);
+    const event = stepAction(act, dt, pick && !offer && (grounded || afloat), !!target);
     if (event === "grab") {
       if (target && target.body.isEnabled()) grab(target); else act.carrying = false;
       target = undefined;
@@ -412,6 +426,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     get waterLevel() { return waterLevel(); },
     get carrying() { return carried?.stick; },
     drop() { if (carried) { release(); act.carrying = false; } },
+    putDown() {
+      if (!act.carrying || act.action !== "none" || !(grounded || afloat) || ride) return false;
+      act.action = "drop";
+      act.progress = 0;
+      return true;
+    },
+    get hold() { return hold; },
+    set hold(value) { hold = value; },
     get actor() { return actor; },
     set actor(value) { actor = value; },
     offer() {

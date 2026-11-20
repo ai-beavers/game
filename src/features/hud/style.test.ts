@@ -37,10 +37,12 @@ test("live shows nothing to press: no pause, no chat", () => {
   expect(layout(640, 360, none, { touch: false, live: true }).map).toBeUndefined();
 });
 
-test("the hints sit low, under the middle of the picture", () => {
+test("the hints sit low, under the middle of the picture, over the prompt and the hotbar", () => {
   const l = layout(1280, 720, none, { touch: false, live: false });
-  expect(l.hints.y).toBeGreaterThan(720 * 0.8);
+  expect(l.hints.y).toBeGreaterThan(720 * 0.7);
   expect(l.hints.x + l.hints.w / 2).toBe(640);
+  expect(l.hints.y < l.prompt.y && l.prompt.y + l.prompt.h < l.hotbar.y).toBe(true);
+  expect(Math.abs(l.hotbar.x + l.hotbar.w / 2 - 640)).toBeLessThanOrEqual(1);
 });
 
 test("the Old Beaver's speech box sits over the hints, sharing the breath's home, with room for his name and a line", () => {

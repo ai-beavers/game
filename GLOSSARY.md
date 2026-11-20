@@ -50,6 +50,10 @@ _Avoid_: shop, store, market
 A thing the beaver gets at the trading post for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell.
 _Avoid_: item, loot, product
 
+**Hotbar**:
+The row of five slots at the bottom of the screen. The first shows what the beaver carries (a stick) or nothing, the others the goods in the backpack with their counts. Selecting a good's slot (keys 1 to 5, the d-pad's left and right, a tap) brings it out of the backpack into the beaver's left paw; selecting the first slot or the same one again puts it back. A good in the paw still counts in the backpack.
+_Avoid_: inventory, toolbar, quickbar
+
 **Shop**:
 The small disco-like hut in the clearing with the sign HOUSE OF AI in front; inside it is a café where the shopkeeper sells outfits and other creatures work at laptops.
 _Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)

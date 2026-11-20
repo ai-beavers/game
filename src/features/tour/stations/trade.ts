@@ -38,8 +38,9 @@ export const trading = (kit: Kit): Station[] => {
       expect(last.goodTraded!.good === good && last.goodTraded!.count === owned + 1, `the backpack got ${last.goodTraded!.good} ×${last.goodTraded!.count}, not ${good} ×${owned + 1}`);
       expect(trade.state.owned[good] === owned + 1, `the backpack holds ${trade.state.owned[good]} pinecones, not ${owned + 1}`);
       expect(!world.sticks.includes(stick) && !loose().includes(stick) && player.carrying !== stick, "the stick paid in is still in the world");
-      const line = `Pinecone ×${owned + 1}`;
-      await until(() => hudText("backpack").includes(line), 2, `the backpack row says "${hudText("backpack")}", not "${line}"`);
+      // The hotbar counts it: slot 2 is the first good owned, and the pinecone is the first on the post.
+      const count = `×${owned + 1}`;
+      await until(() => hudText("hotbar-count-2") === count, 2, `the hotbar's pinecone slot says "${hudText("hotbar-count-2")}", not "${count}"`);
       await until(() => (player.motion.reachBack ?? 0) === 0, 3, "the paw stayed at the backpack");
     }, "Trading"],
   ];

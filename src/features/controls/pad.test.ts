@@ -53,7 +53,9 @@ test("buttons: A jumps, X uses, B dives, RB slaps, LB and the right trigger run,
   expect(padInput(pad([0, 0], [], { [BUTTON.rt]: 0.2 }), newInput()).run).toBe(0);
   expect(padInput(pad([0, 0], [], { [BUTTON.rt]: 0.5 }), newInput()).run).toBe(1);
   expect(padInput(pad([0, 0], [BUTTON.up]), newInput()).run).toBe(0); // the d-pad walks
-  expect(padInput(pad([0, 0], [BUTTON.left]), newInput()).move).toEqual({ x: -1, y: 0 });
+  expect(padInput(pad([0, 0], [BUTTON.down]), newInput()).move).toEqual({ x: 0, y: -1 });
+  const left = padInput(pad([0, 0], [BUTTON.left]), newInput()); // the sides step through the hotbar, not walk
+  expect([left.move, left.shift, padInput(pad([0, 0], [BUTTON.right]), newInput()).shift]).toEqual([{ x: 0, y: 0 }, -1, 1]);
   expect(padInput(pad([0, 0]), newInput())).toEqual(newInput());
 });
 

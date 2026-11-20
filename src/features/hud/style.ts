@@ -5,8 +5,8 @@
 //
 // The screen's regions, each element with one home in one of them:
 //   top left       pause (play, desktop), Experience, goals  top centre    the tour's caption, toasts under it
-//   top right      map, hour and weather, fps, backpack      bottom left   chat log, connection, chat row
-//   bottom centre  breath or speech, hints and advice, prompt  bottom right  the thumbs' buttons (controls/touch.ts)
+//   top right      map, hour and weather, fps                bottom left   chat log, connection, chat row
+//   bottom centre  breath or speech, hints and advice, prompt, hotbar  bottom right  the thumbs' buttons (controls/touch.ts)
 // Regions never overlap: when the top centre has no room between the sides, live its caption goes above them and the
 // toasts under them, in play both under them; when the bottom centre has none, it goes beside the chat, or above the
 // chat row with the chat log above it. The breath (only in the water) and the Old Beaver's speech box (only to a
@@ -38,10 +38,10 @@ export interface Layout {
   experience: Box;
   caption: Box; toast: Box;
   map?: Box; status: Box; fps: Box;
-  /** The goods in the backpack (src/features/trade), one row under the fps. */
-  backpack: Box;
   chat: Box; chatRow: Box; log: Box;
   breath: Box; hints: Box; prompt: Box;
+  /** The hotbar (src/features/trade): five square slots in a row, at the bottom centre under the prompt. */
+  hotbar: Box;
   /** The Old Beaver's speech box (src/features/old-beaver): the breath's home, grown upwards; its bottom is the breath's. */
   speech: Box;
   touch?: Box;
@@ -71,11 +71,10 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const map = mapSize ? box(right - rightW + (rightW - mapSize) / 2, top, mapSize, mapSize) : undefined;
   const status = box(right - rightW, top + (mapSize ? mapSize + gap : 0), rightW, row);
   const fps = box(right - rightW, status.y + row + gap, rightW, small * 2);
-  const backpack = box(right - rightW, fps.y + fps.h + gap, rightW, row);
   const pause = !touch && !live ? box(L, top, 68, 36) : undefined;
   const experience = box(L, pause ? pause.y + pause.h + gap : top, Math.min(leftW, u * 10), Math.round(u * 1.5));
   const goalsY = experience.y + experience.h + gap;
-  const under = Math.max(backpack.y + backpack.h, goalsY + u * 6.5) + gap; // a short goals list: the goal at hand, how, one done
+  const under = Math.max(fps.y + fps.h, goalsY + u * 6.5) + gap; // a short goals list: the goal at hand, how, one done
   const caption = box((w - centreW) / 2, stacked && !live ? under : T, centreW, row);
   const toast = box(caption.x, stacked && live ? under : caption.y + row + gap, centreW, toastH);
   const goals = box(L, goalsY, leftW, Math.max(row, (stacked ? caption.y - gap : B - u * 10) - goalsY));
@@ -93,14 +92,20 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const centred = 2 * Math.min(w / 2 - lo, hi - w / 2), beside = centred < least && hi - lo >= least, roomy = centred >= least || beside;
   const centreBottom = roomy ? B : chatRow.y - gap;
   const bottomW = centred >= least ? Math.min(u * 36, centred) : beside ? hi - lo : R - L;
-  const prompt = box(beside ? lo : (w - bottomW) / 2, centreBottom - promptH, bottomW, promptH);
+  // The hotbar: five squares of `slot` px, 10/64 of one as padding and 8/64 between (the design's 64, 10 and 8 px),
+  // smaller on a short screen (the breath and the speech box keep their room over it) and when the column is narrower.
+  const slot = Math.min(Math.round(u * (live ? 2.6 : h < 420 ? 2.2 : 3.5)),Math.floor(bottomW / (5 + 4 / 8 + 2 / 6.4)));
+  const barW = 5 * slot + 4 * Math.round(slot / 8) + 2 * Math.round(slot / 6.4), barH = slot + 2 * Math.round(slot / 6.4);
+  const columnX = beside ? lo : (w - bottomW) / 2;
+  const hotbar = box(Math.round(columnX + (bottomW - barW) / 2), centreBottom - barH, barW, barH);
+  const prompt = box(columnX, hotbar.y - gap - promptH, bottomW, promptH);
   const hints = box(prompt.x, prompt.y - gap - hintsH, bottomW, hintsH);
   const breath = box(prompt.x, hints.y - gap - breathH, bottomW, breathH);
   // The speech box: the breath's home grown upwards to a name and two rows of text, as far as there is room under the
   // middle's top (some of the middle stays free) and clear of the side columns it would reach under.
   const middleTop = Math.max(fps.y, goalsY + u * 4, stacked ? toast.y + toast.h : 0) + gap;
   const across = (x: number, bw: number) => prompt.x < x + bw && x < prompt.x + bottomW;
-  const ceiling = Math.max(middleTop + u * 2, across(right - rightW, rightW) ? backpack.y + backpack.h + gap : 0, across(L, leftW) ? goalsY + u * 6.5 + gap : 0);
+  const ceiling = Math.max(middleTop + u * 2, across(right - rightW, rightW) ? fps.y + fps.h + gap : 0, across(L, leftW) ? goalsY + u * 6.5 + gap : 0);
   const speechH = Math.max(breathH, Math.min(Math.round(small * 1.3 + u * 1.3 * 2 + pad * 1.2), breath.y + breathH - ceiling));
   const speech = box(prompt.x, breath.y + breathH - speechH, bottomW, speechH);
   // The log over the chat row; with the bottom centre above the chat row, over that.
@@ -108,7 +113,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const log = box(L, logBottom - logH, chatW, logH);
   const chat = box(L, Math.min(log.y, chatRow.y), chatW, live ? 0 : chatBottom - Math.min(log.y, chatRow.y));
   return {
-    u, small, gap, pad, compact, pause, experience, goals, caption, toast, map, status, fps, backpack, chat, chatRow, log, breath, hints, prompt, speech, touch: thumbs,
+    u, small, gap, pad, compact, pause, experience, goals, caption, toast, map, status, fps, chat, chatRow, log, breath, hints, prompt, hotbar, speech, touch: thumbs,
     middle: { top: middleTop, bottom: speech.y - gap },
   };
 }
@@ -124,7 +129,7 @@ export const fitType = (type: number, across: number, chars: number) =>
  *  grow into, the map's and the caption's what they take. */
 export function homes(l: Layout): [string, Box][] {
   const all: [string, Box | undefined][] = [["pause", l.pause], ["experience", l.experience], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * 6.5) }], ["caption", l.caption], ["toast", l.toast],
-    ["map", l.map], ["status", l.status], ["fps", l.fps], ["backpack", l.backpack], ["chat row", l.chatRow], ["log", l.log], ["breath and speech", l.speech], ["hints", l.hints],
-    ["prompt", l.prompt], ["touch", l.touch]];
+    ["map", l.map], ["status", l.status], ["fps", l.fps],["chat row", l.chatRow], ["log", l.log], ["breath and speech", l.speech], ["hints", l.hints],
+    ["prompt", l.prompt], ["hotbar", l.hotbar], ["touch", l.touch]];
   return all.filter((e): e is [string, Box] => !!e[1] && e[1].w > 0 && e[1].h > 0);
 }

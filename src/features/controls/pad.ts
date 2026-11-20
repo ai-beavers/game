@@ -5,7 +5,8 @@
 //   padInput(gamepad, input);                       fills input from a standard-mapping gamepad
 //
 // Standard mapping: left stick moves, A jumps (rises under water), X acts, B held sits (on land) or dives (swimming), RB slaps the tail, Y flashes the lantern, LB, the right
-// trigger or a click on the left stick runs; the d-pad moves too. LT opens the map (src/features/hud).
+// trigger or a click on the left stick runs; the d-pad's up and down walk, its left and right step through the hotbar
+// (src/features/trade). LT opens the map (src/features/hud).
 import type { Input } from "../../player/input.ts";
 
 export const INNER = 0.18; // a stick at rest drifts up to here
@@ -43,11 +44,12 @@ export function stickSpeed(x: number, y: number) {
 export function padInput(pad: PadLike, into: Input): Input {
   const pushed = deadZone(pad.axes[0] ?? 0, pad.axes[1] ?? 0), stick = stickSpeed(pushed.x, pushed.y);
   let x = stick.x, y = 0 - stick.y || 0; // never -0
-  const dx = +down(pad, BUTTON.right) - +down(pad, BUTTON.left), dy = +down(pad, BUTTON.up) - +down(pad, BUTTON.down);
-  if (dx || dy) { const length = Math.hypot(dx, dy); x = dx / length; y = dy / length; }
+  const dy = +down(pad, BUTTON.up) - +down(pad, BUTTON.down);
+  if (dy) { x = 0; y = dy; }
   into.move.x = x;
   into.move.y = y;
-  into.run = [BUTTON.lb, BUTTON.rt, BUTTON.l3].some((b) => down(pad, b)) ? 1 : dx || dy ? 0 : stick.run;
+  into.run = [BUTTON.lb, BUTTON.rt, BUTTON.l3].some((b) => down(pad, b)) ? 1 : dy ? 0 : stick.run;
+  into.shift = +down(pad, BUTTON.right) - +down(pad, BUTTON.left); // the d-pad's sides step through the hotbar
   into.jump = down(pad, BUTTON.a);
   into.act = down(pad, BUTTON.x);
   into.slap = down(pad, BUTTON.rb);
