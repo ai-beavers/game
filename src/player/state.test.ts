@@ -1,6 +1,7 @@
 // Tests for the player's pure logic: jump timing, the carry sequence, diving and breath, the Motion bookkeeping. bun test src/player
 import { describe, expect, test } from "bun:test";
 import { BREATH, REFILL, RIDE_SPEED, SWIM_SPEED, rideKeys, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepLow, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
+import { RUN_SPEED } from "../contracts.ts";
 
 const dt = 1 / 60;
 
@@ -135,6 +136,17 @@ describe("steer", () => {
       expect(r.settled).toBeLessThanOrEqual(old + 0.02);
       expect(r.over).toBeLessThan(0.01);
     }
+  });
+  test("at a run it curves into a 45° turn instead of snapping round", () => {
+    const s = newSteering();
+    s.speed = RUN_SPEED;
+    let settled = NaN;
+    for (let i = 1; i < 120; i++) {
+      steer(s, Math.PI / 4, 1, RUN_SPEED, 6, 9, dt);
+      if (Number.isNaN(settled) && Math.abs(s.facing - Math.PI / 4) < 0.05) settled = i * dt;
+    }
+    expect(settled).toBeGreaterThan(0.15); // it took 0.1 s before
+    expect(settled).toBeLessThan(0.3);
   });
   test("letting go stops the turn within a quarter radian", () => {
     const s = newSteering();

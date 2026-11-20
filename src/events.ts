@@ -54,6 +54,8 @@ export interface GameEvents {
    *  or into the water beside it. */
   canoeIn: { place: Vector3 };
   canoeOut: { place: Vector3; outcome: "bank" | "water" };
+  /** From the mushrooms feature (src/features/mushrooms): the beaver bends down and eats a mushroom here. */
+  munch: { place: Vector3 };
   /** From the race feature (src/features/race), the local player's own race only: the canoe crossed the start line,
    *  passed buoy `index` (in order), finished lap `lap`, finished the race in `time` s (best: the visit's best now;
    *  newBest: this one set it), or the beaver got out mid-race. */

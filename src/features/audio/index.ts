@@ -110,6 +110,7 @@ export const create: CreateFeature = (game) => {
 
   // The beaver's work, as the build feature tells it (src/features/build).
   events.on("gnaw", ({ place, progress }) => play("bite", place, progress));
+  events.on("munch", ({ place }) => { for (const delay of [0.15, 0.5, 0.85]) play("bite", place, 0, "sfx", delay); }); // munching a mushroom: three soft bites
   events.on("treeFalls", ({ place }) => play("creak", place.add(new Vector3(0, 2, 0))));
   events.on("treeLands", ({ place, speed }) => play("crash", place, clamp(speed / 12)));
   events.on("treeSplits", ({ place }) => play("crack", place));

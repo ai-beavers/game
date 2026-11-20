@@ -23,9 +23,9 @@ export const MIN_CYCLE = 0.05;
 
 export function gait(speed: number, anger = 0): Gait {
   const run = smooth(0.9, 1.6, speed);
-  const duty = lerp(lerp(0.6, 0.66, anger), 0.36, run);
+  const duty = lerp(lerp(0.6, 0.66, anger), 0.3, run); // running: short contacts, time in the air
   const walkReach = Math.min(0.085, 0.12 * speed);
-  const reach = lerp(walkReach, 0.125, run);
+  const reach = lerp(walkReach, 0.11, run); // running it bounds on all fours: short legs, quick strides
   const lift = lerp(lerp(0.03, 0.04, anger), 0.035, run) * smooth(0, Math.max(0.05, 0.3 * WALK_SPEED), speed);
   return { run, duty, reach, cycle: Math.max(MIN_CYCLE, (2 * reach) / duty), lift };
 }

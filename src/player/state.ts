@@ -185,6 +185,9 @@ export function trackMotion(m: SwimMotion, dt: number, f: StepFacts): void {
 // (which read as a snap), and near the new heading it slows in proportion to what is left (TURN_SETTLE, 1/s), so it
 // arrives without a kink. TURN_RATE is above the old constant 10 rad/s, so a reversal takes as long as before.
 export const TURN_RATE = 12, TURN_ACCEL = 240, TURN_SETTLE = 30; // rad/s, rad/s², 1/s
+// Faster than a walk it cannot turn as sharply (its feet grip only so much sideways): at a run it curves into the new
+// heading instead of snapping round. Up to walking speed TURN_RATE holds.
+export const TURN_GRIP = TURN_RATE * WALK_SPEED; // m/s², the most sideways acceleration a turn asks of it
 export interface Steering { facing: number; spin: number; speed: number }
 export const newSteering = (): Steering => ({ facing: 0, spin: 0, speed: 0 });
 
@@ -194,7 +197,8 @@ export const newSteering = (): Steering => ({ facing: 0, spin: 0, speed: 0 });
 export function steer(s: Steering, want: number | undefined, amount: number, top: number, accel: number, brake: number, dt: number) {
   const left = want === undefined ? 0 : Math.atan2(Math.sin(want - s.facing), Math.cos(want - s.facing));
   // let go, it stops turning twice as hard: at most 0.22 rad on from where the stick was released
-  s.spin = approach(s.spin, Math.max(-TURN_RATE, Math.min(TURN_RATE, TURN_SETTLE * left)), (want === undefined ? 2 : 1) * TURN_ACCEL * dt);
+  const most = Math.min(TURN_RATE, TURN_GRIP / Math.abs(s.speed));
+  s.spin = approach(s.spin, Math.max(-most, Math.min(most, TURN_SETTLE * left)), (want === undefined ? 2 : 1) * TURN_ACCEL * dt);
   s.facing += s.spin * dt;
   const along = want === undefined ? 0 : Math.max(0, Math.cos(want - s.facing)) * amount;
   s.speed = approach(s.speed, top * along, (top * along > s.speed ? accel : brake) * dt);

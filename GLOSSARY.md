@@ -114,6 +114,10 @@ _Avoid_: skin, costume, clothes
 The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
 _Avoid_: boat, raft, kayak
 
+**Mushroom**:
+A small red-capped mushroom growing at the foot of a tree in the clearing, which the beaver can eat. One eaten is gone until the next day's dawn. Each player has their own, and no one else sees them.
+_Avoid_: shroom, fungus, food, item
+
 **Race**:
 Three laps in the canoe round the ring of buoys on the pond, against the clock. The clock starts when the canoe crosses the start line and stops when it crosses it after the third lap; each buoy must be passed in order. Getting out of the canoe abandons the race. The player's best time is kept for the visit. Each player races alone, and no one else sees their race.
 _Avoid_: kart race, time trial, grand prix, track, circuit
@@ -144,9 +148,21 @@ _Avoid_: crouch, rest, kneel
 The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
 _Avoid_: crouch, sneak, prone
 
+**Bound**:
+How the beaver runs on land: down on all fours, long and low, the hind feet pushing off together and the front paws landing between, the back humping and stretching with each stride. Walking it stays upright; it drops into a bound as it speeds up and rises again as it slows. Carrying a stick it runs upright.
+_Avoid_: gallop, sprint, dash
+
+**Dizzy**:
+What a player's view becomes for a while after the beaver eats too many mushrooms too quickly: colours slowly drift and the picture gently sways and waves, with no flashing. Only that player's own screen changes; steering does not, and the HUD stays steady.
+_Avoid_: trip, high, drunk, poisoned
+
 **Flash**:
 The player switching the lantern off and on with one button while it is dark, so that other players see it blink. A flash means what the players agree it means; the game gives it no meaning.
 _Avoid_: blink, signal, toggle
+
+**Chat**:
+The lines players in the same world write to each other. A line shows over its beaver's head for a few seconds and in the log. It is not the stream's chat, where viewers write wishes.
+_Avoid_: messages, talk, stream chat, Twitch chat
 
 **Stare**:
 The beaver turning round on land to look straight into its own player's camera, unblinking, once the player has touched nothing for a minute, and then creeping slowly up to it until its face nearly touches the lens, the camera holding still for it. Any input ends it. Only that player sees the beaver look into their camera; others see it only walk a little way.

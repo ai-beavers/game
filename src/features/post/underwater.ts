@@ -21,6 +21,8 @@ import type { Game } from "../../game.ts";
 import { daylightOf, SUN_INTENSITY } from "../../light.ts";
 import { waterOf } from "../../world/water.ts";
 
+/** The pass's name on the camera: a later pass that must lie over the water look finds it by this (the dizzy view). */
+export const UNDERWATER = "underwater";
 const NEAR = 0.25; // m: the pass and the depth map are on while the beaver dives or the camera is this close above (it keeps 0.3)
 
 ShaderStore.ShadersStore.underwaterFragmentShader = `precision highp float;
@@ -92,7 +94,7 @@ export function createUnderwater(game: Game) {
   const depth = scene.enableDepthRenderer(camera, false, true, undefined, true);
   depth.enabled = true; // two frames to compile its shaders while the game starts, then only near the water
   let warm = 2;
-  const pass = new PostProcess("underwater", "underwater", ["unproject", "eye", "forward", "water", "level", "time", "near", "sun"],
+  const pass = new PostProcess(UNDERWATER, "underwater", ["unproject", "eye", "forward", "water", "level", "time", "near", "sun"],
     ["depthSampler"], 1, null, Constants.TEXTURE_BILINEAR_SAMPLINGMODE, engine, false, null, Constants.TEXTURETYPE_HALF_FLOAT);
   const unproject = new Matrix(), forward = new Vector3(), tint = new Color3();
   let attached = false, time = 0, on = false;
