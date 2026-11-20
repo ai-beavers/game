@@ -12,6 +12,9 @@ ComfyUI/input/river-kit-{front,left,back,right}.png
         │  generate.py         runs pixal3d-multi-view.json in ComfyUI
         ▼
 ComfyUI/output/3d/river-kit_00001.glb         700,000 triangles, 4K maps
+        │  paint.py            our pictures projected onto it: its colour map anew
+        ▼
+ComfyUI/output/3d/river-kit-painted.glb
 ```
 
 ## Run it
@@ -19,7 +22,8 @@ ComfyUI/output/3d/river-kit_00001.glb         700,000 triangles, 4K maps
 ```bash
 cd tools/comfyui
 ~/dev/3d-gen/ComfyUI/.venv/bin/python views.py river-kit --comfy ~/dev/3d-gen/ComfyUI   # then look at river-kit-views.png
-~/dev/3d-gen/ComfyUI/.venv/bin/python generate.py river-kit                             # about 9 minutes on an M4 Max
+~/dev/3d-gen/ComfyUI/.venv/bin/python generate.py river-kit                             # about 8 minutes on an M4 Max
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P paint.py -- river-kit ~/dev/3d-gen/ComfyUI
 ```
 
 Another animal: a folder beside `river-kit/` with its three pictures, and its name in both commands. A second number
@@ -76,6 +80,7 @@ nobody here has yet.
 
 ## What to expect
 
-A recognisable animal with the right proportions, its coat's colours and a sculpted fur surface. Not the pictures'
-soft fur: that is rendered hair, and a game model is a skin with fur painted on. The face is the weakest part; it is
-only as sharp as the front and side pictures agree.
+A recognisable animal with the right proportions and a sculpted fur surface. The model's own colour is poor (eyes as
+dark blotches, a smeared muzzle, streaks): `paint.py` replaces it with our pictures, which fit because the model
+follows them pixel for pixel. Not the pictures' soft fur: that is rendered hair, and a game model is a skin with fur
+painted on. The muzzle's shape stays the weakest part: whiskers come out as lumps.

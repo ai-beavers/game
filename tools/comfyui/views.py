@@ -6,7 +6,8 @@ Reads <name>/front.png, <name>/side.png (the animal faces picture-right) and <na
 with a transparent ground, and writes <name>-front.png, -left.png, -back.png, -right.png into ComfyUI's input folder:
 1024 px square, on black, the animal at one scale in all four and its feet on one line, as the workflow's
 conditioning node asks ("the object spans about 1/1.1 of the frame at its widest, the same scale in every view").
-<name>-views.png beside this file shows the four, to check by eye.
+<name>-views.png beside this file shows the four, to check by eye. The same four also go there with their
+transparency kept, 2048 px, as <name>-front-rgba.png and so on: paint.py puts those onto the finished model.
 
 Which side is which (ComfyUI comfy_extras/nodes_trellis2.py, _VIEW_AZIMUTHS and _orbit_camera_to_world): the left
 camera stands on the animal's left flank, so in the left view the animal faces picture-LEFT. A side picture facing
@@ -62,11 +63,15 @@ board = Image.new("RGB", (4 * 384, 384))
 for i, view in enumerate(("front", "left", "back", "right")):
     colour, alpha = views[view]
     h, w = alpha.shape
-    canvas = np.zeros((side, side, 3), np.float32)
+    canvas = np.zeros((side, side, 4), np.float32)
     x, y = (side - w) // 2, floor - tall
-    canvas[y:y + h, x:x + w] = (colour * alpha[..., None])[:side - y]
-    picture = Image.fromarray(canvas.astype(np.uint8)).resize((1024, 1024), Image.LANCZOS)
-    picture.save(Path(args.comfy).expanduser() / "input" / f"{args.name}-{view}.png")
+    canvas[y:y + h, x:x + w] = np.dstack([colour * alpha[..., None], alpha * 255])[:side - y]
+    inputs = Path(args.comfy).expanduser() / "input"
+    picture = Image.fromarray(canvas[..., :3].astype(np.uint8)).resize((1024, 1024), Image.LANCZOS)
+    picture.save(inputs / f"{args.name}-{view}.png")
+    clear = canvas.copy()
+    clear[y:y + h, x:x + w, :3] = colour[:side - y]  # its own colour up to the outline, not darkened towards black
+    Image.fromarray(clear.astype(np.uint8)).resize((2048, 2048), Image.LANCZOS).save(inputs / f"{args.name}-{view}-rgba.png")
     board.paste(picture.resize((384, 384)), (i * 384, 0))
     print(view, w, "x", h, "of", side)
 board.save(HERE / f"{args.name}-views.png")
