@@ -41,11 +41,11 @@ export const PLAYERS = "#7FC8F8", STICKS = "#E8D3A8", BROWN = "#8B5A2B", FLOWER 
 /** The one shadow under HUD text, backed or not. */
 export const SHADOW = { color: "rgba(12,8,4,0.85)", blur: 4 };
 
-/** The text size everything is measured in, px. Live (a stream viewers watch scaled down) 1/60 of the picture's
- *  width: 24 at 1440, 32 at 1920, never under 12 for a 640×360 tile; playing 13 … 18. */
+/** The text size everything is measured in, px. Live (a stream viewers watch scaled down) 1/80 of the picture's
+ *  width: 17 for the stream's 1366×772 main view, 24 at 1920, never under 12 for a 640×360 tile; playing 13 … 18. */
 export function unit(w: number, h: number, live: boolean) {
   const span = Math.min(w, h * 16 / 9);
-  return live ? Math.max(12, Math.round(span / 60)) : Math.max(13, Math.min(18, Math.round(span / 80)));
+  return live ? Math.max(12, Math.round(span / 80)) : Math.max(13, Math.min(18, Math.round(span / 80)));
 }
 
 export interface Layout {
@@ -81,7 +81,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
 
   // Top right: the map card, left of the touch screen's Pause and Photo (controls/touch.ts): the hour and weather on
   // top, the map, the legend under it; the fps under the card.
-  const mapSize = live && compact ? 0 : Math.round(u * (live || compact ? 7 : 12)); // a stream tile's map is too small to read
+  const mapSize = live && compact ? 0 : Math.round(u * (live ? 9 : compact ? 7 : 12)); // a stream tile's map is too small to read
   const rightW = Math.max(mapSize + 2 * pad, u * 9), right = touch ? w - inset.right - 59 - gap : R;
   // Top left: as wide as the goals need, at most half the screen.
   const leftW = Math.min(u * 16, Math.floor((R - L - gap) / 2));
