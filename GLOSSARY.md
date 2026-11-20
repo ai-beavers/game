@@ -148,6 +148,10 @@ _Avoid_: blink, signal, toggle
 The beaver turning round on land to look straight into its own player's camera, unblinking, once the player has touched nothing for a minute. Any input ends it. Only that player sees it.
 _Avoid_: AFK, idle animation, look-at
 
+**Tail slap**:
+The beaver bringing its tail down flat: a crack on the water, a thump on land. It is the alarm that sends the animals off, and on land, close to the bear, it is the beaver's only blow: each one that lands takes some of the bear's health. At the bear it is a leap: the beaver jumps, turns once round in the air and brings its tail down on the bear.
+_Avoid_: attack, hit, strike, tail whip
+
 **Remote**:
 Another player's beaver as this browser draws it.
 _Avoid_: peer, other client
@@ -157,8 +161,28 @@ A player without a browser that joins over the network and does beaver work unde
 _Avoid_: NPC, AI player
 
 **Animal**:
-A creature of the world that no player steers: ducks, fish, deer.
+A creature of the world that no player steers: ducks, fish, deer, the bear.
 _Avoid_: NPC, mob, wildlife entity
+
+**Bear**:
+The one animal that goes for the beaver instead of fleeing from it. By day it comes running out of the far forest into the wide meadow between where the first bank stood and the bank, where it ambles about, noses and digs in the ground, looks about and sits; when it notices the player's beaver on land there, it rears up, charges and swipes at it. It never goes into the water and never comes nearer the pond than where the first bank stood. Each player has their own, and no one else sees it.
+_Avoid_: bot (a bot is a player), enemy, monster, boss, mob, predator, threat
+
+**Swipe**:
+The bear's blow with a front paw, after it has reared up. It never harms the beaver, which has no health and cannot die: it tosses the beaver a few metres, knocks the stick from its paw and leaves it furious for a while.
+_Avoid_: attack, hit, bite, damage
+
+**Health**:
+How much fight the bear has left: 100 when it comes out of the forest, less with every tail slap that lands. Only the bear has it.
+_Avoid_: HP, hit points, life, lives
+
+**Health bar**:
+The bar at the top of the HUD with the bear's name and its health, shown from when the bear goes for the player's beaver until it is driven off or gives up.
+_Avoid_: life bar, HP bar, boss bar
+
+**Driven off**:
+What the bear is once it has no health left: it turns and runs all the way back into the far forest, in plain sight, and stays there until the next day. It is not killed; nothing in the clearing dies.
+_Avoid_: dead, killed, defeated, despawned
 
 **Third-person view**, **First-person view**:
 The two ways a player can see the clearing. In the third-person view (the usual one) the camera follows behind the beaver, which is in the picture. In the first-person view the player sees through the beaver's eyes, and the beaver itself is not in the picture. Each player switches between them for their own screen only.

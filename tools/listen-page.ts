@@ -38,6 +38,9 @@ export const PLAYED: Record<SoundName, { bus: Bus; at: number; amount: number; s
   drop: { bus: "sfx", at: CAMERA, amount: 1, seconds: 1.4 },
   bite: { bus: "sfx", at: CAMERA, amount: 0.5, seconds: 1.2 },
   murmur: { bus: "sfx", at: CAMERA + 2, amount: 0.5, seconds: 1.2 }, // the Old Beaver, a few metres ahead of the beaver
+  growl: { bus: "sfx", at: CAMERA + 6, amount: 1, seconds: 3.5 }, // the Bear as it notices the beaver, some metres off
+  grunt: { bus: "sfx", at: CAMERA + 2, amount: 1, seconds: 1.5 }, // the Bear a tail slap away
+  smack: { bus: "sfx", at: CAMERA + 2, amount: 1, seconds: 1.5 }, // the tail landing on it
   creak: { bus: "sfx", at: CAMERA + 1, amount: 1, seconds: 4 },
   crash: { bus: "sfx", at: CAMERA + 2, amount: 0.7, seconds: 4 },
   crack: { bus: "sfx", at: CAMERA, amount: 1, seconds: 2.5 },

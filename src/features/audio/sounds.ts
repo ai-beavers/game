@@ -265,6 +265,25 @@ const RECIPES = {
     bark(0, 0.5);
     bark(0.42, 0.35);
   },
+  /** The Bear rearing up at the beaver: a long, low, rough growl that swells and falls. */
+  growl(ctx, out, t) {
+    const v = rand(0.94, 1.06);
+    buzz(ctx, out, t, { freq: 62 * v, to: 48 * v, filter: 320, sweep: 520, q: 1.2, attack: 0.25, decay: 0.9, peak: 1.25 });
+    buzz(ctx, out, t, { at: 0.05, freq: 93 * v, to: 70 * v, filter: 700, sweep: 420, q: 1.5, attack: 0.3, decay: 0.8, peak: 0.63 });
+    burst(ctx, out, t, { filter: "bandpass", freq: 480, to: 300, q: 0.8, attack: 0.3, decay: 0.8, peak: 0.45 });
+  },
+  /** The Bear hit by a tail slap: a short, hoarse grunt. */
+  grunt(ctx, out, t) {
+    const v = rand(0.92, 1.08);
+    buzz(ctx, out, t, { freq: 110 * v, to: 70 * v, filter: 520, sweep: 300, q: 1.6, attack: 0.015, decay: 0.28, peak: 1.0 });
+    burst(ctx, out, t, { filter: "bandpass", freq: 700 * v, to: 380, q: 1, attack: 0.01, decay: 0.22, peak: 0.5 });
+  },
+  /** A tail slap landing on the Bear: a flat, sharp crack on fur over a deep thud of the body. */
+  smack(ctx, out, t) {
+    burst(ctx, out, t, { filter: "highpass", freq: 1800, attack: 0.001, decay: 0.03, peak: 0.6 });
+    burst(ctx, out, t, { filter: "bandpass", freq: 1500, to: 500, q: 0.8, attack: 0.001, decay: 0.1, peak: 0.7 });
+    tone(ctx, out, t, { freq: 150, to: 50, attack: 0.002, decay: 0.2, peak: 0.6 });
+  },
   /** One chirp of a cricket: three quick pulses of a high tone; amount picks its pitch. */
   cricket(ctx, out, t, amount) {
     const f = 4300 + amount * 600;

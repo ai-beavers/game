@@ -27,7 +27,7 @@ export interface GameEvents {
   action: { place: Vector3; action: Exclude<Action, "none"> };
   /** The tail comes down: a crack on the water (water true) or a thump on land; place is at the feet. remote:
    *  another player's (src/features/net/remote.ts). */
-  tailSlap: { place: Vector3; water: boolean; remote?: boolean };
+  tailSlap: { place: Vector3; water: boolean; remote?: boolean; air?: boolean };
   /** Animals that noticed a tail slap and fled (src/features/life); count: how many. */
   startled: { place: Vector3; count: number };
   // From the build feature (src/features/build). `tree` is the index in World.trees.
@@ -67,6 +67,10 @@ export interface GameEvents {
   /** From the Old Beaver feature (src/features/old-beaver): he murmurs a line of a lore, or his closing word, one
    *  syllable a word, syllable s apart, from where he sits; for the local player only. words 0: he falls silent. */
   oldBeaverSpeaks: { place: Vector3; words: number; syllable: number };
+  /** From the bear feature (src/features/bear), about the local player's own Bear: it notices the beaver and growls;
+   *  a tail slap landed on it (health: what it has left, 0: driven off). place: where the bear is. */
+  bearNotices: { place: Vector3 };
+  bearSlapped: { place: Vector3; health: number };
   /** A change to the build feature's world state. remote false: made here, after it was applied (send it to others);
    *  emit it with remote true to apply a change that came from another player. */
   buildChange: { change: BuildChange; remote: boolean };
@@ -102,7 +106,8 @@ export function watch(motion: Motion, feet: Vector3, events: Events) {
     // A stick built into the dam leaves the hand too, but is not dropped.
     if (before.carrying && !motion.carrying && motion.action !== "build" && before.action !== "build") events.emit("drop", { place });
     if (motion.action !== before.action && motion.action !== "none") events.emit("action", { place, action: motion.action });
-    if (slapHits(before, motion)) events.emit("tailSlap", { place, water: motion.swimming >= 0.5 });
+    // air: struck in a leap (at the Bear), off the ground: no thump, no dust.
+    if (slapHits(before, motion)) events.emit("tailSlap", { place, water: motion.swimming >= 0.5, air: !motion.grounded && motion.swimming < 0.5 });
     // One footstep per half stride, counted in the stride the animator uses at this speed.
     if (motion.grounded) steps += (motion.distance - before.distance) / (gait(motion.speed, motion.anger).cycle / 2);
     if (steps >= 1) {

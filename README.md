@@ -53,10 +53,10 @@ src/anim/          how it moves: Motion in, Pose out, pure maths
 src/player/        input, Rapier character, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
-src/features/      dam building, the trading post, the shop, the canoe, its race, multiplayer, controls, HUD, wildlife, weather, audio, effects, photo mode and tour
+src/features/      dam building, the trading post, the shop, the canoe, its race, multiplayer, controls, HUD, wildlife, the bear, weather, audio, effects, photo mode and tour
 server.ts          the game and its multiplayer server on Bun, for a local network
 worker.ts          the same multiplayer on Cloudflare: a Worker and a Durable Object
-assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), logo.png
+assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), bear.glb (from tools/blender/bear.py), logo.png
 tools/blender/     the models, built in Blender from code
 ```
 
@@ -67,3 +67,5 @@ fixed steps of 1/60 s. `?debug` in the address draws the colliders.
 
 Models are rebuilt with Blender, headless:
 `/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/build.py -- assets/beaver.glb`
+
+`/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/bear.py -- assets/bear.glb`

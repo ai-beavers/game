@@ -56,9 +56,10 @@ import { mrsBeaver } from "./stations/mrs-beaver.ts";
 import { oldBeaver } from "./stations/old-beaver.ts";
 import { flag } from "./stations/flag.ts";
 import { stare } from "./stations/stare.ts";
+import { bear } from "./stations/bear.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, dam, levels, trading, hotbar, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, racing, flag, mrsBeaver, oldBeaver, stare, skyWatch, hud, controls, views, firstSteps];
+const STATIONS = [movement, dam, levels, trading, hotbar, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, racing, flag, mrsBeaver, oldBeaver, bear, stare, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
