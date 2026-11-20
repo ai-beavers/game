@@ -304,9 +304,12 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // Up and down: jump, gravity, or floating at the surface.
     const level = waterLevel();
     const depth = level === undefined ? -Infinity : level - feet.y;
+    // In the water with the ground under the middle of the body deep enough to float: the capsule's rim caught on the
+    // lip of the basin's wall holds the feet up, but there is nothing to stand on, so it floats.
+    const overDeep = level !== undefined && depth > HOLD_DEPTH - 0.1 && depthAt(feet.x, feet.z, level) > FLOAT_DEPTH;
     if (ride) { afloat = false; vy = 0; } // held at the seat, below
-    else if (!afloat && depth > FLOAT_DEPTH) { afloat = true; vy = Math.max(vy, -DIVE_SPEED); } // the water stops a fall: off the basin's drop-off it would sink a metre
-    else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02) afloat = false;
+    else if (!afloat && (depth > FLOAT_DEPTH || overDeep)) { afloat = true; vy = Math.max(vy, -DIVE_SPEED); } // the water stops a fall: off the basin's drop-off it would sink a metre
+    else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02 && !overDeep) afloat = false;
     if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
     const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && (act.action !== "build" || under) && slap.progress === 0, afloat, under);
     if (ride) { /* no gravity: the canoe holds it */ }
