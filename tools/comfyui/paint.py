@@ -1,10 +1,11 @@
 """Paints our pictures of the animal onto the model ComfyUI made of it.
 
-    Blender -b --factory-startup -P paint.py -- river-kit ~/dev/3d-gen/ComfyUI [made from] [painted with]
+    Blender -b --factory-startup -P paint.py -- river-kit ~/dev/3d-gen/ComfyUI [made from] [painted with] [furred]
 
 "made from" are the views the model was generated from (generate.py --views; all four if left out), "painted with"
 the views to paint on (the same if left out). Painting with left,right alone suits pictures whose front and back do
 not agree with the side: the model's head follows the side picture, so only that one lands on it where it belongs.
+A last word names other pictures of the views to paint with: <name>-furred-left-rgba.png and so on (coat.py).
 
 Reads ComfyUI's newest output/3d/<name>_*.glb and the four views views.py left in its input folder
 (<name>-front-rgba.png and so on), and writes output/3d/<name>-painted.glb: the same mesh with a new colour map.
@@ -30,6 +31,7 @@ name, comfy, *views = sys.argv[sys.argv.index("--")+1:]
 # The model stands with the first of the views it was made from as its front.
 AZIMUTH = {"front": 0, "left": 90, "back": 180, "right": 270}
 made = views[0].split(",") if views else list(AZIMUTH)
+pictures = f"{name}-{views[2]}" if len(views) > 2 else name
 views = views[1].split(",") if len(views) > 1 else made
 comfy = Path(comfy).expanduser()
 model = max((comfy / "output" / "3d").glob(f"{name}_*.glb"), key=lambda f: f.stat().st_mtime)
@@ -94,7 +96,7 @@ for view in views:
     where = nodes.new("ShaderNodeUVMap")
     where.uv_map = view
     picture = nodes.new("ShaderNodeTexImage")
-    picture.image = bpy.data.images.load(str(comfy / "input" / f"{name}-{view}-rgba.png"))
+    picture.image = bpy.data.images.load(str(comfy / "input" / f"{pictures}-{view}-rgba.png"))
     picture.extension = "CLIP"
     link(where.outputs[0], picture.inputs[0])
     squarely = vector("DOT_PRODUCT", vector("NORMALIZE", vector("SUBTRACT", camera.location.copy(), surface.outputs["Position"])), surface.outputs["Normal"])

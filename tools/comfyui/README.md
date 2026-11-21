@@ -12,6 +12,7 @@ ComfyUI/input/river-kit-{front,left,back,right}.png
         │  generate.py         runs pixal3d-multi-view.json in ComfyUI
         ▼
 ComfyUI/output/3d/river-kit_00001.glb         700,000 triangles, 4K maps
+        │  coat.py             the furry pictures squeezed onto the smooth ones' outline
         │  paint.py            our pictures projected onto it: its colour map anew
         ▼
 ComfyUI/output/3d/river-kit-painted.glb
@@ -24,16 +25,23 @@ cd tools/comfyui
 C=~/dev/3d-gen/ComfyUI
 $C/.venv/bin/python views.py river-kit-smooth --comfy $C        # then look at river-kit-smooth-views.png
 $C/.venv/bin/python generate.py river-kit-smooth                # about 8 minutes on an M4 Max
-/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P paint.py -- river-kit-smooth $C front,left,back,right left,right
+$C/.venv/bin/python views.py river-kit --comfy $C               # the furry pictures, for the coat
+$C/.venv/bin/python coat.py river-kit-smooth river-kit --comfy $C
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P paint.py -- river-kit-smooth $C front,left,back,right left,right furred
 cd ../blender
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P hide.py -- $C/output/3d/river-kit-smooth-painted.glb kit-hide.glb 0.58 15000
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P kit.py -- ../../assets/kit.glb
 ```
 
 The last two lines make the game's model: `hide.py` cuts the sculpt to 15,000 triangles and bakes its colour and
-relief into two maps, `kit.py` lays the skeleton into it and writes the clips.
+relief into two maps, `kit.py` lays the skeleton into it and writes the clips and the fur's mask.
 
-`river-kit/` holds the first, furry pictures of the kit, kept to show what does not work.
+`river-kit/target.png` is what the kit shall look like: judge the model in the game beside it, from its side, before
+calling it done. `river-kit/` also holds the furry pictures of the kit. A model made from them comes out in lumps,
+so the shape is made from the smooth ones and the furry ones give the coat: `coat.py` fits them onto the smooth
+outline and `paint.py` paints them on. `kit.py` does the rest: it reshapes the long, low hide to the reference's
+round one (short legs, deep trunk, larger ears), and adds eyes, nose, mouth, whiskers, claws, the cards of long hair,
+the fur's mask and the head-up stance.
 Another animal: a folder beside `river-kit-smooth/` with its three pictures, and its name in both commands. A second number
 after the name in `generate.py` is added to the seeds: another try from the same pictures.
 
@@ -48,7 +56,8 @@ The model builds what the pictures agree on and smears what they do not, so:
 - The side picture faces picture-right. `views.py` mirrors it for the other flank.
 - A transparent ground, no shadow under the animal.
 - A smooth animal, as if of clay: no fur strands, no whiskers. The model builds every strand that stands out of the
-  outline as a lump or a shard of mesh. Fur comes later, as maps and a shader over the clean body.
+  outline as a lump or a shard of mesh. Fur is the game's fur shader over the clean body: `kit.py` writes where
+  it grows and how long into the model's vertex colours.
 - Nothing in a picture that another picture places elsewhere. Pictures drawn one by one are never quite one animal,
   and the model builds both versions: a tail seen between the legs in the front picture became a lump under the
   belly, eyes looking forward in the front picture a second pair beside the ones of the side picture. So such things

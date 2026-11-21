@@ -1,20 +1,57 @@
 // The River kit's mesh and clips (assets/kit.glb, tools/blender/kit.py), played by the game's clock: walk and run
 // advance by the ground covered, so the feet do not slide; what it does standing runs by time. A change of clip
-// blends from the pose it was in.
+// blends from the pose it was in. Its coat is the beaver's fur (src/beaver/fur.ts) over the model's own colour map.
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup.js";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo.js";
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import kitGlb from "../../../assets/kit.glb" with { type: "file" };
-import { WALK, type Kit } from "./rules.ts";
+import { createCoat } from "../../beaver/fur.ts";
+import { RISE, WALK, type Kit } from "./rules.ts";
 
-/** Times the model's own size (0.58 m long): a child beside the metre-tall beaver, not a mouse. */
+/** Times the model's own size (0.52 m long): a child beside the metre-tall beaver, not a mouse. */
 export const SIZE = 1.6;
 // m of ground one loop of the clip covers at the model's own size (kit.py WALK, RUN).
-const STRIDE = { walk: 0.253, run: 0.404 };
-// s a change of pose takes: down onto its haunches and up again is slow.
-const SLOW: Record<string, number> = { sit: 0.8, forage: 0.6, look: 0.6 };
+const STRIDE = { walk: 0.254, run: 0.406 };
+// s a change of pose takes: down and up again is slow, as long as the rules give it to get up.
+const SLOW: Record<string, number> = { forage: 0.6, look: 0.6, ...RISE };
+// Hairs to the grown beaver's one, along and across: the model is drawn SIZE times its size, and a young coat is down.
+const FINE = 4;
+// Where the fur's copies of the skin lie along the hair: ten, for long guard hairs that do not show the steps between.
+const LAYERS = [0, 0.5, 0.25, 0.75, 1, 0.12, 0.37, 0.62, 0.87, 0.44];
+// Times the coat's colour on the long hair: guard hairs are paler than the fur under them.
+const LIGHT = 1.22;
+// Times the colour map, so that the flank in the sun measures as the reference's (tools/comfyui/river-kit/target.png): 146, 114, 96.
+const COAT = new Color3(1.48, 1.29, 1.38);
+
+/** The picture of single hairs for the cards of long hair: fine strokes from the root (the picture's foot) up, each
+ *  its own length and lean, thinning out to the tip. A card shows half the picture's width. */
+function hairs(scene: Scene) {
+  const size = 512, texture = new DynamicTexture("kit hairs", size, scene, true), paint = texture.getContext() as CanvasRenderingContext2D;
+  let seed = 7;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647; // the same hairs on every machine
+  paint.clearRect(0, 0, size, size);
+  paint.strokeStyle = "white";
+  paint.lineCap = "round";
+  for (let i = 0; i < 120; i++) {
+    const x = random() * size, long = size * (0.55 + 0.45 * random()), lean = (random() - 0.5) * 52;
+    for (let step = 0; step < 8; step++) { // a stroke in pieces, each thinner than the last
+      paint.lineWidth = 2.6 - 1.9 * step / 8;
+      paint.beginPath();
+      paint.moveTo(x + lean * (step / 8) ** 2, size - long * step / 8);
+      paint.lineTo(x + lean * ((step + 1) / 8) ** 2, size - long * (step + 1) / 8);
+      paint.stroke();
+    }
+  }
+  texture.hasAlpha = true;
+  texture.update(false);
+  return texture;
+}
 
 export async function loadKit(scene: Scene) {
   const asset = await ImportMeshAsync(kitGlb, scene, { pluginExtension: ".glb" });
@@ -22,11 +59,31 @@ export async function loadKit(scene: Scene) {
   root.name = "river-kit";
   root.rotationQuaternion = null; // the glTF and the right-handed game both face +Z
   root.scaling.setAll(SIZE);
-  for (const part of root.getChildMeshes()) {
-    part.receiveShadows = true;
-    part.isPickable = false;
-    part.setBoundingInfo(new BoundingInfo(new Vector3(-0.15, -0.02, -0.35), new Vector3(0.15, 0.35, 0.35))); // sitting up, it is taller than at rest
-  }
+  const named = (name: string) => root.getChildMeshes().find((mesh) => mesh.name === name && mesh instanceof Mesh && mesh.material instanceof PBRMaterial) as Mesh | undefined;
+  const body = named("Kit hide"), strands = named("strands");
+  if (!body || !strands) throw new Error("kit.glb is missing its coat mesh or its long hair");
+  // The long hair: cards with the skin's colour at their roots, cut out to single hairs by a picture drawn here.
+  const hair = strands.material as PBRMaterial, single = hairs(scene);
+  single.coordinatesIndex = 1;
+  hair.albedoColor = COAT.scale(LIGHT);
+  hair.bumpTexture = null; // the skin's relief at the root means nothing along a hair
+  hair.opacityTexture = single;
+  hair.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+  hair.alphaCutOff = 0.3;
+  hair.backFaceCulling = false;
+  hair.twoSidedLighting = true;
+  strands.receiveShadows = true;
+  strands.isPickable = false;
+  strands.setBoundingInfo(new BoundingInfo(new Vector3(-0.2, -0.02, -0.42), new Vector3(0.2, 0.35, 0.42)));
+  root.onDisposeObservable.addOnce(() => single.dispose());
+  (body.material as PBRMaterial).albedoColor = COAT;
+  const fur = createCoat(body, body.material as PBRMaterial, LAYERS);
+  fur.coat.dressed = false; // no shirt to keep the fur under
+  fur.coat.fine = FINE;
+  fur.coat.guard = 1;
+  body.receiveShadows = true; // and so it throws them (src/light.ts)
+  body.isPickable = false;
+  body.setBoundingInfo(new BoundingInfo(new Vector3(-0.2, -0.02, -0.42), new Vector3(0.2, 0.35, 0.42))); // sitting up, it is taller than at rest
   const clips = new Map(asset.animationGroups.map((group) => [group.name, group]));
   for (const clip of clips.values()) clip.stop();
   const joints = asset.skeletons[0]!.bones.map((bone) => {
@@ -38,6 +95,7 @@ export async function loadKit(scene: Scene) {
   return {
     root,
     update(k: Kit, dt: number, x: number, z: number) {
+      fur.update();
       const name = k.speed > WALK ? "run" : k.speed > 0 ? "walk" : k.doing;
       const clip = clips.get(name)!;
       const distance = active ? Math.hypot(x - lastX, z - lastZ) : 0;
