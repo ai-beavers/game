@@ -297,15 +297,19 @@ export const create: CreateFeature = (game) => {
         say();
         events.emit("goalDone", { goal: "mrs-beaver-find", text: "Mrs. Beaver found" });
       }
-      // The Campfire: its embers breathe and its flames rise while anyone near could see them.
+      // The Campfire: its embers breathe and its flames rise while anyone near could see them. Cost per picture: one
+      // colour set and a distance; within BURNS m three fx flame spawns (the fx feature's, scaled by settings.quality);
+      // the Reading's step is a few comparisons; its speech line a visibility check, and a projection only while it shows.
       const moving = stage.paused ? 0 : dt, feet = player.feet;
       clock += moving;
-      campfire.embers(0.6 + 0.25 * Math.sin(clock * 7.3) + 0.15 * Math.sin(clock * 17.9 + 1.3));
-      const fire = Math.hypot(feet.x - FIRE.x, feet.z - FIRE.z);
-      if (moving > 0 && fire < BURNS) { const fx = fxOf(stage.scene); for (const at of flames) fx?.fire(at, moving * 5); }
+      const fromFire = Math.hypot(feet.x - FIRE.x, feet.z - FIRE.z); // m
+      if (fromFire < BURNS) {
+        campfire.embers(0.6 + 0.25 * Math.sin(clock * 7.3) + 0.15 * Math.sin(clock * 17.9 + 1.3));
+        if (moving > 0) { const fx = fxOf(stage.scene); for (const at of flames) fx?.fire(at, moving * 5); }
+      }
       // The Reading: sitting within reach of the fire with her home.
       const sitting = player.motion.low === "sit" && !player.afloat && !player.riding;
-      said = read(reading, moving, canRead({ sitting, fire, home: !!her && phase === "home" }));
+      said = read(reading, moving, canRead({ sitting, fire: fromFire, home: !!her && phase === "home" }));
       const head = !said ? undefined : said.reader === "her" ? her!.beaver.eyes : player.camera.view === "first-person" ? undefined : game.beaver.eyes;
       speech.say(said, head?.getAbsolutePosition().add(new Vector3(0, ABOVE, 0)));
       if (!her) return;

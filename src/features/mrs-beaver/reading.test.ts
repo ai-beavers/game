@@ -45,7 +45,7 @@ test("after a story's last line the next story begins with her, and after the la
   const rest = STORIES.slice(1).reduce((n, s) => n + s.length, 0);
   for (let i = 0; i < rest; i++) step(r, LINE, true);
   expect(r).toMatchObject({ story: 0, line: 0 });
-  expect(step(r, 0, true)?.text).toBe("Long ago the pond was only a thin brook.");
+  expect(step(r, 0, true)?.text).toBe(STORIES[0]![0]!);
 });
 
 test("a few stories about the clearing, 6 to 8 lines each, every line short enough for one speech line", () => {
@@ -59,8 +59,8 @@ test("a few stories about the clearing, 6 to 8 lines each, every line short enou
 
 test("a Reading goes on only sitting near the fire with her home", () => {
   expect(canRead({ sitting: true, fire: 1, home: true })).toBe(true);
-  expect(canRead({ sitting: true, fire: 2.5, home: true })).toBe(true);
-  expect(canRead({ sitting: true, fire: 2.6, home: true })).toBe(false); // sitting far off: ordinary Sit
+  expect(canRead({ sitting: true, fire: SIT_REACH, home: true })).toBe(true);
+  expect(canRead({ sitting: true, fire: SIT_REACH + 0.1, home: true })).toBe(false); // sitting far off: ordinary Sit
   expect(canRead({ sitting: false, fire: 1, home: true })).toBe(false);
   expect(canRead({ sitting: true, fire: 1, home: false })).toBe(false); // not yet rescued, or still on her way
 });
