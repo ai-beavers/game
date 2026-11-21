@@ -114,6 +114,14 @@ _Avoid_: bush, decoy, hideout
 One line of a quest, ticked when the player has done it.
 _Avoid_: objective, stage, task
 
+**Campfire**:
+The small fire that always burns beside the spot where Mrs. Beaver waits, at the building site.
+_Avoid_: bonfire, fireplace, fire pit
+
+**Reading**:
+The player sitting at the campfire with Mrs. Beaver once she is home, the two of them taking turns reading a short story aloud, one line each. Standing up stops it, and the next time they sit it goes on where it stopped. Like Mrs. Beaver herself, it is the player's alone.
+_Avoid_: story time, storytelling, family (the two of them are the player and Mrs. Beaver)
+
 **Outfit**:
 A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.
 _Avoid_: skin, costume, clothes

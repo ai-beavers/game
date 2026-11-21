@@ -9,6 +9,13 @@
 // Then her pile and pen fall into loose sticks to carry and build with, she wears her flower again and walks home to a
 // spot beside the building site, where she waits for the rest of the visit, and the list says only "Mrs. Beaver found".
 //
+// The Campfire burns beside her waiting spot at every hour, in every browser in the same place (reading.ts FIRE): a
+// ring of stones with short logs and glowing embers (creature.ts), solid as a brush pile, its flames the fx feature's.
+// Once she is home, the player sitting (C held, or whatever makes the beaver sit) within reach of it starts a Reading:
+// the two take turns reading a short story aloud, one line each, hers first, each line over the head of its reader
+// (speech.ts), and she turns to face the fire. Standing up stops it; sitting again goes on at the line it stopped at
+// (reading.ts). The Reading is the player's alone, like she is.
+//
 //   import { create as mrsBeaver } from "./features/mrs-beaver/index.ts";   after shop in FEATURES (it shares the Use key)
 //
 // Nothing is kept or sent: the quest, the flower and she live in this browser's memory for one visit, and other players
@@ -20,20 +27,28 @@
 // find, gnaw, freed) · .gnawed (s gnawed so far) · .state (missing, freed) · .home (where she
 // waits) · .her() (where she is now) · .wears (her flower behind her ear) · .dropped (her flower on the ground) ·
 // .stand(place?) (where to stand to gnaw the pen, or at the pile of that hiding place) · .at() stands there facing the pen · .atFlower() stands at the flower ·
-// .reset(place?) a new quest, at a hiding place picked anew (or the one given).
+// .reset(place?) a new quest, at a hiding place picked anew (or the one given) · .free() her home at once, freed · .fire (where the Campfire stands) ·
+// .seat (a spot beside it to sit, and the facing there that has the fire and her in view) · .reading (whether a Reading runs) · .said (the line shown now,
+// { text, reader: "her" | "player" }, or undefined) · .story, .line (where the Reading stands: story and line index).
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
 import { GROUND, SOLID, cylinder, isEnabled, type PhysicsBody } from "../../physics.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh.js";
-import { BRUSH, buildBrush, buildDropped, buildPen, buildTracks, mrsBeaver, PEN } from "./creature.ts";
+import { BRUSH, buildBrush, buildCampfire, buildDropped, buildPen, buildTracks, mrsBeaver, PEN } from "./creature.ts";
+import { fxOf } from "../fx/index.ts";
 import { questList } from "./panel.ts";
+import { begin, CAMPFIRE, canRead, FIRE, SEAT, SEAT_FACING, step as read, type Line } from "./reading.ts";
+import { readingLine } from "./speech.ts";
 import { done, find, FLOWER, follow, gnaw, GNAW, HIDING, HOME, offered, pick, take, TRACKS, TRACKS_FACING, wayHome, type Quest } from "./rules.ts";
 
 const NEAR = 28; // m: within this she moves (or while she walks home)
 const WALK = 1.1; // m/s on her way home
 const STAND = 1.0; // m from the pen's middle, towards the Clearing, where a player gnaws it open
 const FALLEN = 8; // sticks the pen and its pile fall into
+const BURNS = 45; // m: within this the Campfire's flames rise (further off nobody sees them)
+const TURN = 3; // radians/s she turns towards the fire or back to the site
+const ABOVE = 0.3; // m over a reader's eyes where the speech line hangs
 
 /** Facing (radians, as Player.teleport) from a to b. */
 const towards = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.atan2(b.x - a.x, b.z - a.z);
@@ -74,6 +89,15 @@ export const create: CreateFeature = (game) => {
     pen.root.rotation.y = towards(p, { x: 0, z: 0 });
   };
   shut();
+
+  // The Campfire beside her waiting spot, with a collider so the beaver cannot walk into it; the flames are the fx
+  // feature's, from three places over the embers.
+  const fireY = world.heightAt(FIRE.x, FIRE.z), campfire = buildCampfire(stage);
+  campfire.root.position.set(FIRE.x, fireY, FIRE.z);
+  stage.physics.fixed(cylinder(stage.scene, CAMPFIRE.height / 2, CAMPFIRE.solid, { x: FIRE.x, y: fireY + CAMPFIRE.height / 2, z: FIRE.z }));
+  const flames = [[0, 0.04], [0.06, 0.02], [-0.05, -0.03]].map(([dx, dz]) => new Vector3(FIRE.x + dx!, fireY + 0.04, FIRE.z + dz!));
+  const reading = begin(), speech = readingLine(stage);
+  let said: Line | undefined, clock = 0;
 
   // Her tracks, pressed into the ground on her way, pointing at her pile; they stay for the visit.
   let tracks: ReturnType<typeof buildTracks> | undefined;
@@ -209,6 +233,12 @@ export const create: CreateFeature = (game) => {
       /** Whether her flower lies on the ground. */
       get dropped() { return !!dropped; },
       home: { x: HOME.x, z: HOME.z },
+      fire: { x: FIRE.x, z: FIRE.z },
+      seat: { x: SEAT.x, z: SEAT.z, face: SEAT_FACING },
+      get reading() { return !!said; },
+      get said() { return said && { ...said }; },
+      get story() { return reading.story; },
+      get line() { return reading.line; },
       /** Where she stands now, on the ground. */
       her: () => her ? { x: her.beaver.root.position.x, z: her.beaver.root.position.z } : undefined,
       stand,
@@ -224,6 +254,14 @@ export const create: CreateFeature = (game) => {
         const s = stand(), face = towards(s, where());
         player.teleport(s.x, world.heightAt(s.x, s.z), s.z, face);
         player.camera.yaw = face + Math.PI;
+      },
+      /** Frees her and puts her at home at once, as if rescued: for a station that needs her home after one that left
+       *  her shut in again. No step is told (no goalDone). */
+      free() {
+        if (quest.step !== "freed") { quest.step = "freed"; quest.gnawed = GNAW; fall(); }
+        gnawing = false;
+        phase = "home"; leg = 0;
+        place(); wear(); say();
       },
       reset(at?: number) {
         quest = at === undefined ? pick(Math.random()) : { place: at, step: "flower", gnawed: 0 };
@@ -259,8 +297,23 @@ export const create: CreateFeature = (game) => {
         say();
         events.emit("goalDone", { goal: "mrs-beaver-find", text: "Mrs. Beaver found" });
       }
+      // The Campfire: its embers breathe and its flames rise while anyone near could see them. Cost per picture: one
+      // colour set and a distance; within BURNS m three fx flame spawns (the fx feature's, scaled by settings.quality);
+      // the Reading's step is a few comparisons; its speech line a visibility check, and a projection only while it shows.
+      const moving = stage.paused ? 0 : dt, feet = player.feet;
+      clock += moving;
+      const fromFire = Math.hypot(feet.x - FIRE.x, feet.z - FIRE.z); // m
+      if (fromFire < BURNS) {
+        campfire.embers(0.6 + 0.25 * Math.sin(clock * 7.3) + 0.15 * Math.sin(clock * 17.9 + 1.3));
+        if (moving > 0) { const fx = fxOf(stage.scene); for (const at of flames) fx?.fire(at, moving * 5); }
+      }
+      // The Reading: sitting within reach of the fire with her home.
+      const sitting = player.motion.low === "sit" && !player.afloat && !player.riding;
+      said = read(reading, moving, canRead({ sitting, fire: fromFire, home: !!her && phase === "home" }));
+      const head = !said ? undefined : said.reader === "her" ? her!.beaver.eyes : player.camera.view === "first-person" ? undefined : game.beaver.eyes;
+      speech.say(said, head?.getAbsolutePosition().add(new Vector3(0, ABOVE, 0)));
       if (!her) return;
-      const moving = stage.paused ? 0 : dt, root = her.beaver.root, feet = player.feet;
+      const root = her.beaver.root;
       const near = Math.hypot(feet.x - root.position.x, feet.z - root.position.z) < NEAR;
       let speed = 0;
       if (phase === "walk" && moving > 0) {
@@ -277,6 +330,12 @@ export const create: CreateFeature = (game) => {
       } else if (phase === "unseen") {
         const camera = stage.scene.activeCamera, body = root.getChildMeshes(false)[0];
         if (!camera || !body || !camera.isInFrustum(body)) { phase = "home"; place(); }
+      }
+      if (phase === "home") {
+        // At home she faces the site, and the fire while a Reading runs.
+        const goal = said ? towards(HOME, FIRE) : towards(HOME, world.site ?? { x: 0, z: 0 });
+        const off = Math.atan2(Math.sin(goal - root.rotation.y), Math.cos(goal - root.rotation.y));
+        root.rotation.y += Math.sign(off) * Math.min(Math.abs(off), TURN * moving);
       }
       if (near || phase === "walk") her.update(moving, speed);
     },
