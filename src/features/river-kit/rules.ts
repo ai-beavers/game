@@ -87,6 +87,7 @@ export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z
   // It sets off when the beaver is FAR and stops once NEAR: between the two it stays as it is, so it does not dither.
   if (far > FAR) k.following = true;
   if (far < NEAR) k.following = false;
+  else if (afloat && beaver.land) k.following = true; // it does not stay in the water once the beaver is out
   k.met += Math.hypot(beaver.x - k.last.x, beaver.z - k.last.z);
   k.last = { x: beaver.x, z: beaver.z };
   // Nearer than it was, or the beaver a metre from where it was: it is getting somewhere, or has a new way to try.

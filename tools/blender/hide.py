@@ -1,19 +1,25 @@
 """An animal's hide at game size: its mesh and the two maps its fur is baked into, from the sculpt tools/comfyui made.
 
-    Blender -b --factory-startup -P hide.py -- <sculpt.glb> tools/blender/kit-hide.glb 0.58 15000
+    Blender -b --factory-startup -P hide.py -- <sculpt.glb> tools/blender/kit-hide.glb 0.58 15000 [turn]
 
 The sculpt (about 700,000 triangles, standing in ComfyUI's unit cube, nose towards -Y) is scaled until it is the
 given length in metres from nose to tail tip, set with its feet on the ground, cut down to the given number of
 triangles that keep its UVs, and its colour and the relief the cut took away are baked from the sculpt into two maps
 of SIZE px. Run again only for another size or triangle count: the animal's own script (kit.py) works from the result.
+
+With "turn" as a fifth word the sculpt is first turned to face -Y: one made from a single picture stands as that
+picture saw it, not nose first. Its trunk's length (the upper half of it, without legs and tail) gives the line, the
+end with its highest part (the head) the front, and it is set with its trunk's middle on x = 0.
 """
+import math
 import sys
 
 import bpy
+import numpy as np
 from mathutils import Vector
 
-source, out, length, triangles = sys.argv[sys.argv.index("--")+1:][:4]
-SIZE = 1024
+source, out, length, triangles, *turn = sys.argv[sys.argv.index("--")+1:]
+SIZE = 2048
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=source)
@@ -24,6 +30,21 @@ high.select_set(True)
 bpy.context.view_layer.objects.active = high
 bpy.ops.object.parent_clear(type="CLEAR_KEEP_TRANSFORM")
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+if turn:
+    at = np.array([v.co for v in high.data.vertices])
+    low, top = at[:, 2].min(), at[:, 2].max()
+    upper = at[at[:, 2] > low+.5*(top-low)]
+    middle = upper[:, :2].mean(axis=0)
+    line = np.linalg.eigh(np.cov((upper[:, :2]-middle).T))[1][:, -1]  # the trunk's long way
+    head = at[at[:, 2] > low+.85*(top-low)][:, :2].mean(axis=0)-middle
+    if head @ line < 0:
+        line = -line
+    high.location.x, high.location.y = -middle[0], -middle[1]
+    bpy.ops.object.transform_apply(location=True)
+    high.rotation_mode = "XYZ"  # a glb's objects turn by quaternion: the angle below would do nothing
+    high.rotation_euler.z = -math.pi/2-math.atan2(line[1], line[0])
+    print("hide: turned", round(math.degrees(high.rotation_euler.z)), "degrees")
+    bpy.ops.object.transform_apply(rotation=True)
 corners = [Vector(c) for c in high.bound_box]
 high.scale = (float(length)/(max(c.y for c in corners)-min(c.y for c in corners)),)*3
 bpy.ops.object.transform_apply(scale=True)

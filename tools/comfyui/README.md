@@ -36,6 +36,12 @@ cd ../blender
 The last two lines make the game's model: `hide.py` cuts the sculpt to 15,000 triangles and bakes its colour and
 relief into two maps, `kit.py` lays the skeleton into it and writes the clips and the fur's mask.
 
+**The river kit itself is made the short way now**, from its one reference picture: `single.py` prepares
+`river-kit/target.png` as the only view, `generate.py river-kit-ref --views front` builds the animal the picture
+shows (16 minutes), `hide.py … 0.58 20000 turn` sets it nose first and cuts it, and `kit.py` rigs it. That model has
+the reference's shape, face, claws and tail, which the three-picture route below never reached. Use the route below
+for an animal of which there are only drawn views.
+
 `river-kit/target.png` is what the kit shall look like: judge the model in the game beside it, from its side, before
 calling it done. `river-kit/` also holds the furry pictures of the kit. A model made from them comes out in lumps,
 so the shape is made from the smooth ones and the furry ones give the coat: `coat.py` fits them onto the smooth

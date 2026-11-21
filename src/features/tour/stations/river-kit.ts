@@ -4,11 +4,12 @@
 // when the beaver goes, and makes room when the beaver walks right up to it. Where the kit is and what it does come
 // from the feature's debug handle: nothing on screen says them.
 import { CLOSE, FAR, HURRY, IDLE, NEAR, PAUSE, TIRED, WALK, type Kit as RiverKit } from "../../river-kit/rules.ts";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 export const riverKit = (tools: Kit): Station[] => {
-  const { player, world, until, walkTo, expect, flat, sky } = tools;
+  const { player, world, stage, until, walkTo, expect, flat, sky } = tools;
   const need = () => (window as { riverKit?: RiverKit }).riverKit ?? skip("no river kit feature");
   /** A dry spot `far` m from the beaver, tried round the compass from where it faces (from the `from`-th try on). */
   const spot = (far: number, from = 0) => {
@@ -55,14 +56,25 @@ export const riverKit = (tools: Kit): Station[] => {
     ["The kit swims", async () => {
       const kit = need(), pond = tools.pond ?? skip("no pond");
       await together(kit);
-      let swam = false;
-      const swum = () => { swam ||= kit.afloat; return false; };
-      await walkTo(pond.x, pond.z + tools.clear(), { near: 0.8, limit: 40 }); // out to the middle, where it is deep for the kit too
+      const level = () => (stage.scene.metadata?.water as { level: number } | undefined)?.level ?? world.waterLevel;
+      const wet = () => world.heightAt(kit.x, kit.z) < level();
+      // The way in, to go back out by: the beaver's steps on land, the last of them at the water's edge.
+      const trail = [player.feet.clone()];
+      let other = "";
+      const watch = () => {
+        if (!player.afloat && Vector3.Distance(trail.at(-1)!, player.feet) > 0.3) trail.push(player.feet.clone());
+        if (kit.afloat && kit.doing !== "stand") other = kit.doing;
+        return false;
+      };
+      await walkTo(pond.x, pond.z + tools.clear(), { near: 0.8, arrived: watch, limit: 40 });
       expect(player.afloat, "walked out into the pond, yet the beaver does not swim");
-      await until(() => kit.afloat && flat(kit.x, kit.z) < NEAR + 0.4 && kit.speed === 0, 20, `the beaver swims in the pond, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${kit.afloat ? "afloat" : "on land"}`);
-      expect(kit.doing === "stand", `afloat the kit does not only paddle: it is at ${kit.doing}`);
-      await walkTo(world.spawn.x, world.spawn.z, { arrived: () => { swum(); return !player.afloat && flat(world.spawn.x, world.spawn.z) < 1; }, limit: 40 });
-      await until(() => { swum(); return !kit.afloat && flat(kit.x, kit.z) < NEAR + 0.4 && kit.speed === 0; }, 20, `the beaver is back on land, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${kit.afloat ? "afloat" : "on land"}`);
+      // Beside it: within FAR, from where on it would set off after the beaver again.
+      await until(() => { watch(); return wet() && flat(kit.x, kit.z) < FAR + 0.2 && kit.speed === 0; }, 20, `the beaver swims in the pond, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${wet() ? "in the water" : "on dry ground"}`);
+      // Back out the way it came, three metres up the bank: the kit does not stay behind in the water.
+      const edge = trail.at(-1)!, back = trail.findLast((p) => Vector3.Distance(p, edge) > 3) ?? trail[0]!;
+      await walkTo(back.x, back.z, { near: 0.4, arrived: watch, limit: 40 });
+      await until(() => { watch(); return !kit.afloat && flat(kit.x, kit.z) < FAR + 0.2 && kit.speed === 0; }, 20, `the beaver is back on land, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${kit.afloat ? "afloat" : "on its feet"}`);
+      expect(!other, `afloat the kit did not only paddle: it was at ${other}`);
     }, "Around the clearing"],
     ["The kit sleeps", async () => {
       const kit = need();

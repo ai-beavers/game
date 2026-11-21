@@ -15,9 +15,9 @@ import { createCoat } from "../../beaver/fur.ts";
 import { RISE, WALK, type Kit } from "./rules.ts";
 
 /** Times the model's own size (0.52 m long): a child beside the metre-tall beaver, not a mouse. */
-export const SIZE = 1.6;
+export const SIZE = 1.35;
 // m of ground one loop of the clip covers at the model's own size (kit.py WALK, RUN).
-const STRIDE = { walk: 0.254, run: 0.406 };
+const STRIDE = { walk: 0.277, run: 0.443 };
 // s a change of pose takes: down and up again is slow, as long as the rules give it to get up.
 const SLOW: Record<string, number> = { forage: 0.6, look: 0.6, ...RISE };
 // Hairs to the grown beaver's one, along and across: the model is drawn SIZE times its size, and a young coat is down.
@@ -29,7 +29,7 @@ const DRY = 12; // s from dripping to dry once out of the water (as the beaver's
 // Times the coat's colour on the long hair: guard hairs are paler than the fur under them.
 const LIGHT = 1.22;
 // Times the colour map, so that the flank in the sun measures as the reference's (tools/comfyui/river-kit/target.png): 146, 114, 96.
-const COAT = new Color3(1.48, 1.29, 1.38);
+const COAT = new Color3(1.45, 1.27, 1.52);
 
 /** The picture of single hairs for the cards of long hair: fine strokes from the root (the picture's foot) up, each
  *  its own length and lean, thinning out to the tip. A card shows half the picture's width. */
@@ -76,7 +76,7 @@ export async function loadKit(scene: Scene) {
   hair.twoSidedLighting = true;
   strands.receiveShadows = true;
   strands.isPickable = false;
-  strands.setBoundingInfo(new BoundingInfo(new Vector3(-0.2, -0.02, -0.42), new Vector3(0.2, 0.35, 0.42)));
+  strands.setBoundingInfo(new BoundingInfo(new Vector3(-0.32, -0.02, -0.42), new Vector3(0.32, 0.5, 0.42)));
   root.onDisposeObservable.addOnce(() => single.dispose());
   (body.material as PBRMaterial).albedoColor = COAT;
   const fur = createCoat(body, body.material as PBRMaterial, LAYERS);
@@ -85,7 +85,7 @@ export async function loadKit(scene: Scene) {
   fur.coat.guard = 1;
   body.receiveShadows = true; // and so it throws them (src/light.ts)
   body.isPickable = false;
-  body.setBoundingInfo(new BoundingInfo(new Vector3(-0.2, -0.02, -0.42), new Vector3(0.2, 0.35, 0.42))); // sitting up, it is taller than at rest
+  body.setBoundingInfo(new BoundingInfo(new Vector3(-0.32, -0.02, -0.42), new Vector3(0.32, 0.5, 0.42))); // sitting up, it is taller than at rest
   const clips = new Map(asset.animationGroups.map((group) => [group.name, group]));
   for (const clip of clips.values()) clip.stop();
   const joints = asset.skeletons[0]!.bones.map((bone) => {

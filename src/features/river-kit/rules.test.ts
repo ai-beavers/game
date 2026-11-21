@@ -50,6 +50,10 @@ test("it swims after a beaver in the water, and afloat it only paddles: nothing 
   expect([k.doing, k.speed]).toEqual(["stand", 0]);
   run(k, IDLE + 0.5, () => swimmer, anywhere, () => 0.9); // on the bank again
   expect(k.doing).toBe("sit");
+  // The beaver out on the bank, two metres off: on land the kit would stay where it is, afloat it comes out to it.
+  const out = { x: 0, z: k.z + 2, land: true }, wet = newKit(k.x, k.z);
+  run(wet, 3, () => out, anywhere, () => 0.9, false, true);
+  expect(away(wet, out)).toBeLessThan(NEAR);
 });
 
 test("left standing it noses in the ground, looks about, sits up, grooms or sits, each for its while, and gets up and goes when the beaver goes", () => {
