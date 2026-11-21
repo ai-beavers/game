@@ -185,7 +185,7 @@ A creature of the world that no player steers: ducks, fish, deer, the bear.
 _Avoid_: NPC, mob, wildlife entity
 
 **River kit**:
-The beaver's child: a small furry beaver on four legs that keeps to the player's beaver, waddles after it over the meadow, bounds to catch up and steps out of its way. Left standing it noses in the ground, looks about, sits up on its haunches, grooms its muzzle or sits. Beside a beaver that stays where it is, sooner in the dark, it lies down and sleeps until the beaver goes. It never goes into the water: when the beaver swims off, it waits on the bank. Each player has their own, and no one else sees it.
+The beaver's child: a small furry beaver on four legs that keeps to the player's beaver, waddles after it over the meadow, bounds to catch up and steps out of its way. Left standing it noses in the ground, looks about, sits up on its haunches, grooms its muzzle or sits. Beside a beaver that stays where it is, sooner in the dark, it lies down and sleeps until the beaver goes. It swims after the beaver through the water, where it only paddles, and comes out with a wet coat. Each player has their own, and no one else sees it.
 _Avoid_: pet, companion, follower, baby beaver, cub, pup
 
 **Bear**:

@@ -1,12 +1,12 @@
-// The River kit's rules as a player meets them: it keeps up with the beaver and out of its way, never goes into the
-// water, finds something to do when the beaver stands still, and sleeps when it stays.
+// The River kit's rules as a player meets them: it keeps up with the beaver, on land and swimming, and out of its
+// way, goes round what it cannot cross, finds something to do when the beaver stands still, and sleeps when it stays.
 import { expect, test } from "bun:test";
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
 import { CLOSE, FAR, HURRY, IDLE, LAP, NEAR, newKit, PAUSE, RISE, RUN, step, TIRED, WALK, type Kit } from "./rules.ts";
 
 const dt = 1 / 60, anywhere = (_x: number, _z: number) => true;
-function run(k: Kit, seconds: number, beaver: () => { x: number; z: number; land: boolean }, free = anywhere, random = () => 0.5, night = false) {
-  for (let t = 0; t < seconds; t += dt) step(k, beaver(), free, dt, random, night);
+function run(k: Kit, seconds: number, beaver: () => { x: number; z: number; land: boolean }, free = anywhere, random = () => 0.5, night = false, afloat = false) {
+  for (let t = 0; t < seconds; t += dt) step(k, beaver(), free, dt, random, night, afloat);
 }
 const away = (k: Kit, b: { x: number; z: number }) => Math.hypot(k.x - b.x, k.z - b.z);
 
@@ -34,16 +34,22 @@ test("it keeps up with a beaver that walks, and with one that runs", () => {
   }
 });
 
-test("it never goes into the water: it goes round a pond to a beaver beyond it, and waits on the bank for one that swims", () => {
-  const dry = (x: number, z: number) => Math.hypot(x, z - 10) > 4; // a pond 4 m wide in its way
+test("it goes round what it cannot cross: a rock 8 m wide in its way to a beaver beyond it", () => {
+  const clear = (x: number, z: number) => Math.hypot(x, z - 10) > 4;
   const k = newKit(0, 0), beyond = { x: 0, z: 20, land: true };
-  for (let t = 0; t < 30; t += dt) { step(k, beyond, dry, dt, () => 0.5); expect(dry(k.x, k.z)).toBe(true); }
+  for (let t = 0; t < 30; t += dt) { step(k, beyond, clear, dt, () => 0.5); expect(clear(k.x, k.z)).toBe(true); }
   expect(away(k, beyond)).toBeLessThan(NEAR);
-  const swimmer = { x: 0, z: 10, land: false };
-  for (let t = 0; t < 20; t += dt) { step(k, swimmer, dry, dt, () => 0.5); expect(dry(k.x, k.z)).toBe(true); }
-  expect(away(k, swimmer)).toBeLessThan(4.6); // at the water's edge
-  expect([k.speed, k.doing]).toEqual([0, "sit"]); // and there it sits and waits
-  expect(Math.abs(Math.atan2(Math.sin(k.heading - Math.atan2(swimmer.x - k.x, swimmer.z - k.z)), 1))).toBeLessThan(0.1); // looking after it
+});
+
+test("it swims after a beaver in the water, and afloat it only paddles: nothing of what it does on land", () => {
+  const k = newKit(0, 0), swimmer = { x: 0, z: 8, land: false };
+  run(k, 6, () => swimmer, anywhere, () => 0.9, false, true);
+  expect(away(k, swimmer)).toBeLessThan(NEAR); // beside the swimming beaver
+  expect(k.afloat).toBe(true);
+  run(k, IDLE + PAUSE.sit + 30, () => swimmer, anywhere, () => 0.9, true, true); // for long, at night
+  expect([k.doing, k.speed]).toEqual(["stand", 0]);
+  run(k, IDLE + 0.5, () => swimmer, anywhere, () => 0.9); // on the bank again
+  expect(k.doing).toBe("sit");
 });
 
 test("left standing it noses in the ground, looks about, sits up, grooms or sits, each for its while, and gets up and goes when the beaver goes", () => {

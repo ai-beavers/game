@@ -1,8 +1,7 @@
 // The River kit: the beaver's child, a small four-legged beaver that keeps to the player's beaver. It waddles after
-// it over the meadow, bounds to catch up and steps out of its way. When the beaver stands still it noses in the
-// ground, looks about, sits up, grooms or sits; when the beaver stays, sooner in the dark, it lies down and sleeps
-// until the beaver goes. It never goes into the water: when the beaver swims or paddles off, it waits on the bank
-// and looks after it.
+// it over the meadow, bounds to catch up, swims after it through the water and steps out of its way. When the beaver
+// stands still it noses in the ground, looks about, sits up, grooms or sits; when the beaver stays, sooner in the
+// dark, it lies down and sleeps until the beaver goes. In the water it only paddles.
 //
 //   import { create as riverKit } from "./features/river-kit/index.ts";
 //
@@ -26,7 +25,7 @@ import { ball, HEAVY, SOLID } from "../../physics.ts";
 import { loadKit, SIZE } from "./model.ts";
 import { newKit, step } from "./rules.ts";
 
-const DRY = 0.04; // m above the water the ground must be for it to tread there
+const FLOAT = 0.19; // m of it under the water when it swims: where the water is deeper than that, it is afloat
 const BODY = 0.22; // m: the room it needs between solid things, a ball round its trunk
 const PAWS = 0.12 * SIZE, FLANK = 0.06 * SIZE; // m from its middle to its fore and hind paws, and to each side
 const DARK = 0.5; // of the sky's dark from which it is night to the kit
@@ -40,14 +39,19 @@ export const create: CreateFeature = async (game) => {
   const room = ball(scene, BODY), still = Quaternion.Identity(), middle = new Vector3(), down = Vector3.Down();
   /** m above the ground of what lies on it at x, z, up to a metre (rays that start inside a thing miss it: a trunk). */
   const laid = (x: number, z: number, ground: number) => 1 - (physics.ray(middle.set(x, ground + 1, z), down, 1, SOLID | HEAVY)?.distance ?? 1);
-  /** The height it stands at: the ground, or what is laid on it. */
-  const floor = (x: number, z: number) => { const ground = world.heightAt(x, z); return ground + laid(x, z, ground); };
-  // Free: dry, nothing too high to climb under its paws, and nothing above what it climbs in its way (a trunk, a wall).
+  /** The pond's level now (src/world/water.ts keeps it in scene.metadata: the dam raises it). */
+  const level = () => (scene.metadata?.water as { level: number } | undefined)?.level ?? world.waterLevel;
+  /** What carries it at x, z: the ground, or the water where that is deep enough to swim. */
+  const bed = (x: number, z: number) => Math.max(world.heightAt(x, z), level() - FLOAT);
+  /** The height it is at: on what carries it, or on what is laid on that. */
+  const floor = (x: number, z: number) => { const base = bed(x, z); return base + laid(x, z, base); };
+  const swims = (x: number, z: number) => world.heightAt(x, z) < level() - FLOAT;
+  // Free: nothing too high to climb under its paws, and nothing above what it climbs in its way (a trunk, a wall).
   const free = (x: number, z: number) => {
-    const ground = world.heightAt(x, z), on = laid(x, z, ground);
-    return ground > world.waterLevel + DRY && on < CLIMB && !physics.overlaps(room, still, middle.set(x, ground + on + CLIMB + BODY, z), SOLID | HEAVY);
+    const base = bed(x, z), on = laid(x, z, base);
+    return on < CLIMB && !physics.overlaps(room, still, middle.set(x, base + on + CLIMB + BODY, z), SOLID | HEAVY);
   };
-  // It starts a step behind the beaver, on the side that is dry.
+  // It starts a step behind the beaver, where there is room.
   const behind = [Math.PI, Math.PI / 2, -Math.PI / 2, 0].map((a) => ({ x: player.feet.x + Math.sin(player.facing + a) * 1.2, z: player.feet.z + Math.cos(player.facing + a) * 1.2 }));
   const start = behind.find((p) => free(p.x, p.z)) ?? behind[0]!;
   const kit = newKit(start.x, start.z);
@@ -59,7 +63,7 @@ export const create: CreateFeature = async (game) => {
   return {
     step(dt) {
       Object.assign(before, { x: kit.x, z: kit.z, heading: kit.heading });
-      step(kit, { x: player.feet.x, z: player.feet.z, land: !player.afloat && !player.riding }, free, dt, Math.random, (game.sky?.dark ?? 0) > DARK);
+      step(kit, { x: player.feet.x, z: player.feet.z, land: !player.afloat && !player.riding }, free, dt, Math.random, (game.sky?.dark ?? 0) > DARK, swims(kit.x, kit.z));
     },
     update(dt, alpha) {
       const x = before.x + (kit.x - before.x) * alpha, z = before.z + (kit.z - before.z) * alpha;
@@ -71,7 +75,7 @@ export const create: CreateFeature = async (game) => {
       height += ((fore + hind) / 2 - height) * Math.min(1, dt * SETTLE);
       model.root.position.set(x, height, z);
       model.root.rotation.set(Math.atan((hind - fore) / (2 * PAWS)), heading, Math.atan(across / (2 * FLANK)));
-      if (!stage.paused) model.update(kit, dt, x, z);
+      if (!stage.paused) model.update(kit, dt, x, z, Math.min(1, Math.max(0, (level() - height) / FLOAT)));
     },
   };
 };

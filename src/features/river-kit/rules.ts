@@ -1,8 +1,9 @@
 // The River kit's rules as plain logic, apart from drawing, so they can be tested alone: how it keeps to the player's
-// beaver and out of its way, where it will not go, what it does when the beaver stands still, and when it sleeps.
+// beaver, on land and through the water, and out of its way, what it does when the beaver stands still, and when
+// it sleeps.
 //
 //   const kit = newKit(x, z);
-//   step(kit, { x, z, land }, free, dt, random, night)     free(x, z): dry ground with nothing in the way
+//   step(kit, { x, z, land }, free, dt, random, night, afloat)     free(x, z): ground or water with nothing in the way
 //
 // Its way: straight to the beaver; with something in the way, round it with the thing on one hand (as one finds the
 // way out of a maze) until it is nearer the beaver than where it met the thing.
@@ -33,8 +34,6 @@ export const RISE: Partial<Record<Doing, number>> = { sit: 0.5, up: 0.5, groom: 
 
 const TURN = 6; // rad/s it turns
 const STEP = 0.35; // m ahead it looks for free ground
-// To a beaver in the water: rad off the straight way that still bring it nearer, nearest first.
-const NEARER = [0, 0.6, -0.6, 1.2, -1.2];
 // Which side to go round what is in its way: rad off the straight way, nearest first, right round.
 const ROUND = [0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4, 3, -3];
 // Going round, it keeps what is in its way on one hand: rad from the way it last went, from into the thing to back
@@ -66,19 +65,22 @@ export interface Kit {
    *  it last went along it (rad), and m it was from the beaver when it met it, plus all the beaver went since: it
    *  goes straight again once it is nearer than that. */
   side: number; along: number; met: number;
+  /** Whether it swims: the water where it is is too deep to stand in. */
+  afloat: boolean;
   /** Whether it went round something since it was last nearer the beaver: then it gives itself LAP, not GIVE_UP. */
   rounded: boolean;
 }
 
-export const newKit = (x: number, z: number): Kit => ({ x, z, heading: 0, speed: 0, following: false, doing: "stand", time: 0, still: 0, rising: 0, nearest: Infinity, stuck: 0, seen: { x, z }, last: { x, z }, side: 0, along: 0, met: 0, rounded: false });
+export const newKit = (x: number, z: number): Kit => ({ x, z, heading: 0, speed: 0, following: false, doing: "stand", time: 0, still: 0, rising: 0, nearest: Infinity, stuck: 0, seen: { x, z }, last: { x, z }, side: 0, along: 0, met: 0, rounded: false, afloat: false });
 
 const turnBetween = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
 /** Advances the kit by dt s. beaver: where the player's beaver is, and whether it is on land (not afloat, not in the
- *  canoe). free: whether the kit can stand at x, z. It never goes into the water: it waits on the bank. night:
- *  whether it is dark, when it tires sooner. */
-export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z: number) => boolean, dt: number, random: () => number, night = false) {
+ *  canoe). free: whether the kit can be at x, z, on its feet or swimming. night: whether it is dark, when it tires
+ *  sooner. afloat: whether it swims where it is; swimming it only paddles, after the beaver or on the spot. */
+export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z: number) => boolean, dt: number, random: () => number, night = false, afloat = false) {
   const dx = beaver.x - k.x, dz = beaver.z - k.z, far = Math.hypot(dx, dz);
+  k.afloat = afloat;
   k.time += dt;
   k.still += dt;
   k.speed = 0;
@@ -101,9 +103,6 @@ export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z
     let way: number | undefined;
     if (k.side && far < k.met - 0.1 && open(straight)) k.side = 0; // round it: straight on again
     if (k.stuck > (k.rounded ? LAP : GIVE_UP) && !aside) k.side = 0;
-    // To a beaver in the water it only goes ways that bring it nearer: it comes to the bank and stays, where
-    // towards one on land it walks on round the water.
-    else if (!beaver.land) { k.side = 0; way = NEARER.map((off) => straight + off).find(open); }
     else {
       if (!k.side && open(straight)) way = straight;
       else if (!k.side) {
@@ -119,8 +118,8 @@ export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z
         else k.along = way;
       }
     }
-    // It turns to the way it found and goes once it faces free ground; with no way on (the beaver swims, or stands
-    // beyond the water, or where it found no way to) it waits here, looking after it.
+    // It turns to the way it found and goes once it faces free ground; with no way on (the beaver is where it found
+    // no way to) it waits here, looking after it.
     // From what it does low down (sat, lain, asleep) it gets up first.
     if (way !== undefined && k.doing !== "stand") { k.rising = RISE[k.doing] ?? 0; k.doing = "stand"; k.time = 0; }
     if (way !== undefined && k.rising > 0) { k.rising -= dt; return; }
@@ -129,6 +128,7 @@ export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z
     if (way !== undefined && free(x, z)) { k.x = x; k.z = z; k.speed = pace; k.time = 0; k.still = 0; return; }
     if (way !== undefined) return; // still turning
   }
+  if (afloat) { k.doing = "stand"; k.time = 0; k.still = 0; return; } // in the water it only paddles, which is no rest
   if (k.doing === "stand") {
     if (k.time < IDLE) return;
     const r = random();

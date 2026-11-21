@@ -1,6 +1,6 @@
 // The River kit (src/features/river-kit), as a player meets it: the beaver walks off over the meadow and its child
 // comes after it and stops beside it; left standing there, the kit finds something of its own to do; and when the
-// beaver runs, the kit runs to keep up; the beaver stays where it is and the kit lies down and falls asleep, wakes
+// beaver runs, the kit runs to keep up; the beaver swims and the kit swims after it; the beaver stays where it is and the kit lies down and falls asleep, wakes
 // when the beaver goes, and makes room when the beaver walks right up to it. Where the kit is and what it does come
 // from the feature's debug handle: nothing on screen says them.
 import { CLOSE, FAR, HURRY, IDLE, NEAR, PAUSE, TIRED, WALK, type Kit as RiverKit } from "../../river-kit/rules.ts";
@@ -34,7 +34,7 @@ export const riverKit = (tools: Kit): Station[] => {
     throw stuck;
   };
   /** The kit beside the beaver, to start from. A station starts at the spawn, wherever the last one left the kit: one
-   *  left where it cannot come from (beyond water the beaver swam, as it never goes in) is set down behind the beaver. */
+   *  left where it finds no way from (shut in behind what was built) is set down behind the beaver. */
   const together = (kit: RiverKit) => until(() => flat(kit.x, kit.z) < FAR + 0.3 && kit.speed === 0, 20, "").catch(() => {
     Object.assign(kit, { x: player.feet.x - Math.sin(player.facing) * 1.2, z: player.feet.z - Math.cos(player.facing) * 1.2, following: false, doing: "stand", time: 0, side: 0, stuck: 0 });
   });
@@ -43,7 +43,6 @@ export const riverKit = (tools: Kit): Station[] => {
       const kit = need();
       await together(kit);
       await walk(kit, 6);
-      expect(world.heightAt(kit.x, kit.z) > world.waterLevel, "the kit stands in the water");
       // Left standing, it finds something of its own to do.
       await until(() => kit.doing !== "stand", IDLE + 2, `left standing ${IDLE + 2} s, the kit still only stands`);
       // The beaver runs: the kit runs too, and is beside it again.
@@ -51,6 +50,19 @@ export const riverKit = (tools: Kit): Station[] => {
       const pace = () => { fastest = Math.max(fastest, kit.speed); };
       await walk(kit, 8, { run: 1, arrived: () => { pace(); return false; } }, pace);
       expect(fastest > WALK, `the beaver ran ${HURRY} m and more ahead, the kit never ran (its fastest: ${fastest} m/s)`);
+    }, "Around the clearing"],
+    // The beaver swims out into the pond: the kit swims after it, paddles beside it, and is on its feet again on the bank.
+    ["The kit swims", async () => {
+      const kit = need(), pond = tools.pond ?? skip("no pond");
+      await together(kit);
+      let swam = false;
+      const swum = () => { swam ||= kit.afloat; return false; };
+      await walkTo(pond.x, pond.z + tools.clear(), { near: 0.8, limit: 40 }); // out to the middle, where it is deep for the kit too
+      expect(player.afloat, "walked out into the pond, yet the beaver does not swim");
+      await until(() => kit.afloat && flat(kit.x, kit.z) < NEAR + 0.4 && kit.speed === 0, 20, `the beaver swims in the pond, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${kit.afloat ? "afloat" : "on land"}`);
+      expect(kit.doing === "stand", `afloat the kit does not only paddle: it is at ${kit.doing}`);
+      await walkTo(world.spawn.x, world.spawn.z, { arrived: () => { swum(); return !player.afloat && flat(world.spawn.x, world.spawn.z) < 1; }, limit: 40 });
+      await until(() => { swum(); return !kit.afloat && flat(kit.x, kit.z) < NEAR + 0.4 && kit.speed === 0; }, 20, `the beaver is back on land, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${kit.afloat ? "afloat" : "on land"}`);
     }, "Around the clearing"],
     ["The kit sleeps", async () => {
       const kit = need();

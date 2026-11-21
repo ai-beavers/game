@@ -24,6 +24,8 @@ const SLOW: Record<string, number> = { forage: 0.6, look: 0.6, ...RISE };
 const FINE = 4;
 // Where the fur's copies of the skin lie along the hair: ten, for long guard hairs that do not show the steps between.
 const LAYERS = [0, 0.5, 0.25, 0.75, 1, 0.12, 0.37, 0.62, 0.87, 0.44];
+const TREAD = 0.7; // strokes a second it treads water with
+const DRY = 12; // s from dripping to dry once out of the water (as the beaver's coat)
 // Times the coat's colour on the long hair: guard hairs are paler than the fur under them.
 const LIGHT = 1.22;
 // Times the colour map, so that the flank in the sun measures as the reference's (tools/comfyui/river-kit/target.png): 146, 114, 96.
@@ -94,9 +96,12 @@ export async function loadKit(scene: Scene) {
   let phase = 0, elapsed = 0, blend = 1, ease = 0.3, was = "stand", lastX = 0, lastZ = 0;
   return {
     root,
-    update(k: Kit, dt: number, x: number, z: number) {
+    /** wet: 0 dry … 1 as deep in the water as it swims. */
+    update(k: Kit, dt: number, x: number, z: number, wet: number) {
       fur.update();
-      const name = k.speed > WALK ? "run" : k.speed > 0 ? "walk" : k.doing;
+      fur.coat.wet = Math.max(wet, fur.coat.wet - dt / DRY); // dripping, then dry again in a while
+      // Afloat it paddles: the walk, its legs under the water, on the spot too.
+      const name = k.afloat ? "walk" : k.speed > WALK ? "run" : k.speed > 0 ? "walk" : k.doing;
       const clip = clips.get(name)!;
       const distance = active ? Math.hypot(x - lastX, z - lastZ) : 0;
       lastX = x; lastZ = z;
@@ -116,7 +121,7 @@ export async function loadKit(scene: Scene) {
       }
       elapsed += dt;
       const stride = name === "run" ? STRIDE.run : STRIDE.walk;
-      phase = (phase + distance / (stride * SIZE)) % 1;
+      phase = (phase + distance / (stride * SIZE) + (k.afloat ? dt * TREAD : 0)) % 1;
       const time = name === "walk" || name === "run" ? phase
         : (elapsed * clip.targetedAnimations[0]!.animation.framePerSecond / (clip.to - clip.from)) % 1;
       clip.goToFrame(clip.from + time * (clip.to - clip.from));
