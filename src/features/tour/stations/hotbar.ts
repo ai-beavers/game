@@ -1,7 +1,7 @@
 // The hotbar: a pinecone bought at the trading post, then 2 brings it out of the backpack into the paw and 1 puts it
 // back, each with the reach over the shoulder. With the pinecone in the paw, E at a stick puts it back first and picks
 // the stick up; 2 with the stick in hand puts the stick down first.
-import { GOODS, type Ledger } from "../../trade/ledger.ts";
+import { POST_GOODS as GOODS, type Ledger } from "../../trade/ledger.ts";
 import { FRONT, standAt } from "../../trade/place.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";

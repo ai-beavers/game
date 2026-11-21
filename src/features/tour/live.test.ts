@@ -162,3 +162,14 @@ test("driving off the bear: a reason of its own, new on the day it came", () => 
   expect(fresh("Drive off the bear", at({ day: Date.parse("2026-11-20") }))).toBe(true);
   expect(fresh("Drive off the bear", at({ day: Date.parse("2026-11-27") }))).toBe(false);
 });
+
+test("baking: its own reason, and while it is new the beaver tries it first", () => {
+  const later = at({ day: Date.parse("2026-12-20") });
+  expect(reason("Baking", later)).toBe("Smells like fresh bread.");
+  expect(reason("Baking", later).length).toBeLessThan(40);
+  expect(reason("Baking", at({ day: Date.parse("2026-11-21") }))).toBe("New! Let me try: Baking");
+  const bake: Station = ["Bake a loaf", play, "Baking"];
+  const shown = { "Dam work": 0, "Pond patrol": 0, "Tail slap": 0, "Sky watch": 0, "Around the clearing": 0, Baking: 0 };
+  expect(pick([...all, bake], { shown, day: Date.parse("2026-11-21") })).toBe("Baking");
+  expect(fresh("Baking", at({ day: Date.parse("2026-11-28") }))).toBe(false);
+});

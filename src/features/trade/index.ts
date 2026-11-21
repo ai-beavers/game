@@ -14,6 +14,9 @@
 // The piles and the goods are the player's own (docs/adr/0003): kept in localStorage ("beaver.trade", the tour's own
 // under "beaver.trade.tour"), never sent. Event goodTraded { good, count } when a good goes into the backpack.
 //
+// The bakery (src/features/bakery) pays into the same ledger: tradeOf(scene) gives it the ledger, save(), the goods
+// still on their way to the backpack (not yet counted on the hotbar) and whether its reach is under way.
+//
 // Debug, for bun shot --eval (window.trade): trade.at("feather") stands at the feather's spot facing it (with no
 // stick in the hand, one is put down right beside it: E picks it up, E again pays) · trade.state the ledger ·
 // trade.held the good in the paw · trade.reset() forgets every good and pile and reloads.
@@ -29,15 +32,29 @@ import { OWN_LAYER } from "../../player/camera.ts";
 import { busy, reachAt, RISE, HOLD, FALL } from "../lantern/stow.ts";
 import { full, newHold, shelf, SLOTS, stepHold } from "./hold.ts";
 import { createHotbar, type SlotView } from "./hotbar.ts";
-import { GOODS, load, offerText, pay } from "./ledger.ts";
+import { goodOf, load, offerText, pay, POST_GOODS } from "./ledger.ts";
 import { FACING, spotFor, standAt } from "./place.ts";
-import { createPost } from "./post.ts";
+import { createPost, goodModel } from "./post.ts";
+import type { Scene } from "@babylonjs/core/scene.js";
+import type { Ledger } from "./ledger.ts";
 import { isEnabled, place } from "../../physics.ts";
 
 const KEY = new URLSearchParams(location.search).has("tour") ? "beaver.trade.tour" : "beaver.trade";
 const FLIGHT = 0.45; // s from the hand onto the pile
 const TAKE = 0.4; // s for the good from its spot into the paw
 const REACH = RISE + HOLD + FALL; // s of the reach to the backpack and back
+
+/** What the trade feature shares with the bakery: one ledger, one backpack. */
+export interface Trade {
+  readonly ledger: Ledger;
+  save(): void;
+  /** Goods paid for but not yet in the backpack, by id: the hotbar leaves them out until they go in. */
+  coming: Record<string, number>;
+  /** Another feature's reach over the shoulder under way: the hotbar's reach waits. */
+  reaching: boolean;
+}
+/** The trade feature's ledger, once it runs (as buildOf). */
+export const tradeOf = (scene: Scene) => scene.metadata?.trade as Trade | undefined;
 
 export const create: CreateFeature = (game) => {
   const { stage, world, player, events, beaver } = game;
@@ -46,7 +63,9 @@ export const create: CreateFeature = (game) => {
   let ledger = load(localStorage.getItem(KEY));
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(ledger)); } catch { /* not kept, still played */ } };
   const post = createPost(stage, world);
-  GOODS.forEach((good, i) => post.fill(i, ledger.paid[good.id] ?? 0));
+  const shared: Trade = { get ledger() { return ledger; }, save, coming: {}, reaching: false };
+  stage.scene.metadata.trade = shared;
+  POST_GOODS.forEach((good, i) => post.fill(i, ledger.paid[good.id] ?? 0));
 
   // ---- the hotbar: a slot selected brings its good into the paw, or puts it back ----------------------------------
   const hold = newHold(), motion = player.motion;
@@ -78,7 +97,7 @@ export const create: CreateFeature = (game) => {
     },
     offer(carrying): Offer | undefined {
       const spot = spotHere(carrying);
-      return spot === undefined ? undefined : { action: "trade", text: offerText(ledger, GOODS[spot]!.id) };
+      return spot === undefined ? undefined : { action: "trade", text: offerText(ledger, POST_GOODS[spot]!.id) };
     },
     step(dt) {
       if (!job) return undefined;
@@ -88,7 +107,7 @@ export const create: CreateFeature = (game) => {
         const stick = player.handOver();
         if (stick && build.trade(stick)) {
           const spot = job.spot, k = post.pileSize(spot) + flights.filter((f) => f.spot === spot).length;
-          const paid = pay(ledger, GOODS[spot]!.id)!;
+          const paid = pay(ledger, POST_GOODS[spot]!.id)!;
           save();
           const mesh = stick.mesh;
           mesh.computeWorldMatrix(true);
@@ -114,7 +133,7 @@ export const create: CreateFeature = (game) => {
     if (!taking) return;
     taking.mesh.dispose();
     taking.done = true;
-    const good = GOODS[spot]!.id;
+    const good = POST_GOODS[spot]!.id;
     events.emit("goodTraded", { good, count: ledger.owned[good] ?? 0 });
   };
   const take = (spot: number) => {
@@ -129,8 +148,8 @@ export const create: CreateFeature = (game) => {
       get state() { return ledger; },
       get held() { return hold.held; },
       at(good: string) {
-        const i = GOODS.findIndex((g) => g.id === good);
-        if (i < 0) return `no good "${good}": ${GOODS.map((g) => g.id).join(", ")}`;
+        const i = POST_GOODS.findIndex((g) => g.id === good);
+        if (i < 0) return `no good "${good}": ${POST_GOODS.map((g) => g.id).join(", ")}`;
         const s = standAt(i);
         player.teleport(s.x, world.heightAt(s.x, s.z), s.z, FACING);
         player.camera.yaw = FACING + Math.PI + 0.5;
@@ -193,12 +212,12 @@ export const create: CreateFeature = (game) => {
         if (!player.carrying) putting = false;
         else if (putting) player.putDown();
         else hold.want = undefined;
-        stepHold(hold, dt, busy(motion, player.diving) || !!player.carrying || !!taking);
+        stepHold(hold, dt, busy(motion, player.diving) || !!player.carrying || !!taking || shared.reaching);
       }
       if (inPaw !== hold.held) {
         heldMesh?.dispose();
         inPaw = hold.held;
-        heldMesh = inPaw === undefined ? undefined : post.copy(GOODS.findIndex((g) => g.id === inPaw));
+        heldMesh = inPaw === undefined ? undefined : goodOf(inPaw)?.at === "post" ? post.copy(POST_GOODS.findIndex((g) => g.id === inPaw)) : goodModel(inPaw, stage.scene);
         if (heldMesh) { heldMesh.scaling.setAll(1); heldMesh.layerMask = OWN_LAYER; } // life-sized, out of the first-person picture
       }
       if (heldMesh) { heldMesh.position.copyFrom(pawAt()); heldMesh.rotation.y = player.facing; }
@@ -207,9 +226,10 @@ export const create: CreateFeature = (game) => {
       reach = Math.max(reach, hold.reach);
       if (reach > 0) motion.reachBack = reached = Math.max(motion.reachBack ?? 0, reach);
       else if (reached) { if (motion.reachBack === reached) motion.reachBack = 0; reached = 0; }
-      const goods = shelf(ledger);
+      const counted = (id: string) => (ledger.owned[id] ?? 0) - (shared.coming[id] ?? 0);
+      const goods = shelf(ledger).filter((id) => counted(id) > 0);
       bar.show(Array.from({ length: SLOTS }, (_, i): SlotView => i === 0 ? { icon: player.carrying ? "stick" : undefined }
-        : { icon: goods[i - 1], count: goods[i - 1] ? ledger.owned[goods[i - 1]!] : undefined }), selected());
+        : { icon: goods[i - 1], count: goods[i - 1] ? counted(goods[i - 1]!) : undefined }), selected());
     },
   };
 };
