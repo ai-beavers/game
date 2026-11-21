@@ -240,6 +240,9 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     // A crown caught in another tree, or a slow tall one, comes to rest without the "landed" moment; the build feature
     // lays every falling tree to rest within 10 s (tree.ts step), so either ends the fall.
     await until(() => lands() || !!standing(build()?.state.trees[i])?.rest, 12, "the tree fell but never landed nor came to rest");
+    // Lying, not still upright on its stump: a tree at rest after 10 s counts as fallen, however it stands.
+    const along = build()?.views.get(i)?.trunkLine()?.along;
+    expect(!along || along.y < 0.6, `tree ${i} came to rest still standing (its trunk ${(Math.acos(Math.min(1, along?.y ?? 1)) * 180 / Math.PI).toFixed(0)}° off upright)`);
   };
   const checkBite = (i: number, name: string) => {
     const r = needBuild().views.get(i)?.biteReport();

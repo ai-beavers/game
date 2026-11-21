@@ -353,7 +353,11 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
       const joint = new HingeConstraint(Vector3.Zero(), Vector3.Zero(), axis, axis, scene);
       anchor.addConstraint(body!, joint);
       hinge = { joint, anchor };
-      body!.setAngularVelocity(axis.scaleInPlace(0.12));
+      // A slow start, as a turn about the cut: its middle moves with it. A spin alone (about the middle) the hinge
+      // cuts to a quarter, and the tree stood still on its stump (measured).
+      const spin = axis.scaleInPlace(0.12), middle = body!.getMassProperties().centerOfMass!.applyRotationQuaternion(holder!.rotationQuaternion!);
+      body!.setAngularVelocity(spin);
+      body!.setLinearVelocity(Vector3.Cross(spin, middle));
     },
     /** Once per physics step while it falls: "landed" when the crown hits the ground (once), "rest" when it lies
      *  still (once; it is fixed from then on). */
