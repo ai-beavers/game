@@ -1,7 +1,10 @@
-// Tests for the world's rules: the shape of the ground, where things are placed, and how Rapier's heightfield maps
-// rows and columns (terrain.ts relies on it). Run: bun test src/world
+// Tests for the world's rules: the shape of the ground, where things are placed, and how Havok's heightfield maps
+// its samples (src/physics.ts relies on it). Run: bun test src/world
 import { describe, expect, test } from "bun:test";
-import RAPIER from "@dimforge/rapier3d-compat";
+import { Quaternion } from "@babylonjs/core/Maths/math.vector.js";
+import { GROUND, ball, capsule, heightfield } from "../physics.ts";
+import { headless } from "../physics.testkit.ts";
+import { createMover } from "../player/mover.ts";
 import { placeAll, SPAWN } from "./place.ts";
 import { dayAt } from "../features/sky/clock.ts";
 import { BASIN, FIRST_RIM, groundAt, groundColliders, heightAt, HILL, POND, pondRatio, RIM, SHELF, SHORE_SLOPE, SITE, SIZE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
@@ -181,56 +184,49 @@ describe("the ground as drawn and collided", () => {
     expect(worst).toBeLessThan(0.1);
   });
   test("its colliders are where it is drawn, and a beaver set down anywhere in the pond stays on the bed", async () => {
-    await RAPIER.init();
-    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-    groundColliders(world);
-    world.step();
+    const { scene, physics } = await headless();
+    groundColliders(physics, scene);
+    physics.step(1 / 60);
+    const down = { x: 0, y: -1, z: 0 };
     for (let x = POND.x - 4.4; x < POND.x + 4.4; x += 0.37) for (let z = POND.z - 4.4; z < POND.z + 4.4; z += 0.37) {
-      const hit = world.castRay(new RAPIER.Ray({ x, y: 20, z }, { x: 0, y: -1, z: 0 }), 40, true)!;
-      expect(Math.abs(20 - hit.timeOfImpact - groundAt(x, z))).toBeLessThan(0.002);
+      const hit = physics.ray({ x, y: 20, z }, down, 40)!;
+      expect(Math.abs(20 - hit.distance - groundAt(x, z))).toBeLessThan(0.002);
     }
     // As the player's capsule (src/player/index.ts: 1 m tall, 0.45 m wide, a gap of 0.02 m), set down as teleport()
     // does at heightAt (the game's teleports use groundAt, placement rules heightAt), then dived straight down for a
-    // second, then swum level a second: it stays on the bed. A capsule that starts a few cm too deep falls through the heightfield: on the old
-    // 0.5 m grid, set down on the basin's wall, it ended 3.9 m under the bed.
+    // second, then swum level a second: it stays on the bed.
     const HEIGHT = 1, RADIUS = 0.225, OFFSET = 0.02;
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
-    const capsule = world.createCollider(RAPIER.ColliderDesc.capsule(HEIGHT / 2 - RADIUS, RADIUS), body);
-    const controller = world.createCharacterController(OFFSET);
+    const mover = createMover(physics, capsule(scene, HEIGHT / 2 - RADIUS, RADIUS), { gap: OFFSET, slope: Math.PI / 4, mass: 12 });
     let lowest = Infinity;
     for (let x = POND.x - 4; x < POND.x + 4; x += 0.29) for (let z = POND.z - 4; z < POND.z + 4; z += 0.29) {
       if (pondRatio(x, z) > 1) continue;
       const at = { x, y: heightAt(x, z) + HEIGHT / 2 + OFFSET, z };
-      body.setTranslation(at, true);
-      world.step();
       const a = x * 7 + z * 3;
       for (let i = 0; i < 60; i++) {
-        controller.computeColliderMovement(capsule, i < 30 ? { x: 0, y: -0.1, z: 0 } : { x: 0.06 * Math.cos(a), y: 0, z: 0.06 * Math.sin(a) });
-        const moved = controller.computedMovement();
+        const { moved } = mover.move(at, i < 30 ? { x: 0, y: -0.1, z: 0 } : { x: 0.06 * Math.cos(a), y: 0, z: 0.06 * Math.sin(a) }, 0);
         at.x += moved.x; at.y += moved.y; at.z += moved.z;
-        body.setTranslation(at, true);
-        world.step();
       }
       lowest = Math.min(lowest, at.y - HEIGHT / 2 - OFFSET - groundAt(at.x, at.z));
     }
     expect(lowest).toBeGreaterThan(-0.05);
     // The camera's ball, cast level from the basin's floor (along a grid line too), meets the wall.
-    const ball = new RAPIER.Ball(0.18);
+    const sphere = ball(scene, 0.18);
     for (const x of [4.5, 4.53]) {
-      const hit = world.castShape({ x, y: groundAt(x, 3) + 0.5, z: 3 }, { x: 0, y: 0, z: 0, w: 1 }, { x: 0, y: 0, z: -1 }, ball, 0, 3, true);
-      expect(hit?.time_of_impact).toBeLessThan(1);
+      const hit = physics.cast(sphere, Quaternion.Identity(), { x, y: groundAt(x, 3) + 0.5, z: 3 }, { x: 0, y: 0, z: -1 }, 3);
+      expect(hit?.distance).toBeLessThan(1);
     }
   }, 60_000); // about 5 s here and 8 to 12 s on GitHub's machines: over bun's 5 s
 });
 
-test("Rapier's heightfield: rows run along z, columns along x, column by column, centred", async () => {
-  await RAPIER.init();
-  const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 }), n = 3, heights = new Float32Array(n * n);
-  for (let row = 0; row < n; row++) for (let col = 0; col < n; col++) heights[row + col * n] = row + 10 * col;
-  world.createCollider(RAPIER.ColliderDesc.heightfield(n - 1, n - 1, heights, { x: 2, y: 1, z: 4 }));
-  world.step();
-  const down = (x: number, z: number) => 50 - world.castRay(new RAPIER.Ray({ x, y: 50, z }, { x: 0, y: -1, z: 0 }), 100, true)!.timeOfImpact;
-  expect(down(-1, -2)).toBeCloseTo(0); // row 0, column 0
-  expect(down(1, -2)).toBeCloseTo(20); // last column: +x
-  expect(down(-1, 2)).toBeCloseTo(2); // last row: +z
+test("the heightfield: heights[k + m * n] is sample k along x and m along z, centred", async () => {
+  const { scene, physics } = await headless(), n = 3, heights = new Float32Array(n * n);
+  for (let m = 0; m < n; m++) for (let k = 0; k < n; k++) heights[k + m * n] = m + 10 * k;
+  physics.fixed(heightfield(scene, n, 4, heights), GROUND);
+  physics.step(1 / 60);
+  const down = (x: number, z: number) => 50 - physics.ray({ x, y: 50, z }, { x: 0, y: -1, z: 0 }, 100)!.distance;
+  // Just inside the corners (rays on the very edge miss): within the slope's 10 m a sample's 0.1 m.
+  expect(Math.abs(down(-1.99, -1.99) - 0)).toBeLessThan(0.1); // k 0, m 0
+  expect(Math.abs(down(1.99, -1.99) - 20)).toBeLessThan(0.1); // last along x
+  expect(Math.abs(down(-1.99, 1.99) - 2)).toBeLessThan(0.1); // last along z
+  expect(down(0, 0)).toBeCloseTo(11, 3); // the middle sample
 });

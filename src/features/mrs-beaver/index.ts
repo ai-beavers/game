@@ -23,7 +23,7 @@
 // .reset(place?) a new quest, at a hiding place picked anew (or the one given).
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { CreateFeature } from "../../game.ts";
-import { RAPIER } from "../../engine.ts";
+import { GROUND, SOLID, cylinder, isEnabled, type PhysicsBody } from "../../physics.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh.js";
 import { BRUSH, buildBrush, buildDropped, buildPen, buildTracks, mrsBeaver, PEN } from "./creature.ts";
@@ -48,14 +48,14 @@ export const create: CreateFeature = (game) => {
 
   // A brush pile at every hiding place, each with a collider so the beaver cannot walk in; under hers, her pen.
   const brush = buildBrush(stage);
-  let piles: ({ mesh: InstancedMesh; solid: RAPIER.Collider } | undefined)[] = [];
+  let piles: ({ mesh: InstancedMesh; solid: PhysicsBody } | undefined)[] = [];
   let pen: ReturnType<typeof buildPen> | undefined;
   /** Takes away the pile at hiding place i, if it stands. */
   const clear = (i: number) => {
     const pile = piles[i];
     if (!pile) return;
     pile.mesh.dispose();
-    stage.physics.removeCollider(pile.solid, false);
+    stage.physics.remove(pile.solid);
     piles[i] = undefined;
   };
   const shut = () => {
@@ -65,7 +65,7 @@ export const create: CreateFeature = (game) => {
       const y = world.heightAt(p.x, p.z);
       return {
         mesh: brush.place(p.x, y, p.z, towards(p, { x: 0, z: 0 })), // all turned alike, to the middle
-        solid: stage.physics.createCollider(RAPIER.ColliderDesc.cylinder(BRUSH.height / 2, BRUSH.solid).setTranslation(p.x, y + BRUSH.height / 2 - 0.1, p.z)),
+        solid: stage.physics.fixed(cylinder(stage.scene, BRUSH.height / 2, BRUSH.solid, { x: p.x, y: y + BRUSH.height / 2 - 0.1, z: p.z })),
       };
     });
     const p = where();
@@ -130,14 +130,11 @@ export const create: CreateFeature = (game) => {
   /** A straight way over land from a to b, past nothing solid. */
   const clearLeg = (a: { x: number; z: number }, b: { x: number; z: number }) => {
     const d = Math.hypot(b.x - a.x, b.z - a.z), dir = { x: (b.x - a.x) / d, y: 0, z: (b.z - a.z) / d }, STEP = 0.25;
-    const FLAGS = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS | RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC;
-    const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, dir);
     for (let s = 0; s < d; s += STEP) {
       const x = a.x + dir.x * s, z = a.z + dir.z * s;
       if (world.heightAt(x, z) < world.waterLevel + 0.03) return false;
       // Knee high over the ground here, one step on: a trunk, a rock, a wall (the ground itself rises less than that).
-      ray.origin = { x, y: world.heightAt(x, z) + 0.4, z };
-      if (stage.physics.castRay(ray, Math.min(STEP, d - s), true, FLAGS)) return false;
+      if (stage.physics.ray({ x, y: world.heightAt(x, z) + 0.4, z }, dir, Math.min(STEP, d - s), GROUND | SOLID)) return false;
     }
     return true;
   };
@@ -234,8 +231,8 @@ export const create: CreateFeature = (game) => {
         gnawing = false;
         // The sticks an earlier pen fell into go (they are this browser's alone), at whichever pile it stood: every
         // pile stands clear again, and no stick by a wrong one takes the Use key.
-        for (const stick of world.sticks.filter((t) => t.mesh.metadata?.local && t !== player.carrying && t.body.isEnabled())) {
-          const at = stick.body.translation();
+        for (const stick of world.sticks.filter((t) => t.mesh.metadata?.local && t !== player.carrying && isEnabled(t.body))) {
+          const at = stick.body.transformNode.position;
           if (HIDING.some((p) => Math.hypot(at.x - p.x, at.z - p.z) < 2)) { world.removeLoose?.(stick); stick.mesh.dispose(); }
         }
         shut();

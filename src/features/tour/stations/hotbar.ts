@@ -5,6 +5,7 @@ import { GOODS, type Ledger } from "../../trade/ledger.ts";
 import { FRONT, standAt } from "../../trade/place.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
+import { isEnabled } from "../../../physics.ts";
 
 /** What the trade feature puts on window for tools (src/features/trade/index.ts); only the part the tour needs. */
 interface TradeDebug { state: Ledger; held: string | undefined }
@@ -45,7 +46,7 @@ export const hotbar = (kit: Kit): Station[] => {
       // 2 with the stick in hand: the stick is put down, then the pinecone comes out.
       const stick = player.carrying!;
       await select(2, good, "pressed 2 with a stick in the hand, no pinecone came out");
-      expect(!player.carrying && stick.body.isEnabled(), "pressed 2 with a stick in the hand, the stick was not put down");
+      expect(!player.carrying && isEnabled(stick.body), "pressed 2 with a stick in the hand, the stick was not put down");
       await select(1, undefined, "pressed 1, the pinecone stayed in the paw");
     }],
   ];

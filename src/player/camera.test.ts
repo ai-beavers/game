@@ -3,7 +3,7 @@
 //   accel   the hardest the camera's position speeds up or slows down, m/s² (a jerk shows as a spike)
 //   swing   the fastest the way it looks turns, rad/s
 // for what players do: start, stop, reverse, jump, turn on the spot, swim in, dive and come up (in the pond, into the
-// basin, in the shallows), start gnawing; and how long the lens sits in the waterline. Collisions are left out (Rapier;
+// basin, in the shallows), start gnawing; and how long the lens sits in the waterline. Collisions are left out (physics;
 // `room` stands in for the cast that finds room under water). `bun test src/player/camera` prints the table.
 import { describe, expect, test } from "bun:test";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";

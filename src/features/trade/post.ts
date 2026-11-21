@@ -16,7 +16,8 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { World } from "../../contracts.ts";
-import { RAPIER, type Stage } from "../../engine.ts";
+import type { Stage } from "../../engine.ts";
+import { box } from "../../physics.ts";
 import { bounds, instance, material } from "../../world/models.ts";
 import { seeded } from "../../world/noise.ts";
 import { GOODS } from "./ledger.ts";
@@ -74,8 +75,8 @@ export function createPost(stage: Stage, world: World) {
   sign.material = signMat;
   for (const x of [-0.45, 0.45]) part(MeshBuilder.CreateBox("post string", { width: 0.012, height: 0.12, depth: 0.012 }, scene), x, 1.47, POST.depth / 2 + 0.06).material = dark;
 
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(half + 0.04, TOP / 2, POST.depth / 2 + 0.03)
-    .setTranslation(POST.x, ground + TOP / 2, POST.z).setRotation(Quaternion.RotationAxis(Vector3.Up(), root.rotation.y)).setFriction(0.9));
+  physics.fixed(box(scene, half + 0.04, TOP / 2, POST.depth / 2 + 0.03, { x: POST.x, y: ground + TOP / 2, z: POST.z },
+    Quaternion.RotationAxis(Vector3.Up(), root.rotation.y)), undefined, 0.9);
 
   // ---- the spots: a mat, the good on it, its price on the front, its pile ------------------------------------------------
   const mats = [0x5d7a3a, 0x8d6e4a, 0x4f7f86].map((hex, i) => material(scene, `post mat ${i}`, hex));

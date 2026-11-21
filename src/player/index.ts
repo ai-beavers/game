@@ -1,5 +1,5 @@
 import { holdInHand, holdInView } from "./grip.ts";
-// Who steers the beaver: keyboard input, a Rapier kinematic character, carrying sticks, swimming and diving, sitting
+// Who steers the beaver: keyboard input, a kinematic capsule (mover.ts), carrying sticks, swimming and diving, sitting
 // and crawling, riding (sitting in a canoe someone else draws, src/features/canoe), the tail slap, the follow camera, and the Motion report the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
@@ -12,16 +12,18 @@ import { holdInHand, holdInView } from "./grip.ts";
 import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { RUN_SPEED, WALK_SPEED, type CreatePlayer, type Player, type PlayerOptions, type Stick } from "../contracts.ts";
-import { RAPIER, type Stage } from "../engine.ts";
+import type { Stage } from "../engine.ts";
+import { ALL, CREATURE, GROUND, HEAVY, PLAYER, SOLID, ball, capsule, enable, isEnabled, place, PhysicsMotionType, type PhysicsBody } from "../physics.ts";
 import { SHORE_SLOPE } from "../world/terrain.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
+import { createMover, type Collision } from "./mover.ts";
 import { keyboard, newInput, type Input, type Keyboard } from "./input.ts";
 import { BREATH, CRAWL_SPEED, RIDE_SPEED, SLOPE, SWIM_SPEED, rideKeys, turnTowards, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
 
 // The body: a capsule 1 m tall and 0.45 m wide, its bottom at the feet.
 export const HEIGHT = 1.0, RADIUS = 0.225;
-const HALF = HEIGHT / 2 - RADIUS, OFFSET = 0.02; // the controller keeps this gap to everything
+const HALF = HEIGHT / 2 - RADIUS, OFFSET = 0.02; // the mover keeps this gap to everything
 // Moving.
 const ACCEL = 6, BRAKE = 9, AIR_ACCEL = 2.5; // m/s²: quick, but with weight
 const STEP_UP = 0.15, STEP_WIDTH = 0.1; // m: highest step it walks up, and the least room it needs on top
@@ -56,8 +58,9 @@ export interface PlayerControls extends Player {
   /** What the player wanted in the last step, from every device. Features read their own buttons here (the flash). */
   readonly input: Readonly<Input>;
   camera: FollowCamera;
-  collider: RAPIER.Collider;
-  controller: RAPIER.KinematicCharacterController;
+  /** The capsule's body (it moves only where the player puts it), and what its last move ran into. */
+  body: PhysicsBody;
+  collisions: readonly Collision[];
   /** Where the feet are after the last step, and the horizontal velocity, m/s. */
   feet: Vector3;
   velocity: Vector3;
@@ -135,23 +138,19 @@ export interface Actor {
 export const createPlayer: CreatePlayer = (stage, options) => createPlayerControls(stage, options);
 
 export function createPlayerControls(stage: Stage, options: PlayerOptions): PlayerControls {
-  const { physics } = stage, sticks = options.sticks ?? [];
-  const body = physics.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()
-    .setTranslation(options.spawn.x, options.spawn.y + HEIGHT / 2 + OFFSET, options.spawn.z));
-  const collider = physics.createCollider(RAPIER.ColliderDesc.capsule(HALF, RADIUS), body);
-  const controller = physics.createCharacterController(OFFSET);
-  controller.setUp({ x: 0, y: 1, z: 0 });
-  controller.setMaxSlopeClimbAngle(SLOPE);
-  controller.setMinSlopeSlideAngle(SLOPE);
-  // Rapier's own autostep never took a step with this capsule (measured); stepUp() below does it instead.
-  controller.enableSnapToGround(0.2);
-  controller.setApplyImpulsesToDynamicBodies(true);
-  controller.setCharacterMass(12);
+  const { physics, scene } = stage, sticks = options.sticks ?? [];
+  // The capsule's middle; its body follows it each step. A stick in the paws is out of every query (physics.enable).
+  const centre = new Vector3(options.spawn.x, options.spawn.y + HEIGHT / 2 + OFFSET, options.spawn.z);
+  const holder = new TransformNode("player body", scene);
+  holder.position.copyFrom(centre);
+  const body = physics.body(holder, PhysicsMotionType.ANIMATED, capsule(scene, HALF, RADIUS), PLAYER);
+  const shape = capsule(scene, HALF, RADIUS), point = ball(scene, 0.005); // what the queries sweep and place
+  const mover = createMover(physics, shape, { gap: OFFSET, slope: SLOPE, mass: 12 });
+  // Solid to the bow of a ride and to the camera: everything but the beaver and the loose things.
+  const SOLIDS = GROUND | SOLID | HEAVY | CREATURE;
 
-  const stickBodies = new Set(sticks.map((s) => s.body));
   let carried: { stick: Stick; parent: TransformNode["parent"] } | undefined, target: Stick | undefined;
-  const notCarried = (c: RAPIER.Collider) => !carried || c.parent() !== carried.stick.body;
-  const camera = followCamera(stage, (c) => c !== collider && !stickBodies.has(c.parent()!));
+  const camera = followCamera(stage, SOLIDS);
   const keys = keyboard(), input = newInput(), jump = newJump(), act = newAction(), motion: SwimMotion = newMotion(), steering = newSteering(), slap = newSlap(), dive = newDive();
 
   const node = new TransformNode("player", stage.scene);
@@ -173,27 +172,28 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const front = new Vector3(Math.sin(facing) * REACH, 0.1, Math.cos(facing) * REACH).add(feet);
     let best: Stick | undefined, bestDistance = REACH_RADIUS;
     for (const stick of sticks) {
-      const at = stick.body.translation(), d = Math.hypot(at.x - front.x, (at.y - front.y) * 0.5, at.z - front.z);
+      const at = stick.body.transformNode.position, d = Math.hypot(at.x - front.x, (at.y - front.y) * 0.5, at.z - front.z);
       if (d < bestDistance && stick !== carried?.stick) { best = stick; bestDistance = d; }
     }
     return best;
   };
 
-  const down = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
-  // How deep the water is over the ground at x, z (only the ground: the lodge or a rock in the way stops the controller).
-  const ground = (c: RAPIER.Collider) => c.shapeType() === RAPIER.ShapeType.HeightField || c.shapeType() === RAPIER.ShapeType.TriMesh;
-  const sounding = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
-  const depthAt = (x: number, z: number, level: number, under: (c: RAPIER.Collider) => boolean = ground) => {
-    sounding.origin = { x, y: level, z };
-    const hit = physics.castRay(sounding, 20, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, undefined, undefined, under);
-    return hit ? hit.timeOfImpact : 20;
+  const down = { x: 0, y: -1, z: 0 }, up = { x: 0, y: 1, z: 0 }, still = Quaternion.Identity();
+  // How deep the water is over the ground at x, z, 0 where the ground is above the level (only the ground: the lodge
+  // or a rock in the way stops the mover). The ground is a single surface, found from above; the other solids by a
+  // ray down from the level, and 0 when the level lies inside one (Havok's rays do not hit from inside).
+  const depthAt = (x: number, z: number, level: number, mask = GROUND) => {
+    const top = physics.ray({ x, y: level + 20, z }, down, 40, GROUND);
+    const ground = top ? Math.max(0, top.distance - 20) : 20;
+    if (mask === GROUND) return Math.min(20, ground);
+    if (physics.overlaps(point, still, { x, y: level, z }, mask)) return 0;
+    return Math.min(20, ground, physics.ray({ x, y: level, z }, down, 20, mask)?.distance ?? 20);
   };
-  // At the bow, anything solid but the beaver and the sticks: the lodge, the dam or a rock stops the bow there, not
-  // only the beaver's body behind it (else the bow would go a metre into the lodge).
-  const solid = (c: RAPIER.Collider) => c !== collider && !stickBodies.has(c.parent()!);
-  /** Whether a ride may be at x, z facing (dx, dz) (unit): deep enough at the seat, the bow in the water and clear. */
+  /** Whether a ride may be at x, z facing (dx, dz) (unit): deep enough at the seat, the bow in the water and clear.
+   *  At the bow anything solid stops it: the lodge, the dam or a rock, not only the beaver's body behind it (else
+   *  the bow would go a metre into the lodge). */
   const floats = (r: Ride, x: number, z: number, dx: number, dz: number, level: number) =>
-    depthAt(x, z, level) > r.depth && depthAt(x + dx * r.bow, z + dz * r.bow, level, solid) > r.draft;
+    depthAt(x, z, level) > r.depth && depthAt(x + dx * r.bow, z + dz * r.bow, level, SOLIDS) > r.draft;
 
   // Whether the ground a step ahead along the facing lies under the water (a walk asked for by turnTo stops there).
   const wetAhead = () => {
@@ -204,27 +204,23 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   };
 
   const steep = () => {
-    down.origin = { x: feet.x, y: feet.y + 0.3, z: feet.z };
-    const hit = physics.castRayAndGetNormal(down, 0.5, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, collider, undefined, notCarried);
+    const hit = physics.ray({ x: feet.x, y: feet.y + 0.3, z: feet.z }, down, 0.5);
     return !!hit && hit.normal.y < Math.cos(SLOPE);
   };
 
   // Steps up onto a ledge up to STEP_UP high when walking is blocked: a ray just past the capsule's front finds the
   // ledge (walkable, not too high), then shape casts check for room above and STEP_WIDTH of room on top.
   // Returns how far to lift, or 0.
-  const shape = collider.shape, still = { x: 0, y: 0, z: 0, w: 1 }, up = { x: 0, y: 1, z: 0 };
-  const probe = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  type XYZ = { x: number; y: number; z: number };
+  const cast = (at: XYZ, way: XYZ, distance: number, mask = ALL) => physics.cast(shape, still, at, way, distance, mask);
   const stepUp = (dx: number, dz: number) => {
-    const length = Math.hypot(dx, dz), from = collider.translation(), flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
+    const length = Math.hypot(dx, dz), from = centre;
     if (length < 1e-6) return 0;
     const ahead = { x: dx / length, y: 0, z: dz / length }, top = STEP_UP + 0.01;
-    probe.origin = { x: feet.x + ahead.x * (RADIUS + 0.03), y: feet.y + top, z: feet.z + ahead.z * (RADIUS + 0.03) };
-    const ledge = physics.castRayAndGetNormal(probe, top, true, flags, undefined, collider, undefined, notCarried);
+    const ledge = physics.ray({ x: feet.x + ahead.x * (RADIUS + 0.03), y: feet.y + top, z: feet.z + ahead.z * (RADIUS + 0.03) }, down, top);
     if (!ledge || ledge.normal.y < Math.cos(SLOPE)) return 0;
-    const height = top - ledge.timeOfImpact + 0.01;
+    const height = top - ledge.distance + 0.01;
     if (height <= OFFSET + 0.01 || height > STEP_UP + 0.01) return 0;
-    const cast = (at: RAPIER.Vector, way: RAPIER.Vector, distance: number) =>
-      physics.castShape(at, still, way, shape, 0, distance, false, flags, undefined, collider, undefined, notCarried);
     if (cast(from, up, height)) return 0;
     return cast({ x: from.x, y: from.y + height, z: from.z }, ahead, STEP_WIDTH) ? 0 : height;
   };
@@ -234,30 +230,27 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   // feet. Then the body goes up, CLIMB_IN in over the land (rising with it, up to the steepest shore) and down onto it;
   // anything in the way on the way stops it. Returns how far up and in it goes, or undefined.
   const climbOut = (dx: number, dz: number) => {
-    const length = Math.hypot(dx, dz), from = collider.translation(), flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
+    const length = Math.hypot(dx, dz), from = centre;
     if (length < 1e-6) return undefined;
     const ahead = { x: dx / length, y: 0, z: dz / length }, top = CLIMB_OUT + 0.01;
     // Just past the front, then further in: on the low pond's south shore the lip of the basin's wall is still steep there.
     let height = 0;
     for (const reach of [RADIUS + 0.03, CLIMB_IN, CLIMB_IN + RADIUS]) {
-      probe.origin = { x: feet.x + ahead.x * reach, y: feet.y + top, z: feet.z + ahead.z * reach };
-      const ledge = physics.castRayAndGetNormal(probe, top, true, flags, undefined, collider, undefined, ground);
-      if (ledge && ledge.normal.y >= Math.cos(SLOPE)) { height = top - ledge.timeOfImpact + 0.01; break; }
+      const ledge = physics.ray({ x: feet.x + ahead.x * reach, y: feet.y + top, z: feet.z + ahead.z * reach }, down, top, GROUND);
+      if (ledge && ledge.normal.y >= Math.cos(SLOPE)) { height = top - ledge.distance + 0.01; break; }
     }
     if (height <= OFFSET + 0.01) return undefined;
-    const cast = (at: RAPIER.Vector, way: RAPIER.Vector, distance: number, gap = 0) =>
-      physics.castShape(at, still, way, shape, gap, distance, false, flags, undefined, collider, undefined, notCarried);
     const rise = height + (CLIMB_IN + STEP_WIDTH) * Math.tan(SHORE_SLOPE), over = { x: from.x, y: from.y + rise, z: from.z };
     if (cast(from, up, rise) || cast(over, ahead, CLIMB_IN + STEP_WIDTH)) return undefined;
     const inside = { x: over.x + ahead.x * CLIMB_IN, y: over.y, z: over.z + ahead.z * CLIMB_IN };
-    const land = cast(inside, { x: 0, y: -1, z: 0 }, rise + 0.05, OFFSET); // set down with the controller's gap
-    if (!land || !ground(land.collider)) return undefined;
-    const y = rise - land.time_of_impact;
+    const land = cast(inside, down, rise + 0.05);
+    if (!land || land.shape?.filterMembershipMask !== GROUND) return undefined;
+    const y = rise - (land.distance - OFFSET); // set down with the mover's gap
     return y > OFFSET ? { x: ahead.x * CLIMB_IN, y, z: ahead.z * CLIMB_IN } : undefined;
   };
 
   const grab = (stick: Stick) => {
-    stick.body.setEnabled(false); // out of the simulation and out of every query
+    enable(stick.body, false); // out of the simulation and out of every query
     stage.unbind(stick.mesh);
     carried = { stick, parent: stick.mesh.parent };
     stick.mesh.parent = options.hand!;
@@ -269,12 +262,12 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   const DROP_AHEAD = 0.5, DROP_HEIGHT = 0.2;
   const dropPlace = (stick: Stick) => {
     const ahead = { x: Math.sin(facing), y: 0, z: Math.cos(facing) }, from = { x: feet.x, y: feet.y + DROP_HEIGHT, z: feet.z };
-    const box = stick.body.collider(0)?.shape, flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
+    const box = stick.body.shape; // out of every query while carried: it never meets itself
     const roomFor = (yaw: number) => {
       const turn = Quaternion.RotationAxis(Vector3.Up(), yaw);
       if (!box) return { turn, room: DROP_AHEAD };
-      const hit = physics.castShape(from, turn, ahead, box, 0, DROP_AHEAD, false, flags, undefined, collider, stick.body);
-      return { turn, room: hit ? Math.max(0, hit.time_of_impact - 0.02) : DROP_AHEAD };
+      const hit = physics.cast(box, turn, from, ahead, DROP_AHEAD);
+      return { turn, room: hit ? Math.max(0, hit.distance - 0.02) : DROP_AHEAD };
     };
     let best = roomFor(facing + Math.PI / 2);
     if (best.room < DROP_AHEAD) { const along = roomFor(facing); if (along.room > best.room) best = along; }
@@ -290,11 +283,9 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     stick.mesh.scaling.setAll(1);
     stick.mesh.position.copyFrom(at);
     stick.mesh.rotationQuaternion!.copyFrom(turn);
-    stick.body.setTranslation(at, true);
-    stick.body.setRotation(turn, true);
-    stick.body.setEnabled(true);
-    stick.body.setLinvel({ x: velocity.x, y: vy, z: velocity.z }, true);
-    stick.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    place(stick.body, at, turn);
+    enable(stick.body, true);
+    stick.body.setLinearVelocity(new Vector3(velocity.x, vy, velocity.z));
     stage.bind(stick.mesh, stick.body);
   };
 
@@ -333,7 +324,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     }
     const event = stepAction(act, dt, pick && !offer && (grounded || afloat), !!target);
     if (event === "grab") {
-      if (target && target.body.isEnabled()) grab(target); else act.carrying = false;
+      if (target && isEnabled(target.body)) grab(target); else act.carrying = false;
       target = undefined;
     } else if (event === "release") release();
     const busy = act.action !== "none";
@@ -393,14 +384,13 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     }
 
     // Move the capsule through the world.
-    if (afloat || vy > 0 || ride) controller.disableSnapToGround(); else controller.enableSnapToGround(0.2);
     const wish = { x: (Math.sin(facing) * speed + push.x) * dt, y: ride && level !== undefined ? level + ride.seat - feet.y : vy * dt, z: (Math.cos(facing) * speed + push.z) * dt };
-    controller.computeColliderMovement(collider, wish, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, notCarried);
-    const moved = controller.computedMovement();
+    const { moved, grounded: standing, out } = mover.move(centre, wish, afloat || vy > 0 || ride ? 0 : 0.2, ALL, dt);
     // Diving down onto the sloping bed, the controller slides the push down along it: no further sideways than wished,
     // or it would glide down to the deepest point by itself.
-    const side = Math.hypot(moved.x, moved.z), wished = Math.hypot(wish.x, wish.z);
-    if (diving && side > wished) { moved.x *= wished / side; moved.z *= wished / side; }
+    // (Not what pushed it off the bank to keep the gap: without that it would stick to a bank the basin narrows by.)
+    const side = Math.hypot(moved.x - out.x, moved.z - out.z), wished = Math.hypot(wish.x, wish.z);
+    if (diving && side > wished) { moved.x = out.x + (moved.x - out.x) * wished / side; moved.z = out.z + (moved.z - out.z) * wished / side; }
     // The round bottom of the capsule slides up the edge of a step too high to take, a little each step: such a
     // creep (steeper than SLOPE, smaller than an autostep) counts as a wall.
     if (grounded && wish.y <= 0 && moved.y > 0 && moved.y < 0.05 && moved.y > Math.tan(SLOPE) * Math.hypot(moved.x, moved.z)) moved.x = moved.y = moved.z = 0;
@@ -428,10 +418,10 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
         afloat = false; vy = 0;
       }
     }
-    const at = body.translation();
-    body.setNextKinematicTranslation({ x: at.x + moved.x, y: at.y + moved.y, z: at.z + moved.z });
-    feet.set(at.x + moved.x, at.y + moved.y - HEIGHT / 2 - OFFSET, at.z + moved.z);
-    grounded = ride ? true : controller.computedGrounded(); // the canoe holds it up
+    centre.addInPlace(moved);
+    body.setTargetTransform(centre, still);
+    feet.set(centre.x, centre.y - HEIGHT / 2 - OFFSET, centre.z);
+    grounded = ride ? true : standing; // the canoe holds it up
     if (grounded || afloat) push.setAll(0); // a toss ends where it comes down
     if (vy > 0 && moved.y < wish.y * 0.5) vy = 0; // bumped the head
     velocity.set((moved.x - inX) / dt, 0, (moved.z - inZ) / dt); // a climb's way in is not a dash
@@ -459,7 +449,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   };
 
   return {
-    node, motion, step, update, keys, input, camera, collider, controller, feet, velocity,
+    node, motion, step, update, keys, input, camera, body, collisions: mover.collisions, feet, velocity,
     get facing() { return facing; },
     get afloat() { return afloat; },
     get diving() { return dive.diving; },
@@ -501,13 +491,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       // Set down on a steep wall (the basin's), the capsule would start inside the ground beside its feet and sink
       // through it (measured): lifted until it rests on the ground, up to a metre. Only the ground (src/world/terrain.ts:
       // its heightfield and trimesh): from inside the lodge or a rock it swims or walks out by itself.
-      const at = { x, y: y + HEIGHT / 2 + OFFSET, z }, flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
-      if (physics.intersectionWithShape(at, still, shape, flags, undefined, collider, undefined, ground)) {
-        const hit = physics.castShape({ x, y: at.y + 1, z }, still, { x: 0, y: -1, z: 0 }, shape, 0, 1, true, flags, undefined, collider, undefined, ground);
-        at.y += 1 - (hit?.time_of_impact ?? 1);
+      const at = { x, y: y + HEIGHT / 2 + OFFSET, z };
+      if (physics.overlaps(shape, still, at, GROUND)) {
+        const hit = cast({ x, y: at.y + 1, z }, down, 1, GROUND);
+        at.y += 1 - (hit?.distance ?? 1);
       }
-      body.setTranslation(at, true);
-      body.setNextKinematicTranslation(at);
+      centre.set(at.x, at.y, at.z);
+      place(body, centre, still);
+      body.setTargetTransform(centre, still);
       feet.set(x, at.y - HEIGHT / 2 - OFFSET, z); before.copyFrom(feet);
       facing = facingBefore = turnTo;
       speed = vy = steering.spin = 0;

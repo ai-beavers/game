@@ -16,10 +16,10 @@ import { holdInHand } from "../../player/grip.ts";
 // (world.removeLoose). Each has the same id in every browser (protocol.ts: the world's sticks, crates, then each
 // tree's wood piece by piece), worked out from the build state: which sticks went into the dam, which trees are
 // wood, in the order the build feature adds them.
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Stick } from "../../contracts.ts";
-import { RAPIER } from "../../engine.ts";
+import { dynamic, enable, isEnabled, place, PhysicsShapeType, simulate, type PhysicsBody } from "../../physics.ts";
 import type { Game } from "../../game.ts";
 import type { BuildState } from "../build/rules.ts";
 import { used, woodFrom } from "../build/rules.ts";
@@ -34,14 +34,13 @@ export interface Holder { hand: TransformNode; node: TransformNode }
 const MOVED = 0.002; // m (or quaternion units): less than this since the last send is not sent again
 const PUSH_REACH = 1.5; // m from the pusher's feet to the crate's middle, at most
 
-/** A dynamic body bound to a mesh with one box collider: half extents, or undefined. */
-const box = (body: RAPIER.RigidBody) => {
-  if (!body.isDynamic() || body.numColliders() !== 1) return undefined;
-  const shape = body.collider(0).shape as RAPIER.Cuboid;
-  return shape.type === RAPIER.ShapeType.Cuboid ? shape.halfExtents : undefined;
+/** A dynamic body bound to a mesh with one box shape: half extents, or undefined. */
+const box = (body: PhysicsBody) => {
+  if (!dynamic(body) || body.shape?.type !== PhysicsShapeType.BOX) return undefined;
+  return body.shape.getBoundingBox().extendSize;
 };
 /** Crates are not in World: they are the bound boxes of 0.5 m. */
-const isCrate = (h: RAPIER.Vector) => [h.x, h.y, h.z].every((v) => Math.abs(v - 0.25) < 0.01);
+const isCrate = (h: Vector3) => [h.x, h.y, h.z].every((v) => Math.abs(v - 0.25) < 0.01);
 
 /** The wood a split tree gives, as ids in the order the build feature adds it: sticks (those not in the dam nor
  *  traded), logs. */
@@ -59,13 +58,13 @@ function woodOf(game: Game, tree: number, state: BuildState) {
 /** state: the build feature's world as it was put back when the game started; undefined without that feature. */
 export function createThings(game: Game, state?: BuildState) {
   const { stage, world } = game;
-  const things = new Map<number, Stick>(), ids = new Map<RAPIER.RigidBody, number>(), sticks = new Map<Stick, number>();
+  const things = new Map<number, Stick>(), ids = new Map<PhysicsBody, number>(), sticks = new Map<Stick, number>();
   const tracks = new Map<number, Track>(), sent = new Map<number, number[]>();
   const held = new Map<number, Holder>(); // stick id → the other player holding it
   let mode: Mode = "alone";
 
   const follower = (thing: Stick) => {
-    thing.body.setBodyType(mode === "guest" ? RAPIER.RigidBodyType.KinematicPositionBased : RAPIER.RigidBodyType.Dynamic, true);
+    simulate(thing.body, mode !== "guest");
   };
   const add = (id: number, thing: Stick, pickable: boolean) => {
     things.set(id, thing); ids.set(thing.body, id);
@@ -79,7 +78,7 @@ export function createThings(game: Game, state?: BuildState) {
     const h = box(body);
     return h && !ids.has(body) && !isCrate(h) && Math.abs(h.x - h.y) < 1e-3 && !world.sticks.some((s) => s.body === body);
   });
-  const meshOf = (body: RAPIER.RigidBody) => [...stage.bound].find(([, b]) => b === body)?.[0];
+  const meshOf = (body: PhysicsBody) => [...stage.bound].find(([, b]) => b === body)?.[0];
 
   // What the game started with: the world's sticks not in the dam, then the wood of each split tree; the crates.
   {
@@ -95,8 +94,7 @@ export function createThings(game: Game, state?: BuildState) {
     for (let i = 0; order.length < Math.max(0, own); i++) if (!inDam.has(i)) order.push(i);
     if (own >= 0) order.push(...wood.sticks);
     order.forEach((id, j) => add(id, world.sticks[j]!, true));
-    const crates = [...stage.bound].filter(([, body]) => { const h = box(body); return h && isCrate(h); })
-      .sort(([, a], [, b]) => a.handle - b.handle);
+    const crates = [...stage.bound].filter(([, body]) => { const h = box(body); return h && isCrate(h); }); // as the world made them
     crates.forEach(([mesh, body], c) => add(CRATES + c, { mesh, body }, false));
     const logs = newLogs();
     if (logs.length === wood.logs.length) logs.forEach((body, k) => add(wood.logs[k]!, { mesh: meshOf(body)!, body }, false));
@@ -104,14 +102,12 @@ export function createThings(game: Game, state?: BuildState) {
   }
 
   const placeOf = (id: number): Place => {
-    const thing = things.get(id)!, at = thing.body.translation(), q = thing.body.rotation(), r = (v: number) => Math.round(v * 1e4) / 1e4;
+    const node = things.get(id)!.body.transformNode, at = node.position, q = node.rotationQuaternion!, r = (v: number) => Math.round(v * 1e4) / 1e4;
     return [id, r(at.x), r(at.y), r(at.z), r(q.x), r(q.y), r(q.z), r(q.w)];
   };
+  const turn = new Quaternion();
   const put = (thing: Stick, p: ArrayLike<number>, from = 1) => {
-    thing.body.setTranslation({ x: p[from]!, y: p[from + 1]!, z: p[from + 2]! }, true);
-    thing.body.setRotation({ x: p[from + 3]!, y: p[from + 4]!, z: p[from + 5]!, w: p[from + 6]! }, true);
-    thing.mesh.position.set(p[from]!, p[from + 1]!, p[from + 2]!);
-    thing.mesh.rotationQuaternion!.set(p[from + 3]!, p[from + 4]!, p[from + 5]!, p[from + 6]!);
+    place(thing.body, { x: p[from]!, y: p[from + 1]!, z: p[from + 2]! }, turn.set(p[from + 3]!, p[from + 4]!, p[from + 5]!, p[from + 6]!)); // its mesh with it
   };
 
   const shown = [0, 0, 0, 0, 0, 0, 0];
@@ -122,13 +118,13 @@ export function createThings(game: Game, state?: BuildState) {
     has: (id: number) => things.has(id),
     /** The id of a stick that can be picked up, -1 for none. */
     idOf: (stick: Stick | undefined) => (stick && sticks.get(stick)) ?? -1,
-    idOfBody: (body: RAPIER.RigidBody | null | undefined) => (body && ids.get(body)) ?? -1,
+    idOfBody: (body: PhysicsBody | null | undefined) => (body && ids.get(body)) ?? -1,
     setMode(next: Mode) {
       if (next === mode) return;
       mode = next;
       for (const [id, thing] of things) {
         follower(thing);
-        if (mode !== "guest") { thing.body.setLinvel({ x: 0, y: 0, z: 0 }, true); thing.body.setAngvel({ x: 0, y: 0, z: 0 }, true); }
+        if (mode !== "guest") { thing.body.setLinearVelocity(Vector3.ZeroReadOnly); thing.body.setAngularVelocity(Vector3.ZeroReadOnly); }
         tracks.get(id)!.clear();
         sent.set(id, []);
       }
@@ -165,7 +161,7 @@ export function createThings(game: Game, state?: BuildState) {
     places(all: boolean): Place[] {
       const out: Place[] = [];
       for (const [id, thing] of things) {
-        if (!thing.body.isEnabled() || held.has(id)) continue;
+        if (!isEnabled(thing.body) || held.has(id)) continue;
         const p = placeOf(id), last = sent.get(id)!;
         if (!all && last.length && p.every((v, i) => i === 0 || Math.abs(v - last[i]!) < MOVED)) continue;
         sent.set(id, p);
@@ -177,7 +173,7 @@ export function createThings(game: Game, state?: BuildState) {
     /** Guest: the host says where things are. */
     receive(places: Place[], now = performance.now()) {
       // To a host only the server speaks: where the things lay before this player came in as the first.
-      if (mode === "host") for (const p of places) { const thing = things.get(p[0]); if (thing?.body.isEnabled() && !held.has(p[0])) put(thing, p); }
+      if (mode === "host") for (const p of places) { const thing = things.get(p[0]); if (thing && isEnabled(thing.body) && !held.has(p[0])) put(thing, p); }
       if (mode !== "guest") return;
       for (const p of places) tracks.get(p[0])?.push(now, p.slice(1));
     },
@@ -185,20 +181,20 @@ export function createThings(game: Game, state?: BuildState) {
     /** Host: a guest at `from` pushes crate id towards (nx, nz) at `speed` m/s; given once a physics step. */
     push(id: number, nx: number, nz: number, speed: number, from: Vector3) {
       const thing = things.get(id), length = Math.hypot(nx, nz);
-      if (mode !== "host" || !thing || !thing.body.isDynamic() || !thing.body.isEnabled() || length < 0.1) return;
-      const at = thing.body.translation();
+      if (mode !== "host" || !thing || !dynamic(thing.body) || !isEnabled(thing.body) || length < 0.1) return;
+      const at = thing.body.transformNode.position;
       if (Math.hypot(at.x - from.x, at.z - from.z) > PUSH_REACH) return; // only what is next to the pusher
-      const v = thing.body.linvel(), along = (v.x * nx + v.z * nz) / length, more = Math.min(3, speed) - along;
+      const v = thing.body.getLinearVelocity(), along = (v.x * nx + v.z * nz) / length, more = Math.min(3, speed) - along;
       if (more <= 0) return;
-      const impulse = thing.body.mass() * more;
-      thing.body.applyImpulse({ x: nx / length * impulse, y: 0, z: nz / length * impulse }, true);
+      const impulse = (thing.body.getMassProperties().mass ?? 1) * more;
+      thing.body.applyImpulse(new Vector3(nx / length * impulse, 0, nz / length * impulse), at);
     },
 
     /** Another player holds stick id in this hand: out of the simulation, drawn in the hand until release. */
     hold(id: number, holder: Holder) {
       const thing = things.get(id);
       if (!thing) return;
-      thing.body.setEnabled(false);
+      enable(thing.body, false);
       stage.unbind(thing.mesh);
       held.set(id, holder);
       thing.mesh.parent = holder.hand;
@@ -208,12 +204,12 @@ export function createThings(game: Game, state?: BuildState) {
       const id = place[0], thing = things.get(id);
       if (!thing) return;
       if (held.has(id)) { held.delete(id); thing.mesh.parent = null; thing.mesh.scaling.setAll(1); }
-      thing.body.setEnabled(true);
+      enable(thing.body, true);
       put(thing, place);
       stage.bind(thing.mesh, thing.body);
       tracks.get(id)!.clear();
       if (mode === "guest") tracks.get(id)!.push(performance.now() - DELAY, place.slice(1));
-      else if (velocity) { thing.body.setLinvel({ x: velocity[0], y: velocity[1], z: velocity[2] }, true); thing.body.setAngvel({ x: 0, y: 0, z: 0 }, true); }
+      else if (velocity) thing.body.setLinearVelocity(new Vector3(velocity[0], velocity[1], velocity[2]));
     },
     /** Where a held stick is now, to let it go there (its holder left). */
     placeInHand(id: number): Place | undefined {
@@ -230,7 +226,7 @@ export function createThings(game: Game, state?: BuildState) {
       const now = performance.now() - DELAY;
       if (mode === "guest") for (const [id, thing] of things) {
         const track = tracks.get(id)!;
-        if (!thing.body.isEnabled() || held.has(id) || !track.samples.length) continue;
+        if (!isEnabled(thing.body) || held.has(id) || !track.samples.length) continue;
         put(thing, track.at(now, shown), 0);
       }
       for (const [id, { hand, node }] of held) {

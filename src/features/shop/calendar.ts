@@ -14,7 +14,8 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { RAPIER, type Stage } from "../../engine.ts";
+import type { Stage } from "../../engine.ts";
+import { box } from "../../physics.ts";
 import type { buildShop } from "./building.ts";
 import { paint, WOOD } from "./building.ts";
 import { CALENDAR } from "./place.ts";
@@ -137,8 +138,7 @@ export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, 
   // Solid from the ground to over the beaver's head, the whole width of the board.
   const at = shop.toWorld(CALENDAR.x, 0, CALENDAR.z);
   const q = node.absoluteRotationQuaternion;
-  stage.physics.createCollider(RAPIER.ColliderDesc.cuboid(WIDTH / 2 + 0.05 * S, 0.9, 0.08 * S)
-    .setTranslation(at.x, at.y + 0.8, at.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }).setFriction(0.9));
+  stage.physics.fixed(box(stage.scene, WIDTH / 2 + 0.05 * S, 0.9, 0.08 * S, { x: at.x, y: at.y + 0.8, z: at.z }, q.clone()), undefined, 0.9);
 
   let events: readonly HouseEvent[] = [], date = now;
   let shown = week(date, events);

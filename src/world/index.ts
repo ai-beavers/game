@@ -14,7 +14,8 @@ import type { Plane } from "@babylonjs/core/Maths/math.plane.js";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { CreateWorld, Props, Stick, WorldTree } from "../contracts.ts";
-import { RAPIER, type Stage } from "../engine.ts";
+import type { Stage } from "../engine.ts";
+import { HEAVY, LOOSE, PhysicsMotionType, box, cylinder, hull, type PhysicsBody, type PhysicsShape } from "../physics.ts";
 import { daylight } from "../light.ts";
 import { buildGrass } from "./grass.ts";
 import { placeAll, SPAWN, type Spot } from "./place.ts";
@@ -101,7 +102,7 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
   const water = buildWater(stage);
   const props = given ?? standInProps(scene), layout = placeAll();
   const pick = (list: TransformNode[], s: Spot) => list[s.variant % list.length]!;
-  const fixed = (desc: RAPIER.ColliderDesc) => physics.createCollider(desc.setFriction(0.9));
+  const fixed = (shape: PhysicsShape) => physics.fixed(shape, undefined, 0.9);
 
   // Trees: drawn instanced; a trunk cylinder each, as thick as the template's trunk at knee height.
   const hideTree = scatter(props.tree, layout.tree, 0.12);
@@ -109,11 +110,11 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
   const trees: WorldTree[] = layout.tree.map((s, k) => {
     const knee = vertices(pick(props.tree, s)).filter((p) => p.y > 0.6 && p.y < 1.4);
     const radius = Math.max(0.12, Math.min(0.5, ...knee.map((p) => Math.hypot(p.x, p.z)))) * s.scale; // the trunk, not low branches
-    let trunk: RAPIER.Collider | undefined = fixed(RAPIER.ColliderDesc.cylinder(1.5, radius).setTranslation(s.x, heightAt(s.x, s.z) + 1.3, s.z));
+    let trunk: PhysicsBody | undefined = fixed(cylinder(scene, 1.5, radius, { x: s.x, y: heightAt(s.x, s.z) + 1.3, z: s.z }));
     return {
       place: new Vector3(s.x, heightAt(s.x, s.z), s.z), radius, model: pick(props.tree, s), matrix: placement(s, 0.12),
       hide: () => hideTree(k),
-      clear: () => { if (trunk) physics.removeCollider(trunk, true); trunk = undefined; },
+      clear: () => { if (trunk) physics.remove(trunk); trunk = undefined; },
     };
   });
   // Stumps, logs, rocks, and the rocks and log down in the deep basin: convex hulls of the placed template.
@@ -121,9 +122,9 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
     ["rock", 0.2, layout.bedRock], ["log", 0.12, layout.sunkenLog]] as const) {
     scatter(props[kind], spots, sink);
     for (const s of spots) {
-      const m = placement(s, sink), hull = new Float32Array(vertices(pick(props[kind], s)).flatMap((p) => Vector3.TransformCoordinates(p, m).asArray()));
-      const desc = RAPIER.ColliderDesc.convexHull(hull);
-      if (desc) fixed(desc);
+      const m = placement(s, sink), points = new Float32Array(vertices(pick(props[kind], s)).flatMap((p) => Vector3.TransformCoordinates(p, m).asArray()));
+      const shape = hull(scene, points);
+      if (shape) fixed(shape);
     }
   }
   backdrop.push(scatterBackdrop(props.reed, layout.reed, 0.05), scatterBackdrop(bushes(scene), layout.bush, 0.35));
@@ -145,8 +146,7 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
   // Behind the thicket on the bank, out of sight: a ring of walls, in case something gets up the bank.
   for (let a = 0; a < Math.PI * 2; a += Math.PI / 24) {
     const r = RIM + 6, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    fixed(RAPIER.ColliderDesc.cuboid(0.5, 6, r * Math.PI / 24 + 0.5).setTranslation(x, heightAt(x, z), z)
-      .setRotation(Quaternion.RotationAxis(UP, -a)));
+    fixed(box(scene, 0.5, 6, r * Math.PI / 24 + 0.5, { x, y: heightAt(x, z), z }, Quaternion.RotationAxis(UP, -a)));
   }
 
   // Loose things: a body each, the mesh bound to it. The mesh's template stands on y = 0, the body sits at its middle.
@@ -158,13 +158,13 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
     copy.position = center.multiply(copy.scaling).negate();
     holder.position.copyFrom(at);
     holder.rotationQuaternion = turn.clone();
-    const body = physics.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(at.x, at.y, at.z).setRotation(turn)
-      .setLinearDamping(0.3).setAngularDamping(3));
+    const body = physics.body(holder, PhysicsMotionType.DYNAMIC, box(scene, size.x / 2, size.y / 2, size.z / 2), mass > 1 ? HEAVY : LOOSE, 0.9);
+    body.setLinearDamping(0.3);
+    body.setAngularDamping(3);
     // A box's own inertia, but at least a floor: a thin stick would otherwise roll and jitter on the ground's edges.
     const [x2, y2, z2] = [size.x ** 2, size.y ** 2, size.z ** 2], floor = mass * 0.006;
-    const inertia = { x: Math.max(floor, mass * (y2 + z2) / 12), y: Math.max(floor, mass * (x2 + z2) / 12), z: Math.max(floor, mass * (x2 + y2) / 12) };
-    physics.createCollider(RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2)
-      .setMassProperties(mass, { x: 0, y: 0, z: 0 }, inertia, { x: 0, y: 0, z: 0, w: 1 }).setFriction(0.9).setRestitution(0), body);
+    const inertia = new Vector3(Math.max(floor, mass * (y2 + z2) / 12), Math.max(floor, mass * (x2 + z2) / 12), Math.max(floor, mass * (x2 + y2) / 12));
+    body.setMassProperties({ mass, inertia, centerOfMass: Vector3.Zero(), inertiaOrientation: Quaternion.Identity() });
     stage.bind(holder, body);
     return { mesh: holder, body };
   };
@@ -189,33 +189,15 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
   };
   const removeLoose = (thing: Stick) => {
     for (const list of [sticks, pushed]) if (list.includes(thing)) list.splice(list.indexOf(thing), 1);
-    watch.delete(thing);
     stage.unbind(thing.mesh);
-    physics.removeRigidBody(thing.body);
+    thing.body.shape?.dispose();
+    thing.body.dispose();
   };
 
   const solid = [...layout.tree.map((s) => ({ s, r: 0.5 })), ...layout.rock.map((s) => ({ s, r: 0.55 * s.scale })),
     ...layout.stump.map((s) => ({ s, r: 0.4 })), ...layout.log.map((s) => ({ s, r: 1.2 })),
     ...layout.stick.map((s) => ({ s, r: 0.3 }))]; // a trampled spot around each stick, so it can be found
   const grass = buildGrass(stage, (x, z) => solid.some(({ s, r }) => Math.hypot(s.x - x, s.z - z) < r), ground.material as StandardMaterial);
-
-  // Rapier leaves a thin box on the ground rocking a fraction of a degree, for ever, and a crate creeping a few
-  // millimetres a second; neither falls asleep. A loose thing that has moved less than a centimetre in a second,
-  // touching nothing that moves, is put to sleep; any touch wakes it again.
-  const watch = new Map<Stick, { at: RAPIER.Vector; time: number }>();
-  const rest = (dt: number) => {
-    for (const stick of [...sticks, ...pushed]) {
-      const body = stick.body, seen = watch.get(stick);
-      if (!body.isDynamic() || body.isSleeping()) { watch.delete(stick); continue; }
-      let alone = true;
-      physics.contactPairsWith(body.collider(0), (other) => { if (other.parent() && !other.parent()!.isFixed()) alone = false; });
-      const at = body.translation();
-      if (!alone || !seen) { watch.set(stick, { at, time: 0 }); continue; }
-      if ((seen.time += dt) < 1) continue;
-      if (Math.hypot(at.x - seen.at.x, at.y - seen.at.y, at.z - seen.at.z) < 0.01) body.sleep();
-      watch.set(stick, { at, time: 0 });
-    }
-  };
 
   let time = 0;
   return {
@@ -234,7 +216,6 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
       water.update(time);
       grass.update(time);
       light.follow(focus);
-      rest(dt);
     },
   };
 };

@@ -32,7 +32,7 @@ import { fitType } from "../hud/style.ts";
 import type { CreateFeature } from "../../game.ts";
 import { bodyPoints, enter, inside, KEEP_OUT, liveDirector, reason, sight, type Moment, type Volume, type XYZ } from "./live.ts";
 import { fader, occluders } from "./clearview.ts";
-import { RAPIER } from "../../engine.ts";
+import { GROUND, HEAVY, SOLID } from "../../physics.ts";
 import { CACHE, LODGE, SLOTS, STICKS } from "../build/rules.ts";
 import { createKit, Skip } from "./kit.ts";
 import { movement } from "./stations/movement.ts";
@@ -101,13 +101,11 @@ export const create: CreateFeature = (game) => {
     return Math.min(1, t);
   };
   if (live) player.camera.room = (from, direction, distance) => Math.max(0.05, room(from, from.add(direction.scale(distance))) * distance);
-  // The ground, trunks, rocks, fallen trees in between (not the beaver, nor sticks).
-  const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }), FLAGS = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC;
-  const heavy = (c: RAPIER.Collider) => !c.parent()?.isDynamic() || c.parent()!.mass() > 1;
+  // The ground, trunks, rocks, fallen trees, crates and logs in between (not the beaver, nor sticks).
   const solid = (from: XYZ, to: XYZ) => {
     const d = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
-    ray.origin = from; ray.dir = { x: (to.x - from.x) / d, y: (to.y - from.y) / d, z: (to.z - from.z) / d };
-    return d > 0.15 && !!stage.physics.castRay(ray, d - 0.1, true, FLAGS, undefined, undefined, undefined, heavy);
+    const dir = { x: (to.x - from.x) / d, y: (to.y - from.y) / d, z: (to.z - from.z) / d };
+    return d > 0.15 && !!stage.physics.ray(from, dir, d - 0.1, GROUND | SOLID | HEAVY);
   };
 
   // ---- on screen: where the tour is; live, a caption big enough for a 1080p stream, top centre, clear of the
