@@ -3,7 +3,7 @@
 // dam's prompt.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { SLOTS } from "../../build/rules.ts";
-import { GOODS, type Ledger } from "../../trade/ledger.ts";
+import { POST_GOODS as GOODS, type Ledger } from "../../trade/ledger.ts";
 import { FRONT, standAt } from "../../trade/place.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";

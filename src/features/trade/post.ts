@@ -20,7 +20,7 @@ import type { Stage } from "../../engine.ts";
 import { box } from "../../physics.ts";
 import { bounds, instance, material } from "../../world/models.ts";
 import { seeded } from "../../world/noise.ts";
-import { GOODS } from "./ledger.ts";
+import { POST_GOODS as GOODS } from "./ledger.ts";
 import { FRONT, POST, SPOT_GAP } from "./place.ts";
 
 const TOP = POST.top + 0.04; // m: the counter's top surface, plank included
@@ -155,6 +155,19 @@ const colour = (scene: import("@babylonjs/core/scene.js").Scene, name: string, h
   return mat;
 };
 
+const made = new WeakMap<import("@babylonjs/core/scene.js").Scene, Map<string, Mesh>>();
+/** A new model of any good (the loaf too, which the post does not hold), life-sized, in the world at the origin:
+ *  a copy of one made once per scene and kept hidden. */
+export function goodModel(id: string, scene: import("@babylonjs/core/scene.js").Scene): Mesh {
+  const mine = made.get(scene) ?? new Map<string, Mesh>();
+  made.set(scene, mine);
+  let template = mine.get(id);
+  if (!template) { template = makeGood(id, scene); template.setEnabled(false); mine.set(id, template); }
+  const copy = template.clone(`${id} copy`, null)!;
+  copy.setEnabled(true);
+  return copy;
+}
+
 /** A good's model at its natural size, standing on y = 0 of its own origin, one mesh (one draw call). */
 function makeGood(id: string, scene: import("@babylonjs/core/scene.js").Scene): Mesh {
   const parts: Mesh[] = [], put = (mesh: Mesh, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
@@ -190,6 +203,19 @@ function makeGood(id: string, scene: import("@babylonjs/core/scene.js").Scene): 
     const vaneMat = colour(scene, "feather", 0xcfc6b2), bandMat = colour(scene, "feather band", 0x2f5fb3, 0.4), quillMat = colour(scene, "quill", 0xe8e0cc);
     const multi = mesh.material as import("@babylonjs/core/Materials/multiMaterial.js").MultiMaterial;
     multi.subMaterials = [vaneMat, bandMat, quillMat, quillMat];
+    return named(mesh, id);
+  }
+  if (id === "loaf") {
+    // A round loaf of bread: a golden-brown dome, a little longer than wide, with three pale slashes across its top.
+    const crust = put(MeshBuilder.CreateSphere("crust", { diameter: 1, segments: 12, slice: 0.55 }, scene), 0, -0.012, 0);
+    crust.scaling.set(0.15, 0.1, 0.2);
+    for (const z of [-0.045, 0, 0.045]) {
+      const cut = put(MeshBuilder.CreateBox("cut", { width: 0.09, height: 0.008, depth: 0.012 }, scene), 0, 0.083 - Math.abs(z) * 0.5, z, z * 4, 0, 0);
+      cut.scaling.x = 1 - Math.abs(z) * 3;
+    }
+    const mesh = Mesh.MergeMeshes(parts, true, true, undefined, false, true)!;
+    const cutMat = colour(scene, "loaf cut", 0xe9c98c);
+    (mesh.material as import("@babylonjs/core/Materials/multiMaterial.js").MultiMaterial).subMaterials = [colour(scene, "loaf", 0xa8662a, 0.15), cutMat, cutMat, cutMat];
     return named(mesh, id);
   }
   // A river shell: a low dome with ribs fanning out from its hinge.

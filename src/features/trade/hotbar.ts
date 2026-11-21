@@ -13,7 +13,7 @@ import type { TextBlock } from "@babylonjs/gui/2D/controls/textBlock.js";
 import type { Stage } from "../../engine.ts";
 import { box, hudLayout, onViewport, Overlay } from "../hud/overlay.ts";
 import { FAINT, FONT, PANEL, PAPER, SLOT } from "../hud/style.ts";
-import { goodOf } from "./ledger.ts";
+import { label } from "./ledger.ts";
 import { SLOTS } from "./hold.ts";
 
 // The HUD's palette (style.ts); the slot selected is the gold at a fifth, as the design (design.pen, node Gu6b3).
@@ -29,16 +29,16 @@ const PATHS: Record<string, string> = {
   stick: "M4 20 20 4M11 13l-1-5M14 10l5 1M7 17l-3-2",
   pinecone: "M12 2v3M12 5c-3.5 0-6 4-6 8.5S9 21 12 21s6-3 6-7.5S15.5 5 12 5zM7 11l5 3 5-3M6.5 15.5 12 19l5.5-3.5M9 7.5l3 2 3-2",
   feather: "M12.67 19a2 2 0 0 0 1.42-.59l6.15-6.17a6 6 0 0 0-8.49-8.49L5.59 9.91A2 2 0 0 0 5 11.33V18a1 1 0 0 0 1 1zM16 8 2 22M17.5 15H9",
+  loaf: "M4 17c-1.5-1-2-3-2-5 0-4 4.5-7 10-7s10 3 10 7c0 2-.5 4-2 5zM4 17v2h16v-2M8 8.5l1.5 3M12 7.5v3.5M16 8.5l-1.5 3",
   shell: "M3 15c0-5 4-10 9-10s9 5 9 10c-2 2-5 3-9 3s-7-1-9-3zM12 5v13M8 6.5 7 17M16 6.5l1 10.5M5 9.5l-.5 7M19 9.5l.5 7",
 };
 const iconUrl = (path: string) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="${PAPER}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg>`);
 const ICONS = Object.fromEntries(Object.entries(PATHS).map(([id, path]) => [id, iconUrl(path)]));
 
-const title = (s: string) => s[0]!.toUpperCase() + s.slice(1);
 /** What a screen reader says of a slot. */
 const describe = (n: number, v: SlotView) =>
-  `Slot ${n}: ${!v.icon ? "empty" : v.icon === "stick" ? "stick" : `${title(goodOf(v.icon)?.name ?? v.icon)} ×${v.count ?? 1}`}`;
+  `Slot ${n}: ${!v.icon ? "empty" : v.icon === "stick" ? "stick" : label(v.icon, v.count ?? 1)}`;
 
 export function createHotbar(stage: Stage, select: (n: number) => void) {
   const overlay = new Overlay(stage, "hotbar");

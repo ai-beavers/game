@@ -6,7 +6,7 @@
 //   spotFor(x, z)                the spot whose standing place is under the feet (nearest), or undefined
 //   footprint()                  circles over the counter, for steering
 import { SPAWN } from "../../world/place.ts";
-import { GOODS } from "./ledger.ts";
+import { POST_GOODS as GOODS } from "./ledger.ts";
 
 /** The counter: its middle, length along it, depth front to back, height of its top above the ground, m. */
 export const POST = { x: 1.3, z: -0.2, length: 2.3, depth: 0.55, top: 0.32 };
