@@ -16,6 +16,7 @@ import type { SkyState } from "../sky/index.ts";
 import { LODGE, live as standing, SLOTS, type BuildState } from "../build/rules.ts";
 import { FIRST_RIM } from "../../world/terrain.ts";
 import type { BiteReport } from "../build/tree.ts";
+import { isEnabled } from "../../physics.ts";
 
 const STUCK_TIME = 2.5; // s: moving less than STUCK_MOVE in this long means something is in the way
 const STUCK_MOVE = 0.25;
@@ -239,6 +240,9 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     // A crown caught in another tree, or a slow tall one, comes to rest without the "landed" moment; the build feature
     // lays every falling tree to rest within 10 s (tree.ts step), so either ends the fall.
     await until(() => lands() || !!standing(build()?.state.trees[i])?.rest, 12, "the tree fell but never landed nor came to rest");
+    // Lying, not still upright on its stump: a tree at rest after 10 s counts as fallen, however it stands.
+    const along = build()?.views.get(i)?.trunkLine()?.along;
+    expect(!along || along.y < 0.6, `tree ${i} came to rest still standing (its trunk ${(Math.acos(Math.min(1, along?.y ?? 1)) * 180 / Math.PI).toFixed(0)}° off upright)`);
   };
   const checkBite = (i: number, name: string) => {
     const r = needBuild().views.get(i)?.biteReport();
@@ -265,16 +269,16 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     want.act = true;
     try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }
   };
-  const loose = () => world.sticks.filter((s) => s.body.isEnabled() && s !== player.carrying);
+  const loose = () => world.sticks.filter((s) => isEnabled(s.body) && s !== player.carrying);
   /** Picks up the nearest stick; one that cannot be got at (under a log) is left for the next, as a player would, and
    *  not tried again on this page (a kept world may hold many such). */
   const passed = new Set<Stick>();
   const pickUp = async () => {
-    const away = (s: Stick) => flat(s.body.translation().x, s.body.translation().z);
+    const away = (s: Stick) => flat(s.body.transformNode.position.x, s.body.transformNode.position.z);
     for (let tries = 0; ; tries++) {
       const sticks = loose().filter((s) => !passed.has(s)).sort((a, c) => away(a) - away(c));
       if (!sticks.length) throw new Error(passed.size ? "no stick lies anywhere that can be got at" : "no stick lies about");
-      try { await reach("pickup", (attempt) => sticks[Math.min(attempt, sticks.length - 1)]!.body.translation(), true); break; } catch (e) {
+      try { await reach("pickup", (attempt) => sticks[Math.min(attempt, sticks.length - 1)]!.body.transformNode.position, true); break; } catch (e) {
         sticks.slice(0, 3).forEach((s) => passed.add(s));
         if (tries >= 2) throw e;
       }

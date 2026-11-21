@@ -283,6 +283,9 @@ export function hudLayout(stage: Stage) {
 /** What floats over the world this frame, in screen px (net/ui.ts puts the name tags and bubbles here), so the HUD's
  *  marker keeps clear of it. */
 export const floating: Box[] = [];
+/** The goals panel (the quest tracker) as laid out this picture, or undefined while it is hidden: what hangs under it
+ *  follows it. Read from here, not from the controls: their getters scale by the device's pixel ratio. */
+export const goalsPanel: { box: Box | undefined } = { box: undefined };
 /** What hangs under the goals panel this picture (Mrs. Beaver's quest list), or undefined: the marker keeps below it. */
 export const underGoals: { box: Box | undefined } = { box: undefined };
 

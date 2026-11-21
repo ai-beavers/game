@@ -24,10 +24,10 @@
 // farTree) it runs through, 30 m off and more. Hand them to step() if that ever shows.
 //
 // Cost per frame while it is out: one skinned mesh (about 23,000 triangles) and one sampled clip. The forest hides the mesh and stops its clip.
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { RAPIER } from "../../engine.ts";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { CREATURE, capsule, enable, isEnabled, place, PhysicsMotionType } from "../../physics.ts";
 import type { CreateFeature } from "../../game.ts";
-import { NO_CONTACTS } from "../net/remote.ts";
 import { sunAt } from "../sky/clock.ts";
 import { loadBear } from "./model.ts";
 import { healthBar } from "./panel.ts";
@@ -45,9 +45,9 @@ export const create: CreateFeature = async (game) => {
   const touring = new URLSearchParams(location.search).has("tour");
   const bear = newBear(), bar = healthBar(stage), trunks = (world.trees ?? []).map((t) => ({ x: t.place.x, z: t.place.z }));
   const model = await loadBear(scene);
-  const body = physics.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
-  physics.createCollider(RAPIER.ColliderDesc.capsule(BODY.half, BODY.radius).setCollisionGroups(NO_CONTACTS), body);
-  body.setEnabled(false);
+  const body = physics.body(new TransformNode("bear body", scene), PhysicsMotionType.ANIMATED, capsule(scene, BODY.half, BODY.radius), CREATURE);
+  enable(body, false);
+  const middle = new Vector3(), still = Quaternion.Identity();
 
   let visit = 0, came = false, linger = 0, swipes = 0;
   let fury = 0, calm = 0; // s the tossed beaver is still furious, and the anger it had before
@@ -114,8 +114,9 @@ export const create: CreateFeature = async (game) => {
       Object.assign(before, { x: bear.x, z: bear.z, heading: bear.heading });
       for (const h of step(bear, { x: player.feet.x, z: player.feet.z, land: !player.afloat && !player.riding }, trunks, dt, Math.random)) act(h);
       const here = bear.state !== "away";
-      if (here !== body.isEnabled()) body.setEnabled(here);
-      if (here) body.setNextKinematicTranslation({ x: bear.x, y: world.heightAt(bear.x, bear.z) + BODY.half + BODY.radius, z: bear.z });
+      if (here) middle.set(bear.x, world.heightAt(bear.x, bear.z) + BODY.half + BODY.radius, bear.z);
+      if (here !== isEnabled(body)) { enable(body, here); if (here) place(body, middle); }
+      if (here) body.setTargetTransform(middle, still);
       linger = Math.max(0, linger - dt);
       // The bear to leap at: while it is after the beaver, or about within a leap of it.
       player.foe = after(bear) || (bear.state === "roam" && Math.hypot(bear.x - player.feet.x, bear.z - player.feet.z) < SLAP_REACH + 1) ? bear : undefined;

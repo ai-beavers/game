@@ -216,11 +216,11 @@ export const create: CreateFeature = (game) => {
     flames += strength * budget.rate;
     smokes += strength * budget.rate / 3;
     for (; flames >= 1; flames--) {
-      const s = random(0.7, 1.2);
+      const s = random(0.6, 1.3); // no two alike: small licks among big tongues
       make({
-        kind: KIND.flame, x: place.x + random(-0.04, 0.04), y: place.y + random(-0.02, 0.04), z: place.z + random(-0.04, 0.04),
-        vx: random(-0.08, 0.08), vy: random(0.5, 0.9), vz: random(-0.08, 0.08), gravity: -0.02, drag: 1.2,
-        life: random(0.4, 0.7), fadeIn: 0.05, fadeOut: 0.3, size: 0.24 * s, grow: 0.1 * s, squash: random(0.55, 0.75), rot: random(-0.15, 0.15),
+        kind: KIND.flame, x: place.x + random(-0.05, 0.05), y: place.y + random(-0.02, 0.04), z: place.z + random(-0.05, 0.05),
+        vx: random(-0.1, 0.1), vy: random(0.35, 0.85), vz: random(-0.1, 0.1), gravity: -0.02, drag: 1.2,
+        life: random(0.3, 0.65), fadeIn: 0.06, fadeOut: 0.3, size: 0.27 * s, grow: 0.1 * s, squash: random(0.6, 0.95), rot: random(-0.25, 0.25),
         r: FLAME_HOT.r, g: FLAME_HOT.g, b: FLAME_HOT.b, a: 0.9,
       });
     }

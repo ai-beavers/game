@@ -13,11 +13,13 @@
 // Debug, for bun shot --eval (window.canoe): canoe.place (its middle and heading now) · canoe.bank (where it lies
 // after a reload) · canoe.riding · canoe.at() (stands beside it facing it, empty-pawed).
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Node } from "@babylonjs/core/node.js";
-import { RAPIER, type Stage } from "../../engine.ts";
+import type { Stage } from "../../engine.ts";
+import { box, enable, place, PhysicsMotionType, SOLID } from "../../physics.ts";
 import type { CreateFeature } from "../../game.ts";
 import { OWN_LAYER } from "../../player/camera.ts";
 import type { Actor, Offer } from "../../player/index.ts";
@@ -38,14 +40,13 @@ export const create: CreateFeature = (game) => {
 
   // Solid while it lies there (one box over the hull), so the beaver walks and swims round it; out of the way while
   // the beaver sits in it.
-  const body = stage.physics.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-  stage.physics.createCollider(RAPIER.ColliderDesc.cuboid(HULL.beam / 2 - 0.02, 0.12, HULL.length / 2 - 0.1), body);
+  const body = stage.physics.body(new TransformNode("canoe body", stage.scene), PhysicsMotionType.STATIC,
+    box(stage.scene, HULL.beam / 2 - 0.02, 0.12, HULL.length / 2 - 0.1), SOLID);
   let settled = NaN; // the water level it was last put down at
   const settle = () => {
     settled = level();
     lie(hull, left, world.heightAt, settled);
-    body.setTranslation({ x: hull.position.x, y: hull.position.y + 0.02, z: hull.position.z }, false);
-    body.setRotation(Quaternion.FromEulerAngles(hull.rotation.x, hull.rotation.y, 0), false);
+    place(body, { x: hull.position.x, y: hull.position.y + 0.02, z: hull.position.z }, Quaternion.FromEulerAngles(hull.rotation.x, hull.rotation.y, 0));
   };
   settle();
 
@@ -69,7 +70,7 @@ export const create: CreateFeature = (game) => {
     if (!feet) return;
     player.teleport(feet.x, level() + SEAT.height, feet.z, left.heading);
     player.ride({ seat: SEAT.height, depth: DEPTH, bow: BOW, draft: DRAFT });
-    body.setEnabled(false);
+    enable(body, false);
     riding = true;
     events.emit("canoeIn", { place: player.feet.clone() });
   };
@@ -81,7 +82,7 @@ export const create: CreateFeature = (game) => {
   /** Leaves the canoe where it was last with the beaver in it. */
   const leave = () => {
     riding = false;
-    body.setEnabled(true);
+    enable(body, true);
     settle();
   };
   const getOut = () => {
@@ -192,6 +193,23 @@ function buildHull(stage: Stage) {
     thwart.position.set(0, gunwaleAt(u) - 0.04, z);
     thwart.material = light;
   }
+  // Dry inside: the pond is one sheet through everything, and would fill the hull below the water line. An unseen lid
+  // across the hull at the water line, drawn after the hull and before the pond (alphaIndex 0, the pond's is 1), keeps
+  // its depth there, so the pond is not drawn in the hull. A little above the line: the hull rocks.
+  const LID = 0.02, waterline = (u: number) => { // half the hull's width at height LID, from the cross-section above
+    const k = keelAt(u), t = (LID - k) / (gunwaleAt(u) - k);
+    return t >= 1 ? 0 : halfBeam(u) * Math.sin(Math.acos(Math.pow(1 - t, 1 / 0.7))) * 0.97;
+  };
+  const sides = [-1, 1].map((s) => Array.from({ length: sections + 1 }, (_, i) => { const u = -1 + 2 * i / sections; return new Vector3(s * waterline(u), LID, u * L); }));
+  const lid = MeshBuilder.CreateRibbon("canoe lid", { pathArray: sides, sideOrientation: Mesh.DOUBLESIDE }, scene);
+  const unseen = new StandardMaterial("canoe lid", scene);
+  unseen.disableColorWrite = true;
+  unseen.forceDepthWrite = true;
+  unseen.alpha = 0.99; // in the transparent pass, sorted by alphaIndex
+  lid.material = unseen;
+  lid.alphaIndex = 0;
+  lid.parent = root;
+  lid.isPickable = false; // receives no shadows, so it throws none (src/light.ts)
   return root;
 }
 

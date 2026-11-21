@@ -123,13 +123,13 @@ export const mrsBeaver = (kit: Kit): Station[] => {
       expect(her.gnawed === gnawed, `let go of Use, what was gnawed went from ${gnawed.toFixed(2)} to ${her.gnawed.toFixed(2)} s`);
 
       // Held to the end, with the gnaw motion: the pen falls into loose sticks, she is free, and the list says so.
-      const before = world.sticks.filter((s) => near(s.body.translation(), pen) < 1.4).length;
+      const before = world.sticks.filter((s) => near(s.body.transformNode.position, pen) < 1.4).length;
       want.act = true;
       try {
         await until(() => player.motion.action === "gnaw", 1, "held Use at the pen, the beaver does not gnaw");
         await until(() => her.state === "freed", 5, `held Use at the pen, she is still shut in (${her.gnawed.toFixed(2)} s gnawed)`);
       } finally { want.act = false; }
-      const fallen = world.sticks.filter((s) => near(s.body.translation(), pen) < 1.4).length - before;
+      const fallen = world.sticks.filter((s) => near(s.body.transformNode.position, pen) < 1.4).length - before;
       expect(fallen >= 4, `the pen fell into ${fallen} loose sticks, not at least 4`);
       await until(() => title() === "Mrs. Beaver found" && STEPS.every((_, i) => !stage.hud.getControlByName(`mrs-beaver-step-${i}`)?.isVisible), 2,
         `the checklist reads "${title()}" / ${lines().join(" / ")}, not only "Mrs. Beaver found"`);

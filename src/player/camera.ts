@@ -7,7 +7,7 @@
 // in camera.test.ts; the player's own look (drag, stick, finger) is 1:1. It holds while the beaver stands; once the
 // beaver goes, LEFT_ALONE s after the last look input, the camera swings round behind it and back to the rest pitch
 // (follow), so mouse and following combine: drag to look, walk on and it follows again.
-// It never passes through the ground or things: a small ball is cast in Rapier from the beaver to where the camera
+// It never passes through the ground or things: a small ball is cast in Havok from the beaver to where the camera
 // wants to be; when something comes in between the camera moves in quickly but smoothly (at once only when it would be
 // inside it), and goes out again slowly. Over the pond it stays above the water. While the beaver dives it goes under
 // with it where the water has room for it: level with the beaver, further back and a little to the side, the lens a
@@ -38,11 +38,12 @@
 // the third-person view the yaw stays, the rig starts afresh at the beaver, pitch and distance are at rest again.
 //
 // Mouse and pen drag here; touches are left to whoever handles touch (src/features/controls).
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { RUN_SPEED, WALK_SPEED } from "../contracts.ts";
-import { RAPIER, type Stage } from "../engine.ts";
+import type { Stage } from "../engine.ts";
+import { ball as ballShape } from "../physics.ts";
 
 const LOOK_HEIGHT = 0.7; // m above the feet
 const MIN_DISTANCE = 2, MAX_DISTANCE = 8;
@@ -220,10 +221,11 @@ export function view(from: Vector3, at: Vector3, rise: number, across: number) {
   return new Vector3(Math.sin(heading) * Math.cos(up), Math.sin(up), Math.cos(heading) * Math.cos(up));
 }
 
-export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) => boolean) {
-  const { camera, physics, canvas, engine } = stage;
-  const look = new Vector3(), direction = new Vector3(), probe = new Vector3(), ball = new RAPIER.Ball(BALL), rig = newRig();
-  const rotation = { x: 0, y: 0, z: 0, w: 1 };
+/** blocks: the collision groups the camera does not pass through (src/physics.ts). */
+export function followCamera(stage: Stage, blocks: number) {
+  const { camera, physics, canvas, engine, scene } = stage;
+  const look = new Vector3(), direction = new Vector3(), probe = new Vector3(), ball = ballShape(scene, BALL), rig = newRig();
+  const rotation = Quaternion.Identity();
   let shown = REST_DISTANCE, shownV = 0, shownPitch = REST_PITCH, idle = 0, touched = 0, jolt = 0;
   let seen: View = "third-person", eyes: TransformNode | undefined, eyeChain: TransformNode[] = [];
   // The hold: the point it looks at, where the camera stands for it, how far it is held (0 … 1, on a spring).
@@ -231,15 +233,13 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
   const heldAt = new Vector3(), heldLook = new Vector3(), following = new Vector3();
   const pitchRange = (pitch: number) => seen === "first-person"
     ? Math.max(-EYE_PITCH, Math.min(EYE_PITCH, pitch)) : Math.max(lowest(rig), Math.min(MAX_PITCH, pitch));
-  const flags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS;
-  // wet: a ray as well, for the ball slips through the steep heightfield walls of the basin (measured)
-  const ray = new RAPIER.Ray(look, direction);
+  // wet: a ray as well, for the ball slipped through the steep walls of the basin (measured with Rapier)
   const freeAt = (yaw: number, pitch: number, distance: number, wet = false) => {
     direction.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-    const hit = physics.castShape(look, rotation, direction, ball, 0, distance, true, flags, undefined, undefined, undefined, blocks);
-    let free = hit ? Math.max(0.05, hit.time_of_impact - 0.02) : distance;
-    const wall = wet ? physics.castRay(ray, distance, true, flags, undefined, undefined, undefined, blocks) : null;
-    if (wall) free = Math.min(free, Math.max(0.05, wall.timeOfImpact - BALL));
+    const hit = physics.cast(ball, rotation, look, direction, distance, blocks);
+    let free = hit ? Math.max(0.05, hit.distance - 0.02) : distance;
+    const wall = wet ? physics.ray(look, direction, distance, blocks) : undefined;
+    if (wall) free = Math.min(free, Math.max(0.05, wall.distance - BALL));
     return state.room ? Math.min(free, state.room(look, direction, distance)) : free;
   };
   const state = {
@@ -311,8 +311,8 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       if (going.diving && going.level !== undefined) {
         probe.set(feet.x, going.level - ROOM_DEPTH, feet.z);
         direction.set(Math.sin(state.yaw), 0, Math.cos(state.yaw));
-        const hit = physics.castShape(probe, rotation, direction, ball, 0, MAX_DISTANCE, true, flags, undefined, undefined, undefined, blocks);
-        room = hit ? hit.time_of_impact : MAX_DISTANCE;
+        const hit = physics.cast(ball, rotation, probe, direction, MAX_DISTANCE, blocks);
+        room = hit ? hit.distance : MAX_DISTANCE;
       }
       const shot = stepRig(rig, dt, feet, going, state.yaw, state.pitch, state.distance, aspect, room);
       look.copyFrom(rig.pivot);
@@ -336,8 +336,7 @@ export function followCamera(stage: Stage, blocks: (collider: RAPIER.Collider) =
       const free = freeAt(shot.yaw, shownPitch, under(shownPitch)[1], shot.under > 0);
       [shown, shownV] = spring(shown, shownV, free, free < shown ? LET_IN : LET_OUT, dt);
       // Only when the camera would be inside something does it jump in front of it.
-      const inside = shown > free && physics.intersectionWithShape(orbit(look, shot.yaw, shownPitch, shown), rotation, ball, flags,
-        undefined, undefined, undefined, blocks);
+      const inside = shown > free && physics.overlaps(ball, rotation, orbit(look, shot.yaw, shownPitch, shown), blocks);
       if (inside) { shown = free; shownV = 0; }
       camera.position.copyFrom(orbit(look, shot.yaw, shownPitch, shown));
       if (going.level !== undefined) camera.position.y = underWater(camera.position.y, going.level, shot.under);

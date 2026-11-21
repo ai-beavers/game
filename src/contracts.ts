@@ -3,14 +3,15 @@
 //
 //   src/beaver   the animal: mesh, fur, shirt; takes a Pose                       loadBeaver(scene) → Beaver
 //   src/anim     how it moves: turns a Motion into a Pose, pure maths             createAnimator() → Animator
-//   src/player   who steers it: input, Rapier character, camera; reports Motion   createPlayer(stage, options) → Player
+//   src/player   who steers it: input, kinematic capsule, camera; reports Motion   createPlayer(stage, options) → Player
 //   src/world    where it lives: ground, pond, sky, things to carry               createWorld(stage, props?) → World
 //   src/props    what stands around: trees, rocks, sticks, built in Blender       loadProps(scene) → Props
 //
 // Conventions (set in engine.ts): Babylon.js, right-handed, y up, 1 unit = 1 m. The beaver is 1 m tall, stands on
-// y = 0 of its root and faces +z. Physics is Rapier, stepped in fixed steps of STEP seconds by run() in engine.ts.
+// y = 0 of its root and faces +z. Physics is Havok (src/physics.ts), stepped in fixed steps of STEP seconds by run() in engine.ts.
 import type { Matrix, TransformNode, Quaternion, Vector3 } from "@babylonjs/core";
-import type { RAPIER, Stage } from "./engine.ts";
+import type { Stage } from "./engine.ts";
+import type { PhysicsBody } from "./physics.ts";
 
 // ---- the beaver ------------------------------------------------------------------------------------------------
 
@@ -136,9 +137,9 @@ export interface Animator {
 
 // ---- the player ------------------------------------------------------------------------------------------------
 
-/** A loose thing with a dynamic Rapier body the beaver can pick up: the world makes them (and binds mesh to
+/** A loose thing with a dynamic Havok body the beaver can pick up: the world makes them (and binds mesh to
  *  body with stage.bind), the player carries them. */
-export interface Stick { mesh: TransformNode; body: RAPIER.RigidBody }
+export interface Stick { mesh: TransformNode; body: PhysicsBody }
 
 export interface PlayerOptions {
   /** Where the feet start. */

@@ -40,6 +40,7 @@ import { fxOf } from "../fx/index.ts";
 import { createDam } from "./dam.ts";
 import { goalsPanel } from "./panel.ts";
 import { BITE_HEIGHT, measure, takeTree, type TreeView } from "./tree.ts";
+import { isEnabled, place } from "../../physics.ts";
 
 /** The world the feature starts in, as the changes that make it: whoever keeps the world (src/features/net: the
  *  server's) puts them here before the features are made. A split with `at` went then by this page's clock. */
@@ -108,10 +109,8 @@ export const create: CreateFeature = (game) => {
       at.y = world.heightAt(at.x, at.z) + piece.thickness / 2 + 0.03;
       const turn = pose(flat, piece.turn);
       if (old) { // a tree grown back: its pieces are its first one's, one thing each everywhere (net/things.ts)
-        if (old === player.carrying || !old.body.isEnabled()) return;
-        old.body.setTranslation(at, true); old.body.setRotation(turn, true);
-        old.body.setLinvel({ x: 0, y: 0, z: 0 }, true); old.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-        old.mesh.position.copyFrom(at); old.mesh.rotationQuaternion!.copyFrom(turn);
+        if (old === player.carrying || !isEnabled(old.body)) return;
+        place(old.body, at, turn); // its mesh with it
       } else {
         const size = new Vector3(piece.thickness, piece.thickness, piece.length);
         name(addLoose(piece.kind, piece.variant, size, at, turn, piece.kind === "log" ? 25 * piece.length : 0.3), id);
@@ -382,7 +381,7 @@ export const create: CreateFeature = (game) => {
       split(i: number) {
         const v = views.get(i), body = v?.body;
         if (body && !live(state.trees[i])?.rest) {
-          const p = body.translation(), q = body.rotation();
+          const p = body.transformNode.position, q = body.transformNode.rotationQuaternion!;
           commit({ type: "rest", tree: i, at: [p.x, p.y, p.z], turn: [q.x, q.y, q.z, q.w] });
         }
         return commit({ type: "split", tree: i });
@@ -417,10 +416,9 @@ export const create: CreateFeature = (game) => {
       for (const [i, v] of views) {
         const event = v.step(dt);
         if (event === "landed") {
-          const b = v.body!.angvel();
-          events.emit("treeLands", { place: v.crown(), tree: i, speed: Math.hypot(b.x, b.y, b.z) * measure(world.trees![i]!).crownHeight });
+          events.emit("treeLands", { place: v.crown(), tree: i, speed: v.body!.getAngularVelocity().length() * measure(world.trees![i]!).crownHeight });
         } else if (event === "rest") {
-          const p = v.body!.translation(), q = v.body!.rotation();
+          const p = v.body!.transformNode.position, q = v.body!.transformNode.rotationQuaternion!;
           commit({ type: "rest", tree: i, at: [p.x, p.y, p.z], turn: [q.x, q.y, q.z, q.w] });
         }
       }

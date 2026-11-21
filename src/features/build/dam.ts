@@ -19,7 +19,8 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { World } from "../../contracts.ts";
-import { RAPIER, type Stage } from "../../engine.ts";
+import type { Stage } from "../../engine.ts";
+import { hull as hullOf, place, SOLID, type PhysicsBody } from "../../physics.ts";
 import { fbm, seeded } from "../../world/noise.ts";
 import { CACHE_AT, cachePlan, DAM, damPlan, LODGE, moundHeight, crestHeight, profile, SLOTS, STICKS } from "./rules.ts";
 
@@ -61,7 +62,7 @@ export function createDam(stage: Stage, world: World) {
   mud.receiveShadows = true;
   mud.material = material(scene, "silt", 0x68533c);
   const local = mud.getVerticesData("position")!.slice(), positions = local.slice();
-  let collider: RAPIER.Collider | undefined;
+  let collider: PhysicsBody | undefined;
   const shape = (placed: number) => {
     const height = moundHeight(placed);
     mud.setEnabled(height > 0.005);
@@ -74,7 +75,7 @@ export function createDam(stage: Stage, world: World) {
     mud.updateVerticesData("position", positions, true);
     mud.createNormals(true);
     // The collider: the mound's foot and crest as one convex hull, as high as the sticks.
-    if (collider) physics.removeCollider(collider, true);
+    if (collider) physics.remove(collider);
     collider = undefined;
     const crest = crestHeight(placed);
     if (crest < 0.02) return;
@@ -84,8 +85,8 @@ export function createDam(stage: Stage, world: World) {
         const at = toWorld(Math.cos(a) * DAM.base * k, Math.sin(a) * (DAM.length / 2) * k);
         hull.push(at.x, world.heightAt(at.x, at.z) + y, at.z);
       }
-    const desc = RAPIER.ColliderDesc.convexHull(new Float32Array(hull));
-    if (desc) collider = physics.createCollider(desc.setFriction(1));
+    const solid = hullOf(scene, hull);
+    if (solid) collider = physics.fixed(solid, SOLID, 1);
   };
 
   // ---- the lodge --------------------------------------------------------------------------------------------------
@@ -115,8 +116,8 @@ export function createDam(stage: Stage, world: World) {
       stick.rotation.set(random()*0.5, -a, 0);
       stick.scaling.set(1.4, 1.4, 1.05);
     }
-    const hull = RAPIER.ColliderDesc.convexHull(new Float32Array(mound.getVerticesData("position")!));
-    const collider = hull ? physics.createCollider(hull.setFriction(0.9)) : undefined;
+    const hull = hullOf(scene, mound.getVerticesData("position")!);
+    const collider = hull ? physics.fixed(hull, SOLID, 0.9, root.position) : undefined;
     return { root, collider };
   }
   /** Puts a stick mesh at its slot, as thick as it is drawn there. */
@@ -171,7 +172,7 @@ export function createDam(stage: Stage, world: World) {
       lodge ??= buildLodge();
       const e = 1 - (1 - Math.min(1, grow)) ** 3;
       lodge.root.position.y = world.waterLevel - 1.3 - (1 - e) * 2.15;
-      lodge.collider?.setTranslation(lodge.root.position);
+      if (lodge.collider) place(lodge.collider, lodge.root.position);
     },
     lodgeAt,
     /** The middle of the food cache, on the bed. */

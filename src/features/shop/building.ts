@@ -19,7 +19,8 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { World } from "../../contracts.ts";
-import { RAPIER, type Stage } from "../../engine.ts";
+import type { Stage } from "../../engine.ts";
+import { box as boxShape, cylinder, hull as hullOf, SOLID, type PhysicsShape } from "../../physics.ts";
 import { RADIUS, SIGN } from "./place.ts";
 
 const WALL = 2.1, THICK = 0.14, LOW = 0.95; // m: wall height, thickness, the lower part always shown
@@ -109,10 +110,8 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
   root.computeWorldMatrix(true);
   const turn = Quaternion.RotationAxis(Vector3.Up(), spot.facing);
   const toWorld = (x: number, y: number, z: number) => Vector3.TransformCoordinates(new Vector3(x, y, z), root.getWorldMatrix());
-  const solid = (desc: RAPIER.ColliderDesc, x: number, y: number, z: number, yaw = 0) => {
-    const at = toWorld(x, y, z), q = Quaternion.RotationAxis(Vector3.Up(), spot.facing + yaw);
-    physics.createCollider(desc.setTranslation(at.x, at.y, at.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }).setFriction(0.9));
-  };
+  const solid = (shape: PhysicsShape, x: number, y: number, z: number, yaw = 0) =>
+    physics.fixed(shape, SOLID, 0.9, toWorld(x, y, z), Quaternion.RotationAxis(Vector3.Up(), spot.facing + yaw));
 
   const wood = WOOD, plum = new Color3(0.36, 0.13, 0.46), cream = new Color3(0.86, 0.74, 0.56);
   const solidMat = matte(scene, "shop-wood");
@@ -122,7 +121,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
   floor.position.y = -rise / 2;
   paint(floor, new Color3(0.5, 0.33, 0.19));
   const floorMesh = merge("shop-floor", [floor], solidMat, root);
-  const hull = RAPIER.ColliderDesc.convexHull(new Float32Array(floorMesh.getVerticesData(VertexBuffer.PositionKind)!));
+  const hull = hullOf(scene, floorMesh.getVerticesData(VertexBuffer.PositionKind)!);
   if (hull) solid(hull, 0, 0, 0);
 
   // ---- the walls: pieces round a circle, the doorway left open; outside plum, inside warm cream ----
@@ -137,7 +136,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     const a = (k + 0.5) * step, door = k < DOOR || k >= SEGMENTS - DOOR;
     if (!door) {
       lower.push(piece(a, RADIUS, THICK / 2, 0, LOW, cream), piece(a, RADIUS + THICK / 2, THICK / 2, 0, LOW, plum));
-      solid(RAPIER.ColliderDesc.cuboid((RADIUS + THICK) * Math.tan(step / 2), (WALL_SOLID + 0.3) / 2, THICK / 2), Math.sin(a) * (RADIUS + THICK / 2), (WALL_SOLID - 0.3) / 2, Math.cos(a) * (RADIUS + THICK / 2), a);
+      solid(boxShape(scene, (RADIUS + THICK) * Math.tan(step / 2), (WALL_SOLID + 0.3) / 2, THICK / 2), Math.sin(a) * (RADIUS + THICK / 2), (WALL_SOLID - 0.3) / 2, Math.cos(a) * (RADIUS + THICK / 2), a);
     }
     // Over the doorway the wall goes on from its lintel up.
     upper.push(piece(a, RADIUS, THICK / 2, door ? 1.55 : LOW, WALL, cream), piece(a, RADIUS + THICK / 2, THICK / 2, door ? 1.55 : LOW, WALL, plum));
@@ -233,7 +232,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
   const back = board.clone("shop-sign-back"); // the same words on the side towards the shop
   back.position.z = -0.045;
   back.rotation.y = 0;
-  solid(RAPIER.ColliderDesc.cylinder(0.6, 0.08), sign.position.x, 0.5, sign.position.z);
+  solid(cylinder(scene, 0.6, 0.08), sign.position.x, 0.5, sign.position.z);
 
   // ---- the café inside: the counter, a shelf of folded shirts behind it, small tables and stools, warm lamps ----
   const inside: Mesh[] = [];
@@ -246,12 +245,12 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
   const cz = COUNTER.z - COUNTER.depth / 2;
   box(COUNTER.width, COUNTER.height, COUNTER.depth, 0, COUNTER.height / 2, cz, wood);
   box(COUNTER.width + 0.1, 0.05, COUNTER.depth + 0.1, 0, COUNTER.height + 0.025, cz, new Color3(0.85, 0.8, 0.7));
-  solid(RAPIER.ColliderDesc.cuboid(COUNTER.width / 2, (WALL_SOLID + 0.3) / 2, COUNTER.depth / 2), 0, (WALL_SOLID - 0.3) / 2, cz);
+  solid(boxShape(scene, COUNTER.width / 2, (WALL_SOLID + 0.3) / 2, COUNTER.depth / 2), 0, (WALL_SOLID - 0.3) / 2, cz);
   // Low rails from the counter's ends to the wall: behind it is the Shopkeeper's place.
   for (const side of [-1, 1]) {
     const from = COUNTER.width / 2, to = Math.sqrt(RADIUS ** 2 - cz ** 2), w = to - from + 0.1;
     box(w, 0.6, 0.08, side * (from + w / 2), 0.3, cz, wood);
-    solid(RAPIER.ColliderDesc.cuboid(w / 2, (WALL_SOLID + 0.3) / 2, 0.05), side * (from + w / 2), (WALL_SOLID - 0.3) / 2, cz);
+    solid(boxShape(scene, w / 2, (WALL_SOLID + 0.3) / 2, 0.05), side * (from + w / 2), (WALL_SOLID - 0.3) / 2, cz);
   }
   // The shelf on the back wall, with folded shirts in the Outfits' colours.
   box(1.6, 0.05, 0.3, 0, 1.0, -RADIUS + 0.35, wood);
@@ -268,8 +267,8 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     const sx = t.x + Math.sin(t.seat) * 0.5, sz = t.z + Math.cos(t.seat) * 0.5;
     const stool = MeshBuilder.CreateCylinder("stool", { height: 0.3, diameter: 0.3, tessellation: 12 }, scene);
     stool.position.set(sx, 0.15, sz); inside.push(paint(stool, new Color3(0.6, 0.18, 0.2)));
-    solid(RAPIER.ColliderDesc.cylinder((WALL_SOLID + 0.3) / 2, 0.36), t.x, (WALL_SOLID - 0.3) / 2, t.z);
-    solid(RAPIER.ColliderDesc.cylinder((WALL_SOLID + 0.3) / 2, 0.28), sx, (WALL_SOLID - 0.3) / 2, sz);
+    solid(cylinder(scene, (WALL_SOLID + 0.3) / 2, 0.36), t.x, (WALL_SOLID - 0.3) / 2, t.z);
+    solid(cylinder(scene, (WALL_SOLID + 0.3) / 2, 0.28), sx, (WALL_SOLID - 0.3) / 2, sz);
   }
   merge("shop-cafe", inside, solidMat, root);
   // Lamps over the tables and the counter, warm, hanging from the roof: glowing a little by day, more at night.
