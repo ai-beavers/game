@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 HERE = Path(__file__).parent
 args = argparse.ArgumentParser()
@@ -36,6 +37,10 @@ def load(view):
     colour, alpha = rgba[..., :3], np.clip((rgba[..., 3] - 6) / 244, 0, 1)
     # A matte's leftovers along the outline: pure red and yellow, nearly clear.
     alpha[(colour.max(axis=2) - colour.min(axis=2) > 180) & (alpha < .6)] = 0
+    # Whiskers and single hairs standing out of the outline become shards of mesh on the muzzle: whatever is thinner
+    # than about a hundredth of the picture goes. Whiskers lying over the fur stay, as colour.
+    thin = max(2, round(min(alpha.shape)/150))
+    alpha *= ndimage.binary_dilation(ndimage.binary_opening(alpha > .5, iterations=thin), iterations=1)
     solid = alpha > .5
     ys, xs = np.nonzero(solid)
     top, bottom, left, right = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1

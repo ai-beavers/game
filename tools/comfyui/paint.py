@@ -1,6 +1,10 @@
 """Paints our pictures of the animal onto the model ComfyUI made of it.
 
-    Blender -b --factory-startup -P paint.py -- river-kit ~/dev/3d-gen/ComfyUI
+    Blender -b --factory-startup -P paint.py -- river-kit ~/dev/3d-gen/ComfyUI [made from] [painted with]
+
+"made from" are the views the model was generated from (generate.py --views; all four if left out), "painted with"
+the views to paint on (the same if left out). Painting with left,right alone suits pictures whose front and back do
+not agree with the side: the model's head follows the side picture, so only that one lands on it where it belongs.
 
 Reads ComfyUI's newest output/3d/<name>_*.glb and the four views views.py left in its input folder
 (<name>-front-rgba.png and so on), and writes output/3d/<name>-painted.glb: the same mesh with a new colour map.
@@ -22,7 +26,11 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-name, comfy = sys.argv[sys.argv.index("--")+1:][:2]
+name, comfy, *views = sys.argv[sys.argv.index("--")+1:]
+# The model stands with the first of the views it was made from as its front.
+AZIMUTH = {"front": 0, "left": 90, "back": 180, "right": 270}
+made = views[0].split(",") if views else list(AZIMUTH)
+views = views[1].split(",") if len(views) > 1 else made
 comfy = Path(comfy).expanduser()
 model = max((comfy / "output" / "3d").glob(f"{name}_*.glb"), key=lambda f: f.stat().st_mtime)
 FOV, PAD, SIZE, POWER, OWN = math.radians(20), 1.1, 4096, 3.0, .04
@@ -69,7 +77,8 @@ own = nodes.new("ShaderNodeValue")
 own.outputs[0].default_value = OWN
 colour, weights = vector("SCALE", bsdf.inputs["Base Color"].links[0].from_socket, scale=own.outputs[0]), own.outputs[0]
 distance = PAD*.5/math.tan(FOV/2)
-for view, azimuth in (("front", 0), ("left", 90), ("back", 180), ("right", 270)):
+for view in views:
+    azimuth = AZIMUTH[view]-AZIMUTH[made[0]]
     behind = Vector((math.sin(math.radians(azimuth)), -math.cos(math.radians(azimuth)), 0))
     camera = bpy.data.objects.new(view, bpy.data.cameras.new(view))
     scene.collection.objects.link(camera)
@@ -109,6 +118,12 @@ for layer in [layer for layer in body.data.uv_layers if layer.name != own_uv]:
     body.data.uv_layers.remove(layer)
 for camera in [o for o in scene.objects if o.type == "CAMERA"]:
     bpy.data.objects.remove(camera)
+body.rotation_mode = "XYZ"  # an imported glb turns by quaternion
+body.rotation_euler.z = math.radians(AZIMUTH[made[0]])  # its nose towards -Y again
+bpy.ops.object.select_all(action="DESELECT")
+body.select_set(True)
+bpy.context.view_layer.objects.active = body
+bpy.ops.object.transform_apply(rotation=True)
 target = model.with_name(f"{name}-painted.glb")
 bpy.ops.export_scene.gltf(filepath=str(target), export_format="GLB", export_image_format="WEBP", export_image_quality=92)
 print("painted", target)

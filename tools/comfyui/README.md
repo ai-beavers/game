@@ -21,12 +21,20 @@ ComfyUI/output/3d/river-kit-painted.glb
 
 ```bash
 cd tools/comfyui
-~/dev/3d-gen/ComfyUI/.venv/bin/python views.py river-kit --comfy ~/dev/3d-gen/ComfyUI   # then look at river-kit-views.png
-~/dev/3d-gen/ComfyUI/.venv/bin/python generate.py river-kit                             # about 8 minutes on an M4 Max
-/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P paint.py -- river-kit ~/dev/3d-gen/ComfyUI
+C=~/dev/3d-gen/ComfyUI
+$C/.venv/bin/python views.py river-kit-smooth --comfy $C        # then look at river-kit-smooth-views.png
+$C/.venv/bin/python generate.py river-kit-smooth                # about 8 minutes on an M4 Max
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P paint.py -- river-kit-smooth $C front,left,back,right left,right
+cd ../blender
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P hide.py -- $C/output/3d/river-kit-smooth-painted.glb kit-hide.glb 0.58 15000
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P kit.py -- ../../assets/kit.glb
 ```
 
-Another animal: a folder beside `river-kit/` with its three pictures, and its name in both commands. A second number
+The last two lines make the game's model: `hide.py` cuts the sculpt to 15,000 triangles and bakes its colour and
+relief into two maps, `kit.py` lays the skeleton into it and writes the clips.
+
+`river-kit/` holds the first, furry pictures of the kit, kept to show what does not work.
+Another animal: a folder beside `river-kit-smooth/` with its three pictures, and its name in both commands. A second number
 after the name in `generate.py` is added to the seeds: another try from the same pictures.
 
 ## The pictures
@@ -39,13 +47,22 @@ The model builds what the pictures agree on and smears what they do not, so:
   the picture tool allows.
 - The side picture faces picture-right. `views.py` mirrors it for the other flank.
 - A transparent ground, no shadow under the animal.
+- A smooth animal, as if of clay: no fur strands, no whiskers. The model builds every strand that stands out of the
+  outline as a lump or a shard of mesh. Fur comes later, as maps and a shader over the clean body.
+- Nothing in a picture that another picture places elsewhere. Pictures drawn one by one are never quite one animal,
+  and the model builds both versions: a tail seen between the legs in the front picture became a lump under the
+  belly, eyes looking forward in the front picture a second pair beside the ones of the side picture. So such things
+  are painted out of the front picture (`river-kit-smooth/front.png`; as it was drawn: `front-as-drawn.png`) and the
+  model is coloured from the side pictures alone (`paint.py … left,right`), which its head follows most closely.
+  One turnaround sheet drawn as a single orthographic picture would spare all of this.
 
 `views.py` explains at its top which view goes where; the side views swapped is the mistake that looks like a broken
 model (two tails, the chest's fur on the rump).
 
 ## Setting ComfyUI up, once
 
-Tried on an M4 Max with 128 GB of memory; the models take 9 GB of disk.
+Tried on an M4 Max with 128 GB of memory; the models take 14 GB of disk. The model is the full-precision one: ComfyUI's template
+takes the 8-bit one (`pixal3d_multiview_int8_convrot.safetensors`, half the size), which is no faster here and a little rougher.
 
 ```bash
 git clone https://github.com/Comfy-Org/ComfyUI.git ~/dev/3d-gen/ComfyUI && cd ~/dev/3d-gen/ComfyUI
@@ -54,7 +71,7 @@ uv venv .venv --python python3.11 && uv pip install --python .venv/bin/python -r
 gh pr diff 17460 -R Comfy-Org/ComfyUI | git apply      # until it is merged: see below
 hf download Comfy-Org/Pixal3D --local-dir models \
   vae/trellis_2_texture_vae_bf16.safetensors vae/trellis_2_shape_vae_bf16.safetensors \
-  clip_vision/dino_v3_L_naf_fp32.safetensors diffusion_models/pixal3d_multiview_int8_convrot.safetensors
+  clip_vision/dino_v3_L_naf_fp32.safetensors diffusion_models/pixal3d_multiview_bf16.safetensors
 .venv/bin/python main.py --listen 127.0.0.1 --port 8288    # leave it running; generate.py talks to this port
 ```
 
