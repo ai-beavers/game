@@ -184,6 +184,10 @@ _Avoid_: NPC, AI player
 A creature of the world that no player steers: ducks, fish, deer, the bear.
 _Avoid_: NPC, mob, wildlife entity
 
+**River kit**:
+The beaver's child: a small beaver on four legs that keeps to the player's beaver, trots after it over the meadow and runs to catch up. Left standing it noses in the ground, looks about or sits. It never goes into the water: when the beaver swims off, it waits on the bank. Each player has their own, and no one else sees it.
+_Avoid_: pet, companion, follower, baby beaver, cub, pup
+
 **Bear**:
 The one animal that goes for the beaver instead of fleeing from it. By day it comes running out of the far forest into the wide meadow between where the first bank stood and the bank, where it ambles about, noses and digs in the ground, looks about and sits; when it notices the player's beaver on land there, it rears up, charges and swipes at it. It never goes into the water and never comes nearer the pond than where the first bank stood. Each player has their own, and no one else sees it.
 _Avoid_: bot (a bot is a player), enemy, monster, boss, mob, predator, threat
