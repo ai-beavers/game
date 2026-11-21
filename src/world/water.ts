@@ -3,23 +3,35 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Plane } from "@babylonjs/core/Maths/math.plane.js";
+import { MirrorTexture } from "@babylonjs/core/Materials/Textures/mirrorTexture.js";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { Stage } from "../engine.ts";
 import { daylightOf } from "../light.ts";
 import { POND, SUNSET, WATER_LEVEL, heightAt } from "./terrain.ts";
 
 // The pond: one flat sheet at the live water level, drawn once, alpha-blended over the ground and whatever is under
 // it (no second render of the scene). Everything is made up in its one shader:
-// - its colour above is the sky of the hour as the dome draws it (horizon to zenith, clouds), mirrored through gently
-//   moving ripples, with a darker band low down where the bank and the trees would mirror (none where the evening sun
-//   goes down), and a glint of the light that throws the shadows: the sun by day, the moon's path by night;
+// - its colour above is what it mirrors: on high quality the world itself, drawn once more upside down at half size
+//   (a MirrorTexture: the sky, the trees, the bank, whoever stands there) and broken up by the ripples; else the sky of
+//   the hour as the dome draws it (horizon to zenith, clouds), with a darker band low down where the bank and the
+//   trees would mirror (none where the evening sun goes down). And a glint of the light that throws the shadows: the
+//   sun by day, the moon's path by night;
 // - how much of that shows is a Fresnel falloff: looking down you see into it, at a grazing look you see sky;
 // - under the surface, the light that comes back out fades from the ground itself (the bank shows through) to a deep
-//   colour, by how much water a look passes through; the ground's depth below the sheet is kept per vertex and the
-//   live level added, so the shoreline moves as the dam lifts the pond;
-// - at the shore a thin light line, and a band of darker wet ground just above it: the vertices of the sheet that lie
-//   a little under the bank are laid onto it there, so that band follows the level too.
+//   colour, a dark green-brown pond water that soon hides the bed, by how much water a look passes through; the
+//   ground's depth below the sheet is kept per vertex and the live level added, so the shoreline moves as the dam
+//   lifts the pond;
+// - at the shore a band of darker wet ground, just above the water and just under it: the vertices of the sheet that
+//   lie a little under the bank are laid onto it there, so that band follows the level too.
 // Lit like the grass (sky from above, the sun through its shadow map, the same fog, gamma for the post-process).
 // Drawn before the rings, splashes and fish (alphaIndex), writing no depth, so they all show on and under it.
+// Mirrored: the sky and what stands within MIRRORED m of the pond's middle, listed again every RELIST s (a beaver
+// that walks up joins). Not the pond itself, what is under it (the fish; the bed and sunken things are cut off at the
+// surface by the mirror's clip plane), the grass (thousands of blades for a sliver at the bank) and the effects.
+// The list is kept, not asked for each frame: Babylon's renderListPredicate cost 5 ms a frame (measured, M4 Max), the
+// mirror with this list 1 ms more than without.
+const UNMIRRORED = /^(water|grass|canoe lid|fx|life-(fish|bigfish|minnow))/, MIRRORED = 12, RELIST = 0.5;
 const WET = 0.1; // m of bank above the water that are wet
 
 export function buildWater({ scene, camera }: Stage) {
@@ -47,6 +59,7 @@ export function buildWater({ scene, camera }: Stage) {
     fragmentSource: `precision highp float;
       uniform vec3 eye, horizon, toLight, lightColor, skyLight, fogColor; uniform float time, rain, night, clouds, fogDensity, gamma, edge;
       uniform mat4 lightMatrix; uniform highp sampler2DShadow shadowMap;
+      uniform sampler2D mirror; uniform float mirrorOn; uniform vec2 screen;
       varying float waterDepth; varying vec3 at;
       vec2 grad(vec2 i) { float h = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453) * 6.2832; return vec2(cos(h), sin(h)); }
       vec2 noiseSlope(vec2 p) { // the gradient of 2D gradient noise (quintic), analytic
@@ -68,7 +81,7 @@ export function buildWater({ scene, camera }: Stage) {
         float far = length(eye - at), fog = clamp(exp(-pow(fogDensity * far, 2.)), 0., 1.);
         if (waterDepth < 0.) { // the wet bank just above the water: darker, shinier earth, no water
           float wet = smoothstep(-${WET}, -.01, waterDepth);
-          gl_FragColor = vec4(pow(fogColor, vec3(gamma)) * (1. - fog), (.42 * wet) * fog + (1. - fog) * wet);
+          gl_FragColor = vec4(pow(fogColor, vec3(gamma)) * (1. - fog), (.5 * wet) * fog + (1. - fog) * wet);
           if (wet <= 0.) discard;
           return;
         }
@@ -99,6 +112,11 @@ export function buildWater({ scene, camera }: Stage) {
         float gap = smoothstep(${SUNSET.width}, ${SUNSET.width * 0.5}, abs(atan(sin(off), cos(off))));
         float trees = (1. - smoothstep(.03, mix(.32, .1, gap), up + slope.x * 2.)) * (1. - .7 * gap);
         sky = mix(sky, sky * vec3(.32,.38,.26) * .7, trees * .85);
+        // The world itself, where the mirror is drawn: at this pixel, pushed about by the ripples.
+        if (mirrorOn > 0.) {
+          vec3 seen = texture2D(mirror, gl_FragCoord.xy / screen + slope.xz * .35).rgb;
+          sky = mix(sky, pow(max(seen, 0.), vec3(1. / gamma)), mirrorOn);
+        }
 
         // Light on the water: the sky's, and the sun's (or moon's) through the shadow map.
         vec4 fromLight = lightMatrix * vec4(at, 1.);
@@ -110,8 +128,8 @@ export function buildWater({ scene, camera }: Stage) {
         // Into the water: what lies under it (the bed, the cache, a log) shows by the light left after the way down to
         // it and back up along the look; the rest is the water's own green-blue, a little deeper over the basin.
         float through = waterDepth / max(facing, .25);
-        float murk = min(.9, 1. - exp(-.2 * (waterDepth + through)));
-        vec3 deep = mix(vec3(.10,.25,.22), vec3(.07,.19,.19), smoothstep(.3, 2.5, waterDepth)) * lit;
+        float murk = min(.94, .3 + .7 * (1. - exp(-1.1 * (waterDepth + through)))) * smoothstep(0., .04, waterDepth);
+        vec3 deep = mix(vec3(.13,.15,.08), vec3(.05,.08,.05), smoothstep(.2, 1.8, waterDepth)) * lit;
 
         // The glint: the sun (or moon) in each ripple facet, a tight lobe, so it breaks into sparkles along its path;
         // ripples too fine for a pixel widen and dim it (same light), and the water reflects it by its Fresnel, so it
@@ -122,11 +140,8 @@ export function buildWater({ scene, camera }: Stage) {
         float glint = exp(-wide * (1. - max(0., dot(facet, toLight)))) * wide / lobe * fresnel * mix(100., 250., night);
         vec3 shine = lightColor * glint * shadow * step(0., toLight.y);
         float spark = min(1., max(shine.r, max(shine.g, shine.b)));
-        float shore = smoothstep(.018, .0, waterDepth + .006 * sin(time * 1.4 + p.x * 9. + p.y * 7.)); // a thin light line
         float alpha = fresnel + (1. - fresnel) * murk;
         vec3 colour = (sky * fresnel + deep * (1. - fresnel) * murk) / max(alpha, .001);
-        colour = mix(colour, lit * vec3(.8,.82,.76), shore * .5);
-        alpha = max(alpha, shore * .3);
         float covered = alpha + (1. - alpha) * spark; // a sparkle covers what lies under it
         colour = (colour * alpha + shine) / max(covered, .001);
         alpha = covered;
@@ -134,15 +149,33 @@ export function buildWater({ scene, camera }: Stage) {
         gl_FragColor = vec4(pow(mix(fogColor, colour, fog), vec3(gamma)), clamp(mix(1., alpha, fog), 0., 1.));
       }`,
   }, { attributes: ["position", "depth"], uniforms: ["world", "viewProjection", "level", "eye", "horizon", "toLight", "lightColor",
-    "skyLight", "fogColor", "time", "rain", "night", "clouds", "fogDensity", "gamma", "edge", "lightMatrix"], samplers: ["shadowMap"], needAlphaBlending: true });
+    "skyLight", "fogColor", "time", "rain", "night", "clouds", "fogDensity", "gamma", "edge", "lightMatrix", "mirrorOn", "screen"],
+    samplers: ["shadowMap", "mirror"], needAlphaBlending: true });
   mat.disableDepthWrite = true;
   mat.zOffset = -2; // the wet band lies just over the bank
   mesh.material = mat;
   const light = daylightOf(scene)!;
+  // The mirror: off until reflect(true) (src/features/post: high quality), and only while the eye is above the water.
+  const mirror = new MirrorTexture("pond mirror", { ratio: 0.5 }, scene, false);
+  const mirrored = (m: AbstractMesh) => {
+    // shortcut: meshes whose vertices are rewritten each frame (the flag's cloth, the dam's mud) are left out: drawn in
+    // the mirror too, the cloth was never drawn in the picture itself again (measured, Babylon 9.37; the cause is not
+    // found). Mirror them once that is understood.
+    if (m === mesh || !m.material || m.getVertexBuffer("position")?.isUpdatable() || UNMIRRORED.test(m.name)) return false;
+    const c = m.getBoundingInfo().boundingSphere.centerWorld;
+    return m.name === "sky" || Math.hypot(c.x - POND.x, c.z - POND.z) < MIRRORED;
+  };
+  let listed = -Infinity;
+  mirror.mirrorPlane = new Plane(0, -1, 0, WATER_LEVEL);
+  let reflecting = false, mirroring = false;
+  const engine = scene.getEngine();
   mat.onBindObservable.add(() => { // after the shadow map of this frame is drawn
     const effect = mat.getEffect()!;
     effect.setMatrix("lightMatrix", light.shadows.getTransformMatrix());
     effect.setDepthStencilTexture("shadowMap", light.shadows.getShadowMapForRendering());
+    effect.setTexture("mirror", mirror);
+    effect.setFloat("mirrorOn", mirroring ? 1 : 0);
+    effect.setFloat2("screen", engine.getRenderWidth(), engine.getRenderHeight());
   });
   /** What the sky feature hands over each frame: rain 0 … 1, cloud cover 0 … 1, night 0 … 1 (as the dome has them). */
   const sky = { rain: 0, clouds: 0, night: 0 };
@@ -153,8 +186,18 @@ export function buildWater({ scene, camera }: Stage) {
     get level() { return mesh.position.y; },
     get goal() { return goal; },
     setLevel(level: number, smooth = true) { goal = level; if (!smooth) mesh.position.y = level; },
+    /** Mirrors the world (a second, half-size picture each frame), or only the sky. */
+    reflect(on: boolean) { reflecting = on; },
     update(time: number) {
       mesh.position.y += (goal - mesh.position.y) * (1 - Math.exp(-2 * Math.max(0, time - last)));
+      mirror.mirrorPlane.d = mesh.position.y;
+      const eye = (scene.activeCamera ?? camera).globalPosition, wanted = reflecting && eye.y > mesh.position.y + 0.02;
+      if (wanted !== mirroring) {
+        mirroring = wanted;
+        const targets = scene.customRenderTargets, k = targets.indexOf(mirror);
+        if (wanted && k < 0) targets.push(mirror); else if (!wanted && k >= 0) targets.splice(k, 1);
+      }
+      if (mirroring && (time - listed > RELIST || time < listed)) { listed = time; mirror.renderList = scene.meshes.filter(mirrored); }
       last = time;
       light.sun.diffuse.scaleToRef(light.sun.intensity, lightColor);
       light.sky.diffuse.scaleToRef(light.sky.intensity, skyLight);

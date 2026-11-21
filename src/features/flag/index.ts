@@ -182,9 +182,9 @@ export const create: CreateFeature = (game) => {
       light.intensity = (1.2 + 0.3 * (game.sky?.dark ?? 0)) * strength * flicker;
       const fx = fxOf(scene);
       if (!fx) return;
-      for (let i = 0; i < 6; i++) {
-        const u = (i + 0.2 + Math.random() * 0.6) / 6;
-        fx.fire(at(u, front(u) - 0.02), dt * 14 * strength);
+      for (let i = 0; i < 10; i++) { // close enough that the tongues run together into one ragged band
+        const u = (i + Math.random()) / 10;
+        fx.fire(at(u, front(u) - 0.02), dt * 10 * strength);
       }
     },
   };

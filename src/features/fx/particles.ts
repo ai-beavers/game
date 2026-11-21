@@ -121,11 +121,12 @@ float fxShape(float kind, vec2 p, float seed) {
     return pow(max(0.0, 1.0 - r), 1.5) * smoothstep(0.25, 0.75, fxNoise(p * 3.5 + seed * 23.0));
   }
   if (kind < 8.5) return smoothstep(1.0, 0.5, r);   // seed
-  if (kind < 9.5) {                      // flame: a tongue, wide at the foot, licking up to a point
+  if (kind < 9.5) {                      // flame: a soft tongue, round at the foot, licking up and thinning out
     float y = p.y * 0.5 + 0.5;
-    float lick = (fxNoise(vec2(p.y * 3.0 - seed * 31.0, seed * 7.0)) - 0.5) * 0.35 * y;
-    float half_ = 0.62 * pow(max(0.0, 1.0 - y), 0.7) * (0.85 + 0.3 * fxNoise(p * 4.0 + seed * 11.0));
-    return (1.0 - smoothstep(half_ * 0.35, half_, abs(p.x - lick))) * smoothstep(-1.0, -0.55, p.y);
+    float lick = (fxNoise(vec2(p.y * 2.4 - seed * 31.0, seed * 7.0)) - 0.5) * 0.5 * y;
+    float half_ = 0.7 * pow(max(0.0, 1.0 - y), 0.55) * (0.75 + 0.5 * fxNoise(p * 3.0 + seed * 11.0));
+    float body = 1.0 - smoothstep(0.0, half_ + 0.04, abs(p.x - lick));
+    return body * smoothstep(-1.0, -0.6, p.y) * (1.0 - smoothstep(0.35, 1.0, y) * 0.7);
   }
   float lumps = fxNoise(p * 1.8 + seed * 17.0) * 0.6 + fxNoise(p * 4.0 - seed * 9.0) * 0.4;   // smoke: a soft, loose cloud
   return pow(max(0.0, 1.0 - r * r), 2.2) * smoothstep(0.1, 0.7, lumps);
@@ -139,6 +140,11 @@ float ground = texture2D(groundHeight, groundUv).r;
 if (vMode > 0.5 && vMode < 1.5) cover *= smoothstep(0.0, 0.1, waterLevel - ground);   // rings thin out at the shore
 else if (vMode < 0.5 || vMode > 2.5) cover *= smoothstep(0.0, vSoft, vWorld.y - max(ground, waterLevel - 0.02));
 diffuseColor.rgb = vColor.rgb;
+if (vKind > 8.5 && vKind < 9.5) {      // flame: white-hot low in the middle, its colour at the rim, see-through at the tip
+  float y = vQuad.y * 0.5 + 0.5, heat = (1.0 - smoothstep(0.0, 0.6, y)) * smoothstep(0.55, 0.0, abs(vQuad.x) / max(0.15, 1.0 - y));
+  diffuseColor.rgb = mix(vColor.rgb, vec3(1.9, 1.45, 0.7), heat) * (1.0 + 0.7 * heat);
+  cover *= 0.8 + 0.2 * heat;
+}
 if (vKind > 4.5 && vKind < 5.5) diffuseColor.rgb *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.06, abs(vQuad.x)));  // leaf rib
 diffuseColor.a = vColor.a * cover;
 if (diffuseColor.a < 0.004) discard;

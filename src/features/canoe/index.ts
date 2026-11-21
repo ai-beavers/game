@@ -13,6 +13,7 @@
 // Debug, for bun shot --eval (window.canoe): canoe.place (its middle and heading now) · canoe.bank (where it lies
 // after a reload) · canoe.riding · canoe.at() (stands beside it facing it, empty-pawed).
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -192,6 +193,23 @@ function buildHull(stage: Stage) {
     thwart.position.set(0, gunwaleAt(u) - 0.04, z);
     thwart.material = light;
   }
+  // Dry inside: the pond is one sheet through everything, and would fill the hull below the water line. An unseen lid
+  // across the hull at the water line, drawn after the hull and before the pond (alphaIndex 0, the pond's is 1), keeps
+  // its depth there, so the pond is not drawn in the hull. A little above the line: the hull rocks.
+  const LID = 0.02, waterline = (u: number) => { // half the hull's width at height LID, from the cross-section above
+    const k = keelAt(u), t = (LID - k) / (gunwaleAt(u) - k);
+    return t >= 1 ? 0 : halfBeam(u) * Math.sin(Math.acos(Math.pow(1 - t, 1 / 0.7))) * 0.97;
+  };
+  const sides = [-1, 1].map((s) => Array.from({ length: sections + 1 }, (_, i) => { const u = -1 + 2 * i / sections; return new Vector3(s * waterline(u), LID, u * L); }));
+  const lid = MeshBuilder.CreateRibbon("canoe lid", { pathArray: sides, sideOrientation: Mesh.DOUBLESIDE }, scene);
+  const unseen = new StandardMaterial("canoe lid", scene);
+  unseen.disableColorWrite = true;
+  unseen.forceDepthWrite = true;
+  unseen.alpha = 0.99; // in the transparent pass, sorted by alphaIndex
+  lid.material = unseen;
+  lid.alphaIndex = 0;
+  lid.parent = root;
+  lid.isPickable = false; // receives no shadows, so it throws none (src/light.ts)
   return root;
 }
 
