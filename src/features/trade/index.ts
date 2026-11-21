@@ -70,9 +70,12 @@ export const create: CreateFeature = (game) => {
   // ---- the hotbar: a slot selected brings its good into the paw, or puts it back ----------------------------------
   const hold = newHold(), motion = player.motion;
   player.hold = { get full() { return full(hold); }, free() { hold.want = undefined; } };
-  const selected = () => hold.want ? shelf(ledger).indexOf(hold.want) + 2 : 1;
+  // A good paid for but still on its way to the backpack (a loaf baking) is not on the hotbar yet: no slot selects it.
+  const counted = (id: string) => (ledger.owned[id] ?? 0) - (shared.coming[id] ?? 0);
+  const goods = () => shelf(ledger).filter((id) => counted(id) > 0);
+  const selected = () => hold.want ? goods().indexOf(hold.want) + 2 : 1;
   const select = (n: number) => {
-    const good = n === 1 ? undefined : shelf(ledger)[n - 2];
+    const good = n === 1 ? undefined : goods()[n - 2];
     if (n !== 1 && !good) return; // an empty slot
     if (!good || good === hold.want) { hold.want = undefined; putting = false; return; }
     hold.want = good;
@@ -171,7 +174,7 @@ export const create: CreateFeature = (game) => {
       // The moment a slot key or a d-pad side goes down, once per press (as the lantern's flash).
       const slot = player.input.slot ?? 0, shift = player.input.shift ?? 0;
       if (slot && slot !== slotHeld) select(slot);
-      if (shift && shift !== shiftHeld) { const n = 1 + shelf(ledger).length; select((selected() - 1 + shift + n) % n + 1); }
+      if (shift && shift !== shiftHeld) { const n = 1 + goods().length; select((selected() - 1 + shift + n) % n + 1); }
       slotHeld = slot; shiftHeld = shift;
     },
     update(dt) {
@@ -226,10 +229,9 @@ export const create: CreateFeature = (game) => {
       reach = Math.max(reach, hold.reach);
       if (reach > 0) motion.reachBack = reached = Math.max(motion.reachBack ?? 0, reach);
       else if (reached) { if (motion.reachBack === reached) motion.reachBack = 0; reached = 0; }
-      const counted = (id: string) => (ledger.owned[id] ?? 0) - (shared.coming[id] ?? 0);
-      const goods = shelf(ledger).filter((id) => counted(id) > 0);
+      const shown = goods();
       bar.show(Array.from({ length: SLOTS }, (_, i): SlotView => i === 0 ? { icon: player.carrying ? "stick" : undefined }
-        : { icon: goods[i - 1], count: goods[i - 1] ? counted(goods[i - 1]!) : undefined }), selected());
+        : { icon: shown[i - 1], count: shown[i - 1] ? counted(shown[i - 1]!) : undefined }), selected());
     },
   };
 };

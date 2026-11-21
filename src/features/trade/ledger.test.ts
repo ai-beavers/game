@@ -1,7 +1,8 @@
 // Tests for the trade feature's ledger: paying fills a pile, the price empties it and adds one good, and the counts
 // survive a save and a load. Run: bun test src/features/trade
 import { describe, expect, test } from "bun:test";
-import { backpack, GOODS, goodOf, load, newLedger, offerText, pay, POST_GOODS } from "./ledger.ts";
+import { GOODS, goodOf, label, load, newLedger, offerText, pay, POST_GOODS } from "./ledger.ts";
+import { shelf } from "./hold.ts";
 
 describe("the ledger", () => {
   test("the goods, in order, with their prices in sticks", () => {
@@ -49,7 +50,7 @@ describe("the loaf, baked at the bakery from the same ledger", () => {
     const l = newLedger();
     pay(l, "pinecone"); pay(l, "pinecone");
     for (let k = 0; k < 6; k++) pay(l, "loaf");
-    expect(backpack(l)).toEqual(["Pinecone ×2", "Loaf ×2"]);
+    expect(shelf(l).map((id) => label(id, l.owned[id]!))).toEqual(["Pinecone ×2", "Loaf ×2"]);
   });
   test("an old ledger without loaves loads; a broken loaf count is dropped", () => {
     expect(load('{"version":1,"paid":{"feather":1},"owned":{"shell":2}}')).toEqual({ version: 1, paid: { feather: 1 }, owned: { shell: 2 } });

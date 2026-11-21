@@ -1,6 +1,7 @@
 // Where the bakery stands and where the beaver feeds its oven: plain numbers, so the bots (net/botworld.ts) steer
-// round it as the beaver bumps into it. On flat open ground south of the spawn, beside the way to the far meadow,
-// clear of the building site, the trading post, the Shop and its Calendar board, the Flag and the Old Beaver's place.
+// round it as the beaver bumps into it. On flat open ground south-east of the spawn, east of Mrs. Beaver's way south,
+// clear of the building site, the trading post, the Shop and its Calendar board, the Flag, the Old Beaver's place,
+// and Mrs. Beaver's ways, flowers and tracks.
 // The hut is open to the front, which faces the spawn; the stone oven stands inside against its back wall.
 //
 //   atOven(x, z)       whether feet at (x, z) stand at the oven's mouth to feed it: in front of the hut, within reach
@@ -9,7 +10,7 @@
 import { SPAWN } from "../../world/place.ts";
 
 /** The hut: its middle, its width across the front, its depth front to back and its walls' height, m. */
-export const HUT = { x: 2.1, z: -8.4, width: 2.0, depth: 1.4, wall: 1.25 };
+export const HUT = { x: 4.8, z: -10.2, width: 2.0, depth: 1.4, wall: 1.25 };
 const toSpawn = Math.hypot(SPAWN.x - HUT.x, SPAWN.z - HUT.z);
 /** The way the hut's open front faces (unit, on the ground): towards the spawn, so a beaver coming from there sees
  *  into it. */

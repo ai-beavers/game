@@ -6,7 +6,7 @@
 //   pay(l, "feather")      → { good, paid, bought, count }: one stick onto its pile; at the price the pile empties into
 //                            one good more (undefined: no such good)
 //   offerText(l, "feather") "Trade for feather, 1/2"     · offerText(l, "loaf") "Bake a loaf, 1/3"
-//   backpack(l)             ["Pinecone ×2", "Loaf ×1"]: the backpack row (the hotbar shows them: hold.ts shelf)
+//   label("loaf", 1)        "Loaf ×1": a good in the backpack row as the HUD says it (the row itself: hold.ts shelf)
 //
 // The goods are data: a later good (one made by combining others) is one more entry, not a special case.
 
@@ -58,8 +58,6 @@ export function offerText(l: Ledger, id: string): string {
 
 /** A good in the backpack as the HUD says it: "Loaf ×2". */
 export const label = (id: string, count: number) => `${goodOf(id)!.name[0]!.toUpperCase()}${goodOf(id)!.name.slice(1)} ×${count}`;
-/** The backpack row: every good owned, in GOODS order, with its count. */
-export const backpack = (l: Ledger) => GOODS.filter((g) => (l.owned[g.id] ?? 0) > 0).map((g) => label(g.id, l.owned[g.id]!));
 
 const counts = (v: unknown, most: (id: string) => number) => {
   const out: Record<string, number> = {};
