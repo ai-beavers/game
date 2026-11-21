@@ -47,8 +47,16 @@ The stall in the clearing where the beaver pays sticks for goods. Each good lies
 _Avoid_: shop, store, market
 
 **Good**:
-A thing the beaver gets at the trading post for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell.
+A thing the beaver gets for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell from the trading post, a loaf from the bakery.
 _Avoid_: item, loot, product
+
+**Bakery**:
+The small hut in the clearing with a stone oven, where the beaver feeds sticks into the fire to bake a loaf. The hut is the same for everyone; the fire and what bakes in it are each player's own. Nobody works there.
+_Avoid_: bakehouse, kitchen, oven (that is only the fire inside it), trading post, shop
+
+**Loaf**:
+A loaf of bread baked in the bakery's oven, a good like those of the trading post, kept in the backpack. It is baked, not bought, and the trading post does not hold it.
+_Avoid_: bread item, food, snack
 
 **Hotbar**:
 The row of five slots at the bottom of the screen. The first shows what the beaver carries (a stick) or nothing, the others the goods in the backpack with their counts. Selecting a good's slot (keys 1 to 5, the d-pad's left and right, a tap) brings it out of the backpack into the beaver's left paw; selecting the first slot or the same one again puts it back. A good in the paw still counts in the backpack.

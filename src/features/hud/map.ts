@@ -37,6 +37,8 @@ export interface MapView {
   lodge?: Point;
   /** The Shop (src/features/shop): a round roof with its mirror ball's sparkle. */
   shop?: Point;
+  /** The bakery (src/features/bakery): a little roof with a chimney. */
+  bakery?: Point;
   players?: (Point & { name: string })[];
   /** Where the goal at hand is done, and its chip ("Dam · 14 m"), kept inside the map when it lies beyond. */
   objective?: Point & { label: string };
@@ -146,6 +148,19 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
         g.beginPath();
         g.arc(x, y, Math.max(1.8 * unit, r * 0.3), 0, Math.PI * 2);
         g.fillStyle = "#e8eef5"; g.fill();
+      }
+      if (view.bakery) {
+        // A chimney mark: a gable roof, its chimney standing up on the right, a puff over it.
+        const [x, y] = at(view.bakery), r = Math.max(5 * unit, 1.6 * k);
+        g.beginPath();
+        g.moveTo(x - r, y + r * 0.6); g.lineTo(x - r, y - r * 0.1); g.lineTo(x, y - r * 0.8); g.lineTo(x + r * 0.45, y - r * 0.45);
+        g.lineTo(x + r * 0.45, y - r * 1.05); g.lineTo(x + r * 0.75, y - r * 1.05); g.lineTo(x + r * 0.75, y - r * 0.2);
+        g.lineTo(x + r, y - r * 0.1); g.lineTo(x + r, y + r * 0.6); g.closePath();
+        g.fillStyle = "#b5532f"; g.strokeStyle = "rgba(40,28,14,0.9)";
+        g.fill(); g.stroke();
+        g.beginPath();
+        g.arc(x + r * 0.6, y - r * 1.4, Math.max(1.6 * unit, r * 0.22), 0, Math.PI * 2);
+        g.fillStyle = "rgba(235,235,235,0.85)"; g.fill();
       }
       for (const stick of view.sticks) {
         const [x, y] = at(stick);
