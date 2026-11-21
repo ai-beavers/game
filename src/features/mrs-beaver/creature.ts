@@ -1,10 +1,11 @@
-// What Mrs. Beaver looks like, and the pen she is shut in.
+// What Mrs. Beaver looks like, the pen she is shut in, and the Campfire beside her waiting spot.
 //
 //   const her = await mrsBeaver(stage);   her.beaver.root (move it) · her.update(dt, speed) once a picture, while seen
 //   const pen = buildPen(stage);          pen.root (place it) · pen.dispose()
 //   const dropped = buildDropped(stage);  her flower lying in the grass: dropped.root (place it) · dropped.dispose()
 //   const brush = buildBrush(stage);      the brush pile, built once: brush.place(x, y, z, turn) a pile there (dispose it)
 //   const tracks = buildTracks(stage, at, facing, heightAt)   her paw prints on the ground there · tracks.dispose()
+//   const fire = buildCampfire(stage);    the Campfire's stones, logs and embers: fire.root (place it) · fire.embers(0 … 1)
 //
 // She is a real beaver (loadBeaver), as the Shopkeeper is, but in a coat of her own (a dusky grey-brown, darker and
 // cooler than any player's or the Shopkeeper's), with no shirt, no hat, no apron or bow: a flower behind her left ear
@@ -27,6 +28,7 @@ import { loadBeaver } from "../../beaver/index.ts";
 import type { Stage } from "../../engine.ts";
 import { newMotion } from "../../player/state.ts";
 import { seeded } from "../../world/noise.ts";
+import { CAMPFIRE } from "./reading.ts";
 import { TRAIL } from "./rules.ts";
 
 /** Her coat, linear RGB: a dusky grey-brown. */
@@ -207,6 +209,65 @@ export function buildBrush(stage: Stage) {
     },
   };
 }
+
+/** The Campfire: a ring of grey stones round a bed of embers, four short logs leaning together over it. The stones
+ *  and logs are one mesh in one draw call (the material "stone", so the live tour fades it if it ever hides the
+ *  beaver); the embers a low disc that lights itself, dull enough to stay under the bloom at night. Its flames are the
+ *  fx feature's (index.ts). embers(glow) once a picture: 0 … 1, how brightly they glow now. */
+export function buildCampfire(stage: Stage) {
+  const { scene } = stage, root = new TransformNode("campfire", scene), random = seeded(31), parts: Mesh[] = [];
+  const { ring: R } = CAMPFIRE;
+  const stone = [new Color3(0.42, 0.41, 0.38), new Color3(0.34, 0.33, 0.31), new Color3(0.5, 0.48, 0.44)];
+  const bark = [new Color3(0.33, 0.23, 0.14), new Color3(0.27, 0.19, 0.12)], charred = new Color3(0.08, 0.06, 0.05);
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 + random() * 0.15, s = 0.13 + random() * 0.05;
+    const c = MeshBuilder.CreateIcoSphere("campfire-stone", { radius: s / 2, subdivisions: 1, flat: true }, scene);
+    c.scaling.set(1.2 + random() * 0.3, 0.7 + random() * 0.25, 1);
+    c.position.set(Math.cos(a) * R, s * 0.22, Math.sin(a) * R);
+    c.rotation.y = -a + random() * 0.4;
+    parts.push(paint(c, stone[i % stone.length]!));
+  }
+  // Four logs, their feet on the ring's inside, leaning in to meet over the middle; charred where they meet.
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4, length = 0.4, lean = 0.95;
+    const log = MeshBuilder.CreateCylinder("campfire-log", { height: length, diameter: 0.06, tessellation: 6 }, scene);
+    const dx = -Math.cos(a), dz = -Math.sin(a), out = Math.sin(lean), up = Math.cos(lean), foot = R * 0.75;
+    log.position.set(Math.cos(a) * foot + dx * out * length / 2, up * length / 2 + 0.02, Math.sin(a) * foot + dz * out * length / 2);
+    log.rotationQuaternion = Quaternion.RotationAxis(new Vector3(-dz, 0, dx), -lean);
+    parts.push(paint(log, bark[i % bark.length]!));
+    const tip = MeshBuilder.CreateCylinder("campfire-char", { height: 0.1, diameter: 0.064, tessellation: 6 }, scene);
+    tip.position.set(Math.cos(a) * foot + dx * out * (length - 0.05), up * (length - 0.05) + 0.02, Math.sin(a) * foot + dz * out * (length - 0.05));
+    tip.rotationQuaternion = log.rotationQuaternion.clone();
+    parts.push(paint(tip, charred));
+  }
+  const mesh = Mesh.MergeMeshes(parts, true)!;
+  mesh.name = "campfire";
+  const mat = new StandardMaterial("stone", scene);
+  mat.diffuseColor = Color3.White();
+  mat.specularColor.setAll(0.03);
+  mesh.material = mat;
+  mesh.parent = root;
+  mesh.isPickable = false;
+  mesh.receiveShadows = true;
+  const bed = MeshBuilder.CreateDisc("campfire-embers", { radius: R * 0.75, tessellation: 12 }, scene);
+  bed.rotation.x = Math.PI / 2;
+  bed.position.y = 0.025;
+  bed.parent = root;
+  bed.isPickable = false;
+  const glow = new StandardMaterial("campfire-embers", scene);
+  glow.disableLighting = true;
+  glow.diffuseColor = Color3.Black();
+  glow.specularColor = Color3.Black();
+  glow.emissiveColor = EMBERS.clone();
+  bed.material = glow;
+  return {
+    root,
+    embers(on: number) { EMBERS.scaleToRef(0.75 + 0.25 * on, glow.emissiveColor); },
+    dispose() { root.dispose(false, true); },
+  };
+}
+/** The embers' glow at its brightest, linear RGB: a deep orange, under the bloom threshold. */
+const EMBERS = new Color3(0.62, 0.2, 0.04);
 
 /** Her tracks: a trail TRAIL m long with its middle at `at`, pointing along facing (radians, 0 is +z), pressed into
  *  the ground (heightAt) print by print. One mesh. */
