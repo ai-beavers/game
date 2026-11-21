@@ -195,8 +195,8 @@ body.data.color_attributes.active_color = mask
 uvs = body.data.uv_layers.active.data
 
 # Measured against the reference part by part (in the game, in direct light), the trunk and legs came out a little
-# dark and the tail a little grey: the colour map of each is brought to the reference's.
-TONE = {**{part: (1.1, 1.1, 1.1) for part in ("haunch", "back", "arm", "forearm", "thigh", "shin")}, "tail1": (1.1, 1.0, .95), "tail2": (1.1, 1.0, .95)}
+# dark and the paws light: the colour map of each is brought to the reference's.
+TONE = {**{part: (1.06, 1.06, 1.08) for part in ("haunch", "back", "arm", "forearm", "thigh", "shin")}, "paw": (.76, .74, .68), "foot": (.76, .74, .68)}
 texels = np.array(colour.pixels[:]).reshape(height, width, 4)
 tone = np.ones((height, width, 3))
 for f in body.data.polygons:

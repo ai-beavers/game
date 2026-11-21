@@ -38,7 +38,8 @@ relief into two maps, `kit.py` lays the skeleton into it and writes the clips an
 
 **The river kit itself is made the short way now**, from its one reference picture: `single.py` prepares
 `river-kit/target.png` as the only view, `generate.py river-kit-ref --views front` builds the animal the picture
-shows (16 minutes), `hide.py … 0.58 20000 turn` sets it nose first and cuts it, and `kit.py` rigs it. That model has
+shows (16 minutes), `paint.py -- river-kit-ref $C front front` paints the picture itself onto the side it shows,
+`hide.py … river-kit-ref-painted.glb kit-hide.glb 0.58 20000 turn` sets it nose first and cuts it, and `kit.py` rigs it. That model has
 the reference's shape, face, claws and tail, which the three-picture route below never reached. Use the route below
 for an animal of which there are only drawn views.
 

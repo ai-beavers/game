@@ -4,7 +4,8 @@ For an animal of which there is one good picture, seen from wherever (the river 
 view): the model builds what the picture shows and makes the rest up. Then
 
     python generate.py river-kit-ref --views front
-    Blender -b --factory-startup -P ../blender/hide.py -- <ComfyUI>/output/3d/river-kit-ref_00001.glb kit-hide.glb 0.58 20000 turn
+    Blender -b --factory-startup -P paint.py -- river-kit-ref <ComfyUI> front front
+    Blender -b --factory-startup -P ../blender/hide.py -- <ComfyUI>/output/3d/river-kit-ref-painted.glb kit-hide.glb 0.58 20000 turn
 
 The model stands as the picture saw it: hide.py's "turn" sets it nose first.
 

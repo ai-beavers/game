@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 import bpy
+import numpy as np
 from mathutils import Vector
 
 name, comfy, *views = sys.argv[sys.argv.index("--")+1:]
@@ -113,6 +114,25 @@ painted.image = bpy.data.images.new("Painted coat", SIZE, SIZE, alpha=False)
 nodes.active = painted
 scene.render.engine, scene.cycles.samples, scene.render.bake.margin = "CYCLES", 1, 8
 bpy.ops.object.bake(type="EMIT")
+# Where no picture reaches (the far side of an animal made from one picture) the model's own colour stays, and it is
+# seldom the pictures' tone: a second bake tells where the pictures count, and the model's own colour is brought to
+# their tone there, channel by channel, before it fills the rest.
+share = nodes.new("ShaderNodeTexImage")
+share.image = bpy.data.images.new("Pictures' share", SIZE, SIZE, alpha=False, is_data=True)
+link(number("SUBTRACT", 1.0, number("DIVIDE", OWN, weights)), glow.inputs[0])
+nodes.active = share
+bpy.ops.object.bake(type="EMIT")
+own = bsdf.inputs["Base Color"].links[0].from_node.image
+if tuple(own.size) == (SIZE, SIZE):
+    read = lambda image: np.array(image.pixels[:], np.float32).reshape(SIZE, SIZE, 4)
+    done, before, seen = read(painted.image), read(own), read(share.image)[:, :, :1]
+    sure = seen[:, :, 0] > .8
+    tone = done[sure][:, :3].mean(axis=0)/np.maximum(before[sure][:, :3].mean(axis=0), 1e-4)
+    print("paint: the model's own colour times", [round(float(c), 2) for c in tone], "where no picture reaches")
+    seen = np.clip((seen-.15)/.5, 0, 1)
+    done[:, :, :3] = seen*done[:, :, :3]+(1-seen)*before[:, :, :3]*tone
+    painted.image.pixels.foreach_set(done.ravel())
+nodes.active = painted
 painted.image.pack()
 link(bsdf.outputs[0], out.inputs["Surface"])
 link(painted.outputs["Color"], bsdf.inputs["Base Color"])
