@@ -26,6 +26,8 @@ A new Babylon light, fog setting or shadow does not reach them. Whatever should 
 
 The sky dome, rain, mist and fireflies (`src/features/sky/dome.ts`, `effects.ts`) and the particles (`src/features/fx/particles.ts`) are custom shaders too and take no scene light at all.
 
+The golden hour (`game.sky.golden`: a low sun in clear air) is made in `src/features/sky/index.ts` from what every surface already takes: a stronger sun, a blue sky light, warm highlights and more bloom, and a fog that turns to sunlit air when the camera looks into the sun. That fog is one colour for the whole picture, not a term per pixel.
+
 - Keep a term per vertex where the shader lights per vertex.
 - A uniform that is zero when the effect is off costs nothing and recompiles nothing. A new light or a changed define recompiles every material when it switches on: a visible hitch.
 - Every Babylon light takes a light slot in every standard and PBR material all the time, also at intensity 0.
