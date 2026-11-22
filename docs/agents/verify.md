@@ -32,7 +32,7 @@ A fixed picture for comparing before and after: `?play&hour=13&clock=stop&weathe
 ## Order of checks
 
 1. **While building**: the dev server reloads the page on every save (`PORT=<your port> bun server.ts`). Play only your own station: `?play&tour=fast&station=<Name>` in a picture, or `bun run tour --once --here --port <your tour port> --station "<Name>"` where Chrome runs.
-2. **Once at the end**: `bun run check`, then the whole tour with `bun run tour --once --here --port <your tour port> --repeat 2`. Exit code 0 means every station passed. The first run starts in a fresh world, so the lodge and cache stations are skipped until the second.
+2. **Once at the end**: each station you added or changed, once in real time (`?play&tour&station=<Name>`, or `--speed real`): the fast tour hops over the ways the beaver walks, so a way that is blocked shows only there. Then `bun run check`, then the whole tour with `bun run tour --once --here --port <your tour port> --repeat 2`. Exit code 0 means every station passed. The first run starts in a fresh world, so the lodge and cache stations are skipped until the second.
 3. **Once at the end, for shader or asset changes**: the production build, `bun run build`, and one picture from `NODE_ENV=production PORT=<your port> bun server.ts`. The bundle holds only the shader includes that `src/main.ts` imports.
 
 A station that fails on an untouched `main` in the same way is a flake of the tour, not of your change: report it with the failing line instead of changing the station.

@@ -290,7 +290,9 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     await until(picked, 2, "pressed E at a stick, nothing in the hand");
   };
   // The sticks left may all lie where no beaver gets at them (under a log, in deep water): then a tree is felled for
-  // wood, and with none standing the tour's world is used up, started anew after the round.
+  // wood. A tree grown back gives only the sticks that are not in the dam (build/rules.ts, used), late in a world's
+  // days none at all: then the next tree. With no tree left that gives one the tour's world is used up, started
+  // anew after the round.
   let usedUp = false;
   /** A stick into the hand: one lying about, or, when none can be got at, from a tree felled and gnawed into wood. */
   const fetchStick = async () => {
@@ -299,11 +301,13 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     if (loose().length) {
       try { return await pickUp(); } catch (e) { why = (e as Error).message; }
     }
-    const i = standingTrees(needBuild())[0];
-    if (i === undefined) { usedUp = true; skip(`no wood left: ${why}, no tree stands`); }
-    await fell(i);
-    await split(i);
-    await pickUp();
+    for (const i of standingTrees(needBuild())) {
+      await fell(i);
+      await split(i);
+      if (loose().some((s) => !passed.has(s))) return pickUp();
+    }
+    usedUp = true;
+    skip(`no wood left: ${why}, no tree gives a stick`);
   };
   /** Builds sticks into the dam (or onto the lodge) until it holds `upTo`, fetching each; checks every stick goes in
    *  and the moments a player sees: half a dam, the dam finished, the lodge standing. */
