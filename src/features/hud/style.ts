@@ -35,7 +35,7 @@ export const FONT = "Nunito, system-ui, sans-serif";
  *  outline and a drop shadow, the key in dark ink on the top. */
 export const CAP = { back: PAPER, side: "#B09670", edge: "rgba(43,29,18,0.55)", shine: "rgba(255,255,255,0.85)", ink: INK, radius: 5, depth: 0.2 };
 /** The hotbar (src/features/trade, src/player): HOTBAR slots in a row in its box, each `slot` px square. */
-export const HOTBAR = 5;
+export const HOTBAR = 6;
 export const SLOT = { back: "rgba(255,246,228,0.06)", edge: "rgba(255,246,228,0.16)", chosen: GOLD, radius: 10 };
 /** The players on the map and its legend. */
 export const PLAYERS = "#7FC8F8", STICKS = "#E8D3A8", BROWN = "#8B5A2B", FLOWER = "#F29BB8";

@@ -40,6 +40,8 @@ export interface MapView {
   shop?: Point;
   /** The bakery (src/features/bakery): a little roof with a chimney. */
   bakery?: Point;
+  /** The workbench (src/features/workbench): a stump seen from above, its rings. */
+  workbench?: Point;
   players?: (Point & { name: string })[];
   /** Where the goal at hand is done, and its chip ("Dam · 14 m"), kept inside the map when it lies beyond. */
   objective?: Point & { label: string };
@@ -166,6 +168,18 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
         g.beginPath();
         g.arc(x + r * 0.6, y - r * 1.4, Math.max(1.6 * unit, r * 0.22), 0, Math.PI * 2);
         g.fillStyle = "rgba(235,235,235,0.85)"; g.fill();
+      }
+      if (view.workbench) {
+        // A stump from above: a ring of bark round the pale cut top, a growth ring in it.
+        const [x, y] = at(view.workbench), r = Math.max(4 * unit, 1.1 * k);
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.fillStyle = "#d2a874"; g.strokeStyle = "#5e3d24"; g.lineWidth = Math.max(1.5, r * 0.35);
+        g.fill(); g.stroke();
+        g.beginPath();
+        g.arc(x, y, r * 0.45, 0, Math.PI * 2);
+        g.strokeStyle = "#a77a4a"; g.lineWidth = Math.max(1, r * 0.15); g.stroke();
+        g.lineWidth = 1.2 * unit;
       }
       for (const stick of view.sticks) {
         const [x, y] = at(stick);
