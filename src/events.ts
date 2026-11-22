@@ -88,10 +88,10 @@ export interface GameEvents {
    *  a tail slap landed on it (health: what it has left, 0: driven off). place: where the bear is. */
   bearNotices: { place: Vector3 };
   bearSlapped: { place: Vector3; health: number };
-  /** From the river kit feature (src/features/river-kit), about the local player's own kit: it calls (glad: the chirp
-   *  when it has caught up; else the anxious call of one left behind), and it begins to shake itself dry, for
-   *  `seconds`. place: the middle of its trunk. */
-  kitCalls: { place: Vector3; glad: boolean };
+  /** From the river kit feature (src/features/river-kit), about the local player's own kit: it calls (left: the anxious
+   *  call of one left behind; caught: the chirp when it has caught up; doze: a soft squeak in its sleep), and it
+   *  begins to shake itself dry, for `seconds`. place: the middle of its trunk. */
+  kitCalls: { place: Vector3; call: "left" | "caught" | "doze" };
   kitShakes: { place: Vector3; seconds: number };
   /** A change to the build feature's world state. remote false: made here, after it was applied (send it to others);
    *  emit it with remote true to apply a change that came from another player. */

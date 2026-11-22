@@ -124,8 +124,9 @@ export const create: CreateFeature = (game) => {
   // The Bear growls as it notices the beaver, and grunts when a tail slap lands (src/features/bear).
   events.on("bearNotices", ({ place }) => play("growl", place));
   events.on("bearSlapped", ({ place }) => { play("smack", place); play("grunt", place); });
-  // The River kit calls after a beaver that left it behind, and chirps when it has caught up (src/features/river-kit).
-  events.on("kitCalls", ({ place, glad }) => play(glad ? "chirp" : "squeak", place));
+  // The River kit calls after a beaver that left it behind, chirps when it has caught up, and squeaks softly in its
+  // sleep, under the scene rather than over it (src/features/river-kit).
+  events.on("kitCalls", ({ place, call }) => call === "doze" ? play("doze", place, 1, "ambience") : play(call === "caught" ? "chirp" : "squeak", place));
 
   // A burning Flag crackles until it is burnt down (src/features/flag).
   let fire: Vector3 | undefined, crackle = 0;

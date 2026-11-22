@@ -4,19 +4,26 @@
 
 The hide (mesh, colour and relief of the fur) is tools/blender/kit-hide.glb, made by tools/comfyui from the kit's
 reference picture alone (river-kit/target.png, single.py) and cut to game size by hide.py: the reference's own
-animal, with its eyes, nose, mouth, claws and scaly tail. Everything that moves is from here: 18 bones laid into it
-(the bear's sixteen and two for the tail), its skin bound to them, and the clips, each a pose as a function of time.
-Added to the hide: glossy eyeballs, whiskers, cards of long hair, and the fur shader's mask.
+animal, with its eyes, nose, mouth, claws and scaly tail. Everything that moves is from here: 38 bones laid into it
+(the bear's sixteen, two for the tail and five digits on each paw), its skin bound to them, and the clips, each a pose
+as a function of time.
+Added to the hide: glossy eyeballs, whiskers, cards of long hair, and the fur shader's mask; its lips cut apart, so that
+the jaw opens the mouth, with a dark lining inside and orange incisors.
 
 Metres, 0.58 m from nose to tail tip, facing -Y (+Z in glTF), standing on z = 0.
 Clips: stand (as the hide stands), walk (a waddle, one stride of WALK m), run (a bound, hind pair then fore pair, one stride of RUN m),
 forage (nose to the ground, a paw scraping), look (nose in the wind), sit (down on its haunches), up (upright on its
-haunches, paws at its chest, looking round), groom (upright, both paws rubbing its muzzle), lie (flat on its belly,
-hind legs out behind, head up), sleep (as it lies, chin on the ground, nose and tail curled to its left, breathing). A clip's stride is the way it goes in one loop:
+haunches, paws curled at its chest, arms close to its body, looking round), tall (up on its hind feet, its tail behind
+it, arms close to its body, looking round), lean (up on its hind feet, both fore paws on what is before it), touch
+(its right fore paw out to pat what is before it, three times), groom (upright, both paws rubbing its muzzle), lie (flat on its belly,
+hind legs out behind, head up), sleep (over on its side as a seal pup dozes, chin on the ground, its upper fore paw at its chest, breathing). A clip's stride is the way it goes in one loop:
 the game plays walk and run by the distance covered, so the feet do not slide.
 Two are played once, from the pose before them to standing: shake (1 s: it shakes itself dry, a fast twist from side
-to side that runs from the head down to the tail) and wake (2 s, from sleep: the head comes up into a yawn, the hind
+to side that runs from the head down to the tail) and wake (2 s, from sleep: it rolls up off its side as the head comes up into a yawn, the hind
 feet are gathered, the rump goes up over the chest and the reached-out fore paws in a stretch, then it stands).
+Four more are played once, from sleep back to sleep, as it stirs in its sleep (STIRS): rub (3 s: its upper fore paw
+rubs its face), stretch (2.5 s: its hind feet lift, spread and stretch out long), nuzzle (2 s: its chin along the
+ground as it rocks) and peep (1.5 s: its head comes up, mouth open in a squeak).
 
 The hide's vertex colours are the coat mask of the game's fur shader (src/beaver/fur.ts): red is the hair's length,
 none on the tail, the eyes and the nose, short on the paws and the face.
@@ -30,6 +37,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import bmesh
 import bpy
 import numpy as np
 from mathutils import Quaternion, Vector
@@ -74,6 +82,31 @@ HIP = (-.015, .17, .17)
 NECK = (-.005, -.03, .235)
 TAIL = (-.06, .24, .075)
 tip = min(body.data.vertices, key=lambda v: v.co.y).co.copy()  # of the nose
+# The mouth: the hide's lips are sculpted but grown together. The skin is cut along the lip line, from the front of
+# the muzzle back to the corners of the mouth: m above the ground where the lips meet in front, how much the line
+# drops for each m back, m behind the nose's tip of the corners, m the lining of the mouth lies inside the skin, and
+# m behind the nose's tip of the incisors. What lies below the line goes with the jaw.
+MOUTH = {"front": .229, "slope": -.4, "corner": .035,
+         "sunk": .0032, "teeth": .011}
+lip = lambda c: MOUTH["front"]+MOUTH["slope"]*(c.y-tip.y)  # z of the lip line at c
+chin = lambda c: c.z < lip(c) and c.z > .15 and c.y < -.11  # below the lip line, in the head
+mesh = bmesh.new()
+mesh.from_mesh(body.data)
+mesh.verts.ensure_lookup_table()
+# The lining of the mouth: the skin round the lips as it is before the cut, sunk a little into the head, so that it
+# spans the opening when the jaw drops and lies hidden behind the lips while they are shut.
+near = lambda c: c.y < tip.y+MOUTH["corner"]+.008 and -.012 < c.z-lip(c) < .007
+around = [f for f in mesh.faces if near(f.calc_center_median()) and f.normal.y < .5]
+used = sorted({v.index for f in around for v in f.verts})
+lining = ([mesh.verts[i].co-mesh.verts[i].normal*MOUTH["sunk"] for i in used], [tuple(used.index(v.index) for v in f.verts) for f in around])
+lower = {f for f in mesh.faces if chin(f.calc_center_median())}
+cut = [e for e in mesh.edges if len(e.link_faces) == 2 and (e.link_faces[0] in lower) != (e.link_faces[1] in lower)
+       and max(v.co.y for v in e.verts) < tip.y+MOUTH["corner"]]
+bmesh.ops.split_edges(mesh, edges=cut)
+jawed = {v.index for f in mesh.faces if f in lower for v in f.verts}
+mesh.to_mesh(body.data)
+mesh.free()
+print("kit: the mouth cut along", len(cut), "edges;", len(jawed), "vertices below it")
 bones = {"haunch": (HIP, (-.02, .21, .15), None), "back": (HIP, NECK, "haunch"),
          "skull": (NECK, tuple(tip), "back"),
          "jaw": ((-.015, -.13, .235), (tip.x, tip.y+.01, tip.z-.03), "skull"),
@@ -98,10 +131,54 @@ for fore in (True, False):
         for name, a, b in zip(names, points, points[1:]):
             bones[name] = a, b, parent
             parent = name
+# The digits, five on each paw: where its skin reaches furthest ahead, at least DIGIT m apart across the paw, are the
+# tips of its claws; each digit is a bone from its knuckle, KNUCKLE of the way from the wrist to the toes, to that tip,
+# named after its paw: paw_R.0 … paw_R.4 from the paw's left to its right as it stands.
+DIGIT, KNUCKLE = .0065, .5
+digits = {}
+for (fore, side), ((a, b, c, d), names) in legs.items():
+    wrist, toes = Vector(c), Vector(d)
+    axis, length = (toes-wrist).normalized(), (toes-wrist).length
+    across = axis.cross(Vector((0, 0, 1))).normalized()
+    reach = []
+    for v in body.data.vertices:
+        r = v.co-wrist
+        s = r.dot(axis)
+        if .55*length < s < 1.5*length and (r-axis*s).length < .04 and v.co.z < .05:
+            reach.append((s, r.dot(across), v.co.copy()))
+    tips = []
+    for s, lat, co in sorted(reach, key=lambda x: -x[0]):
+        if all(abs(lat-other[1]) > DIGIT for other in tips):
+            tips.append((s, lat, co))
+        if len(tips) == 5:
+            break
+    assert len(tips) == 5, f"found {len(tips)} digits on {names[2]}"
+    for i, (s, lat, tip_at) in enumerate(sorted(tips, key=lambda t: t[1])):
+        knuckle = wrist+axis*KNUCKLE*length+across*lat*.8
+        name = f"{names[2]}.{i}"
+        bones[name] = tuple(knuckle), tuple(tip_at), names[2]
+        digits[name] = fore, side, i, wrist, axis, length
+print("kit:", len(digits), "digits")
 # The poses are the bear's (tools/blender/bear.py), whose hip stands .92 m high: every length in them times M.
 M = HIP[2]/.92
 WALK, RUN = 1.5*M, 2.4*M
 SHAKE = .65  # rad its head rolls to each side when it shakes itself dry
+# Asleep it lies over on its side, as a seal pup dozes (the reference: a grey seal pup at Donna Nook): rad it rolls
+# over (onto its right side, its left up), and breaths in the sleep's loop of 4 s. Now and then it stirs, each stir a
+# clip of its own from the sleep's pose back to it, s long (src/features/river-kit/rules.ts keeps the same, STIRS, and
+# picks them): its upper fore paw rubs its face (STROKES times), its hind feet lift, spread and stretch out long, its
+# chin nuzzles the ground as it rocks, or its head comes up, its mouth open in a squeak.
+SIDE, BREATHS, STROKES = -1.3, 2, 4
+STIRS = {"rub": 3, "stretch": 2.5, "nuzzle": 2, "peep": 1.5}
+ARMS = -.4, 2.9, 1.5  # rad, on its haunches or its feet: arm, forearm and paw, held close to its body
+SPREAD = .35  # rad the outer digits turn apart, spread
+DRAPE = .6, .4, -.4  # rad the upper fore and hind legs lie down over it, and the lower ones are lifted along the ground
+RAISED = .1  # of the bear's hip height, its hips up from where they are when it lies on its belly: on its side it is narrower
+# Asleep, its head lies on its cheek and its back curls a little towards its belly (rad: the head's turn down to the
+# ground, its nose down, its back's curl), and its fore paws are curled at its chest (m of the bear's, ahead of the
+# shoulder: the upper paw and the lower, tucked under it; rad the paws are bent in).
+REST = {"head": -.4, "nose": -.6, "curl": -.15, "paws": (-.1, -.25), "bent": 1.0}
+RUBBING = 1.3, 2.3, 2.0  # rad: its arm, forearm and paw at its face, as the groom has them
 print("kit: strides", round(WALK, 3), round(RUN, 3), "m; hip", [round(c, 3) for c in HIP])
 
 
@@ -116,9 +193,13 @@ for name, (a, b, parent) in bones.items():
     bone.head, bone.tail = a, b
     if parent:
         bone.parent = armature.edit_bones[parent]
+for name in digits:  # a digit's palm side is its paw's: it curls towards the palm about its own X
+    armature.edit_bones[name].align_roll(armature.edit_bones[name].parent.z_axis)
 bpy.ops.object.mode_set(mode="OBJECT")
-# The mouth is shut in the hide and has no inside: the jaw is in the skeleton, but carries no skin.
-armature.bones["jaw"].use_deform = False
+# The jaw and the digits take no share of the heat below: too small for its shell, their skin is given to them by
+# hand, once the rest is weighed.
+for name in ["jaw", *digits]:
+    armature.bones[name].use_deform = False
 # Blender finds each bone's share of the skin by letting heat flow over it, which needs one closed surface. The
 # hide is a generated sculpt with holes and loose bits (whiskers), so the heat flows over a closed copy of it, a
 # shell of small cubes melted together, and each vertex of the hide takes the weights of the shell beside it.
@@ -154,6 +235,41 @@ muzzle = [v.index for v in body.data.vertices if v.co.y < tip.y+.09 and v.co.z >
 for group in body.vertex_groups:
     group.remove(muzzle)
 skull.add(muzzle, 1, "REPLACE")
+# The lower lip and the chin go with the jaw, all of them in front and less towards its hinge below the ear.
+hinge = bones["jaw"][0][1]-.005
+jaw = body.vertex_groups.new(name="jaw")
+for i in jawed:
+    v = body.data.vertices[i]
+    share = ramp((hinge-v.co.y)/.03)
+    if share > 0:
+        for group in body.vertex_groups:
+            if group != jaw:
+                group.remove([i])
+        jaw.add([i], share, "REPLACE")
+        skull.add([i], 1-share, "REPLACE")
+armature.bones["jaw"].use_deform = True
+# A paw's skin beyond its knuckles goes with its digits: with the nearest most, shared with the next between them.
+for paw in {name.split(".")[0] for name in digits}:
+    group, mine = body.vertex_groups[paw], [name for name in digits if name.startswith(paw+".")]
+    segments = [(Vector(bones[name][0]), Vector(bones[name][1])) for name in mine]
+    fore, side, _, wrist, axis, length = digits[mine[0]]
+    for v in body.data.vertices:
+        held = next((g.weight for g in v.groups if g.group == group.index), 0)
+        along = ramp(((v.co-wrist).dot(axis)-(KNUCKLE-.12)*length)/(.2*length))
+        if held <= 0 or along <= 0:
+            continue
+        gaps = []
+        for head, tail in segments:
+            k = clamp((v.co-head).dot(tail-head)/(tail-head).length_squared)
+            gaps.append(max(1e-4, (v.co-head.lerp(tail, k)).length))
+        near = sorted(range(len(mine)), key=lambda i: gaps[i])[:2]
+        shares = [1/gaps[i]**4 for i in near]
+        for i, share in zip(near, shares):
+            body.vertex_groups.get(mine[i]) or body.vertex_groups.new(name=mine[i])
+            body.vertex_groups[mine[i]].add([v.index], held*along*share/sum(shares), "REPLACE")
+        group.add([v.index], held*(1-along), "REPLACE")
+for name in digits:
+    armature.bones[name].use_deform = True
 bpy.ops.object.vertex_group_limit_total(limit=4)
 bpy.ops.object.vertex_group_normalize_all(lock_active=False)
 
@@ -351,6 +467,77 @@ def onto(things, bone):
 
 
 onto(eyes, "skull")
+# A fore paw at its face lies on it, its palm (the paw's +Z) to the face and its claws up along it: to above the eye
+# of its own side (rubbing its face in its sleep) or to the eye (grooming its muzzle). Each paw turns so only as far
+# as it is at the face (AIM, keyed in each clip); asleep, its palms are turned to its face as well.
+face = (sockets[1]+sockets[-1])/2
+face = face.lerp(tip, .5)-Vector((0, 0, .01))  # the middle of the face, between the eyes and the nose
+aims = {}
+for side, sign in (("L", 1), ("R", -1)):
+    for name, at in (("cheek", sockets[sign]+Vector((0, .005, .018))), ("muzzle", sockets[sign].lerp(tip, .3)), ("palm", face)):
+        mark = bpy.data.objects.new(f"{name}_{side}", None)
+        mark.location = at
+        scene.collection.objects.link(mark)
+        onto([mark], "skull")
+        aims[name, side] = mark
+for side in ("L", "R"):
+    for name in ("cheek", "muzzle", "palm"):
+        aim = rig.pose.bones["paw_"+side].constraints.new("DAMPED_TRACK" if name != "palm" else "LOCKED_TRACK")
+        aim.name, aim.target, aim.influence = name, aims[name, side], 0
+        if name == "palm":
+            aim.lock_axis, aim.track_axis = "LOCK_Y", "TRACK_Z"  # turned about its own length, palm to the face
+
+
+# Inside the mouth: its dark lining (see MOUTH) and a beaver's orange incisors, two above, which show a little below the
+# upper lip, and two below, behind the lower lip.
+def part(name, colour, rough, at, size, groups, shape=None):
+    if shape:
+        made = bpy.data.meshes.new(name)
+        made.from_pydata(*shape[:1], [], shape[1])
+        thing = bpy.data.objects.new(name, made)
+        scene.collection.objects.link(thing)
+        bpy.context.view_layer.objects.active = thing
+    else:
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=1, location=at)
+        thing = bpy.context.object
+        thing.name = name
+        thing.scale = size
+        bpy.ops.object.transform_apply(scale=True)
+    thing.data.shade_smooth()
+    stuff = bpy.data.materials.get(name.split("_")[0])  # the teeth share one
+    if not stuff:
+        stuff = bpy.data.materials.new(name.split("_")[0])
+        stuff.use_nodes = True
+        shader = next(n for n in stuff.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+        shader.inputs["Base Color"].default_value, shader.inputs["Roughness"].default_value = (*colour, 1), rough
+    thing.data.materials.append(stuff)
+    for bone in ("skull", "jaw"):
+        thing.vertex_groups.new(name=bone)
+    for v in thing.data.vertices:
+        below = groups(v.co)
+        thing.vertex_groups["jaw"].add([v.index], below, "REPLACE")
+        thing.vertex_groups["skull"].add([v.index], 1-below, "REPLACE")
+    thing.parent = rig
+    thing.modifiers.new("Kit skeleton", "ARMATURE").object = rig
+    return thing
+
+
+middle = tip.x+(head_x-tip.x)*.3  # the muzzle's middle: the head is turned a little to its left
+on_lip = lambda behind, down=0: Vector((middle, tip.y+behind, lip(Vector((0, tip.y+behind, 0)))-down))
+# Of the lining, as much goes with the jaw as of the skin before it: none above the lips, all below, half on the line.
+mouth = [part("mouth", (.16, .03, .035), .55, None, None, lambda c: ramp((lip(c)-c.z)/.006+.5)*ramp((hinge-c.y)/.03), shape=lining)]
+for sign in (-1, 1):
+    for below in (False, True):
+        tooth = on_lip(MOUTH["teeth"]+(.0025 if below else 0))+Vector((sign*.0016, 0, -.0027 if below else .0027))
+        mouth.append(part(f"tooth_{'lower' if below else 'upper'}_{'R' if sign < 0 else 'L'}", (.8, .38, .1), .3, tooth, (.0013, .001, .0032), lambda c, b=below: float(b)))
+# The four incisors are drawn as one.
+bpy.ops.object.select_all(action="DESELECT")
+for tooth in mouth[1:]:
+    tooth.select_set(True)
+bpy.context.view_layer.objects.active = mouth[1]
+bpy.ops.object.join()
+mouth[1].name = "teeth"
+mouth = mouth[:2]
 bpy.context.view_layer.objects.active = rig
 pb = rig.pose.bones
 rest = {b.name: b.matrix_local.to_quaternion() for b in armature.bones}
@@ -375,22 +562,33 @@ def footpath(phase, stance, stride, height):
     return (ramp(t)-.5)*stance*stride, height*sin(pi*t)**2
 
 
+AIM = {}
+
+
 def pose(clip, t):
     wave, beat = sin(2*pi*t), cos(2*pi*t)
     run, walk = clip == "run", clip == "walk"
     forage, look, sit = clip == "forage", clip == "look", clip == "sit"
-    up, groom, sleep = clip == "up", clip == "groom", clip == "sleep"
-    upright, lie = up or groom, clip in ("lie", "sleep")
+    up, groom, sleep = clip == "up", clip == "groom", clip == "sleep" or clip in STIRS  # a stir is asleep too
+    tall, lean, touch = clip == "tall", clip == "lean", clip == "touch"
+    upright, lie = up or groom or tall or lean, clip == "lie" or sleep
     shake, wake = clip == "shake", clip == "wake"
+    between = lambda a, b: ramp((t-a)/(b-a))
+    # Touching: its right fore paw goes out ahead and pats what is there, three times, and comes back (how far out).
+    reach = between(.08, .28)*(1-between(.82, .98)) if touch else 0
+    # Asleep: how far it breathes in, and how far its stir has come, 0 … 1 and back: the rub quickly, the rest slowly.
+    breath = sin(2*pi*BREATHS*t) if clip == "sleep" else 0
+    stir = ramp(t/.15)*ramp((1-t)/.15) if clip == "rub" else sin(pi*t)**2 if clip in STIRS else 0
+    rubbing, stretching, nuzzling, peeping = (stir if clip == name else 0 for name in STIRS)
     # A bound: the back rears as the hind pair pushes off and dips as the fore pair lands; the hips ride highest
     # while the hind feet swing forward under them.
     pitch = .14*sin(2*pi*(t-.1)) if run else .013*wave
-    pitch += -.2 if forage else .5 if sit else 1.0 if up else .9 if groom else .1+(.012*wave if sleep else 0) if lie else 0
+    pitch += -.2 if forage else .5 if sit else 1.0 if up else .9 if groom else 1.35+.02*wave if tall else 1.15 if lean else .1+(.01*breath+.08*stretching if sleep else 0) if lie else 0
     lift = .03*cos(4*pi*t)-.085 if walk else -.09-.06*sin(2*pi*(t+.05)) if run else .008*wave
-    lift -= .42 if sit else .40 if up else .42 if groom else .55 if lie else 0
+    lift -= .42 if sit else .40 if up else .42 if groom else .08 if tall else .12 if lean else .55-(RAISED+.006*breath if sleep else 0) if lie else 0
     head = (-1+.05*sin(4*pi*t) if forage else .4+.03*sin(12*pi*t) if look else .1 if sit else .15+.03*sin(4*pi*t) if up
-            else -.25+.05*sin(30*pi*t) if groom else -.42 if sleep else .2 if lie else 0)
-    gaze = (.28*wave if forage else .6*wave if look else .45*wave if sit else .7*wave if up else .55 if sleep
+            else -.25+.05*sin(30*pi*t) if groom else .1+.04*sin(4*pi*t) if tall else .3 if lean else -.4*reach if touch else REST["nose"]+.12*rubbing-.08*nuzzling+.3*peeping if sleep else .2 if lie else 0)
+    gaze = (.28*wave if forage else .6*wave if look else .45*wave if sit else .7*wave if up else .5*wave if tall else .3*wave if lean else .2*reach if touch else REST["head"]+.15*sin(4*pi*t)*nuzzling if sleep
             else .35*wave if lie else -.07*beat if walk else 0)
     # Shaking itself dry, it rolls about its own length, five times to each side in a second, the head first and
     # furthest and each part behind it a little later and less: rad the head, the chest, the rump and the tail are
@@ -401,49 +599,57 @@ def pose(clip, t):
         lift, head = -.07*ramp(t/.2)*ramp((1-t)/.3), -.12*ramp(t/.2)*ramp((1-t)/.3)
     # Waking, it goes from the sleep's pose to the stand's: how far its head is up off the ground (and its back and
     # tail uncurled), how wide it yawns, how far its rump is up, and how far its chest has come up after it.
-    between = lambda a, b: ramp((t-a)/(b-a))
     roused, yawn, risen, stood = between(.03, .2), between(.06, .22)*(1-between(.32, .46)), between(.36, .58), between(.74, .96)
     bow = risen*(1-stood)  # rump up, chest still down: the stretch
     if wake:
         # The chest stays on the ground while the rump goes up: the back tips forward as the hips rise.
-        pitch, lift = .1*(1-risen)-.42*bow, -.55*(1-risen)
-        head, gaze = -.42*(1-roused)+.5*yawn+.12*bow, .55*(1-roused)
+        pitch, lift = .1*(1-risen)-.42*bow, -(.55-RAISED*(1-roused))*(1-risen)
+        head, gaze = REST["nose"]*(1-roused)+.5*yawn+.12*bow, REST["head"]*(1-roused)
         skew = .12*yawn  # a yawn is a little crooked
+    # Over on its side, its head on its cheek; nuzzling rocks it, peeping it rolls up a little.
+    # Waking, it rolls back up.
+    over = SIDE*(1-.15*peeping)+.12*sin(4*pi*t)*nuzzling if sleep else SIDE*(1-roused) if wake else 0
     pb["haunch"].location = rest["haunch"].inverted() @ Vector((0, 0, lift*M))
     # The waddle: hips and shoulders roll against each other and the back swings from side to side with the stride.
-    turn("haunch", 0, .06*wave if walk else rump)
-    turn("back", pitch, -.10*wave if walk else chest-rump, .07*beat if walk else .25 if sleep else .25*(1-roused) if wake else 0)
+    turn("haunch", 0, .06*wave if walk else rump+over)
+    turn("back", pitch+(REST["curl"] if sleep else REST["curl"]*(1-roused) if wake else 0), -.10*wave if walk else chest-rump, .07*beat if walk else 0)
     turn("skull", -.88*pitch+.025*wave+head, skew-chest, gaze, pitch)
-    turn("jaw", -.06 if run else -.7*yawn if wake else 0)
+    turn("jaw", -.06 if run else -.7*yawn if wake else -.35*between(.08, .25)*(1-between(.5, .7)) if clip == "peep" else 0)
     # The flat tail trails: it sways with the stride, bounces at a run, lies on the ground when the kit is down and
-    # curls round towards its nose when it sleeps.
-    sway = -.8 if sleep else (.3 if walk else .12 if run else .06)*sin(2*pi*t+.6)
+    # flicks as it stretches in its sleep.
+    sway = .2*stretching if sleep else (.3 if walk else .12 if run else .06)*sin(2*pi*t+.6)
     if wake:
-        sway = -.8*(1-between(.05, .35))+sway*between(.05, .35)
+        sway *= between(.05, .35)
     sway += flick
-    turn("tail1", (.10+.18*sin(2*pi*(t-.35)) if run else -.35 if sit else -.2 if upright else -.08 if lie else -.08*(1-risen)-.3*bow if wake else 0)+.03*wave, 0, sway)
+    turn("tail1", (.10+.18*sin(2*pi*(t-.35)) if run else -.35 if sit else -.2 if upright else -.08 if lie else -.08*(1-risen)-.3*bow if wake else 0)+.03*wave, -over, sway)  # flat on the ground, however it lies
     turn("tail2", (.06+.12*sin(2*pi*(t-.5)) if run else -.15 if sit else 0), 0, sway*.8)
     for (fore, side), ((a, b, c, d), names) in legs.items():
         parent = pitch if fore else 0
         upper0, lower0 = angle(a, b), angle(b, c)
         if fore and upright:
-            # Paws held at the chest; grooming, both go up to the muzzle and rub it, one after the other.
+            # Paws held close to its body, at its chest; grooming, both go up to the muzzle and rub it, one after the
+            # other; leaning, both rest on the thing before it.
             rub = sin(30*pi*t+(pi if side == "L" else 0))
-            upper = 1.35+.06*rub if groom else .49+.035*wave
-            lower = 2.35+.22*rub if groom else 1.66+.03*wave
-            foot = 1.8 if groom else .09
+            lean_back = pitch-1.35  # its arms are held as its body is: less upright on its haunches than on its feet
+            upper = 1.35+.06*rub if groom else 1.3 if lean else ARMS[0]+lean_back+.035*wave
+            lower = 2.35+.22*rub if groom else 1.5 if lean else ARMS[1]+lean_back+.03*wave
+            foot = 1.8 if groom else -.3 if lean else ARMS[2]
         else:
             offset = (.06 if side == "L" else 0)+(.46 if fore else 0) if run else (.5 if side == "L" else 0)+(.18 if fore else 0)
             swing = (.30 if run else .15)*M
             f, h = footpath((t-offset) % 1, .35 if run else .62, RUN if run else WALK, swing) if walk or run else (0, 0)
+            if touch and fore and side == "R":
+                f, h = .5*M*reach, .14*M*reach*(.3+.7*abs(sin(3*pi*clamp((t-.3)/.52))))  # out, and patting
             if forage and fore and side == "R" and t > .5:
                 f, h = footpath((t-.5)*6 % 1, .6, .3*M, .08*M)  # three scrapes at the ground
             if sit:
                 f = (-.3 if fore else .5)*M  # front paws drawn back under the chest, hind feet out in front of the rump
             if upright:
-                f = .45*M  # the hind feet, out in front of the rump
+                f = (.45 if up or groom else .05)*M  # the hind feet, out in front of the rump; on its feet, under its hips
             if lie:
-                f = (.4 if fore else -.55)*M  # flat on its belly: paws out in front, hind legs trailing behind
+                f = (.4 if fore else -.55-.25*stretching)*M  # flat on its belly: paws out in front, hind legs trailing behind
+                if sleep and fore:
+                    f = REST["paws"][side == "R"]*M  # over on its side, the fore paws are drawn back to its chest
             if wake:
                 # Each foot is stepped to its place, the right one first: the hind feet from behind it to under its
                 # hips before the rump goes up, the fore paws a little further out for the stretch and then back
@@ -451,7 +657,7 @@ def pose(clip, t):
                 first = .08 if side == "L" else 0
                 steps = ((.36+first, .46+first), (.76+first, .88+first)) if fore else ((.16+first, .3+first),)
                 trail = 1-between(*steps[0])  # how far a hind foot still lies behind it, its sole up
-                f = ((.4+.12*between(*steps[0]))*(1-between(*steps[1])) if fore else -.55*trail)*M
+                f = ((.4+.12*between(*steps[0]))*(1-between(*steps[1]))-(.4-REST["paws"][side == "R"])*(1-roused) if fore else -.55*trail)*M
                 h = .1*M*sum(sin(pi*clamp((t-a)/(b-a)))**2 for a, b in steps)
             # Two-link sagittal IK keeps a planted wrist or ankle at its ground target as the body bobs.
             af, az = HIP[1]-a[1], a[2]-HIP[2]
@@ -466,15 +672,50 @@ def pose(clip, t):
             foot = lower-lower0-1.2 if lie and not fore else -.22*h/swing  # trailing, the soles turn up
             if wake and not fore:
                 foot = (lower-lower0-1.2)*trail+foot*(1-trail)
+            if fore and (sleep or wake):
+                foot += (lower-lower0+REST["bent"]-foot)*(1 if sleep else 1-roused)  # curled at its chest
+            if sleep and not fore:
+                foot -= .4*stretching  # stretched out, the soles turn up further
+            if fore and side == "L" and rubbing:
+                # The fore paw on top goes up to its face and rubs it, as the pup's flipper does in the reference.
+                stroke = sin(2*pi*STROKES*t)
+                upper += (RUBBING[0]+.08*stroke-upper)*rubbing
+                lower += (RUBBING[1]+.25*stroke-lower)*rubbing
+                foot += (RUBBING[2]-foot)*rubbing
         ua, la = upper-upper0, lower-lower0
-        turn(names[0], ua-parent, -(chest if fore else rump))  # shaking, the legs stay upright under a body that rolls
+        # Shaking, the legs stay upright under a body that rolls; over on its side, the upper ones lie down over it and
+        # the lower ones along the ground.
+        drape = ((DRAPE[0]*(1-rubbing) if fore else DRAPE[1]*(1-1.2*stretching)) if side == "L" else DRAPE[2])*(1 if sleep else 1-roused if wake else 0)
+        turn(names[0], ua-parent, drape-(chest if fore else rump))
         turn(names[1], la-ua)
-        turn(names[2], foot-la)
+        turn(names[2], foot-la, 0, (.35 if side == "L" else -.35)*stretching if not fore else 0)  # stretched, the hind feet spread
+        # Its digits, curled in towards the palm (rad) and spread apart (of SPREAD): curled at its chest asleep and
+        # cupped at its face, flexing as a paw lifts; the hind toes spread wide and straighten as it stretches.
+        if fore and (tall or lean or touch):
+            curl, spread = (.65, 0) if tall else (.05, .5) if lean else ((-.3*reach, .6*reach) if side == "R" else (0, 0))
+        elif fore:
+            curl = (.9*(1-rubbing)+(.5+.15*sin(2*pi*STROKES*t))*rubbing if sleep else .6 if groom else .7 if up
+                    else .2 if sit or lie else .9*(1-roused) if wake else .3+.3*sin(12*pi*t) if forage and side == "R" and t > .5 else 0)
+            spread = 0
+        else:
+            curl, spread = (.3*(1-stretching)-.25*stretching if sleep else .3*(1-roused) if wake else 0), stretching
+        if walk or run:
+            curl += .5*h/swing
+        for i in range(5):
+            pb[f"{names[2]}.{i}"].rotation_quaternion = Quaternion((1, 0, 0), curl) @ Quaternion((0, 0, 1), SPREAD*(2-i)/2*spread)
+        if fore:
+            AIM[side] = {"cheek": rubbing if side == "L" else 0, "muzzle": 1 if groom else 0}
+            # Asleep, its paws curled under its chin turn their palms to its face too; waking, they let go.
+            AIM[side]["palm"] = max(*AIM[side].values(), 1 if sleep else 1-roused if wake else 0)
+    for side in ("L", "R"):
+        for name, share in AIM[side].items():
+            pb["paw_"+side].constraints[name].influence = share
 
 
 rig.animation_data_create()
 for name, frames in [("stand", 48), ("walk", 30), ("run", 20), ("forage", 120), ("look", 120), ("sit", 120),
-                     ("up", 120), ("groom", 150), ("lie", 120), ("sleep", 120), ("shake", 30), ("wake", 60)]:
+                     ("up", 120), ("groom", 150), ("lie", 120), ("sleep", 120), ("tall", 150), ("lean", 120), ("touch", 120), ("shake", 30), ("wake", 60),
+                     *((name, round(seconds*30)) for name, seconds in STIRS.items())]:
     action = bpy.data.actions.new(name)
     rig.animation_data.action = action
     for frame in range(frames+1):
@@ -482,6 +723,9 @@ for name, frames in [("stand", 48), ("walk", 30), ("run", 20), ("forage", 120), 
         pb["haunch"].keyframe_insert("location", frame=1+frame)
         for bone in pb:
             bone.keyframe_insert("rotation_quaternion", frame=1+frame)
+        for side in ("L", "R"):
+            for aim in pb["paw_"+side].constraints:
+                aim.keyframe_insert("influence", frame=1+frame)
     slot = rig.animation_data.action_slot
     rig.animation_data.action = None
     track = rig.animation_data.nla_tracks.new()
@@ -492,7 +736,7 @@ for name, frames in [("stand", 48), ("walk", 30), ("run", 20), ("forage", 120), 
 if "--" in sys.argv:
     path = os.path.abspath(sys.argv[sys.argv.index("--")+1])
     bpy.ops.object.select_all(action="DESELECT")
-    for obj in (rig, body, strands, *eyes):
+    for obj in (rig, body, strands, *eyes, *mouth):
         obj.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, use_selection=True, export_format="GLB",
         export_animation_mode="NLA_TRACKS", export_force_sampling=True, export_def_bones=False,

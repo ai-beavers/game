@@ -1,11 +1,11 @@
 // The River kit (src/features/river-kit), as a player meets it: the beaver walks off over the meadow and its child
 // comes after it and stops beside it; left standing there, the kit finds something of its own to do; and when the
-// beaver runs, the kit runs to keep up; the beaver swims and the kit swims after it; the beaver stays where it is and the kit lies down and falls asleep, wakes
-// when the beaver goes, and makes room when the beaver walks right up to it. Standing by, it looks up at the beaver;
-// left behind it calls, and chirps when it has caught up; out of the water it shakes itself dry; and it wakes with a
+// beaver runs, the kit runs to keep up; the beaver swims and the kit swims after it; the beaver stays where it is and the kit lies down and falls asleep (by
+// night at every stop, squeaking in its sleep), wakes when the beaver goes, and makes room when the beaver walks right up to it. Standing by, it looks up at the beaver;
+// left behind it calls, and chirps when it has caught up, its mouth opening as it does; out of the water it shakes itself dry; and it wakes with a
 // yawn. Where the kit is and what it does come from the feature's debug handle, and how its head and jaw are turned
 // from its joints in the scene: nothing on screen says them.
-import { CLOSE, FAR, GAZE, HURRY, IDLE, NEAR, PAUSE, QUIET, TIRED, WALK, type Kit as RiverKit } from "../../river-kit/rules.ts";
+import { CALM, CLOSE, DOZE, FAR, GAZE, HURRY, IDLE, NEAR, PAUSE, QUIET, TIRED, WALK, type Kit as RiverKit } from "../../river-kit/rules.ts";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { skip, type Kit } from "../kit.ts";
@@ -89,14 +89,18 @@ export const riverKit = (tools: Kit): Station[] => {
       await walk(kit, 4);
       // Quiet for a while first: it never calls twice in QUIET s, so a call from before would keep it silent now.
       await until(() => kit.quiet.left >= QUIET && kit.quiet.caught >= QUIET, QUIET + 1, `beside the beaver, yet the kit called ${Math.min(kit.quiet.left, kit.quiet.caught).toFixed(1)} s ago`);
-      const heard: { call: string; far: number }[] = [];
+      // Its mouth, as it is drawn, opens as it calls: its jaw turned from how it was, standing, mouth shut.
+      const heard: { call: string; far: number; wide: number }[] = [], jaw = joint("jaw"), shut = jaw.rotationQuaternion!.clone();
       const hear = () => {
-        for (const call of ["left", "caught"] as const) if (kit.quiet[call] < QUIET && !heard.some((h) => h.call === call)) heard.push({ call, far: flat(kit.x, kit.z) });
+        for (const call of ["left", "caught"] as const) if (kit.quiet[call] < QUIET && !heard.some((h) => h.call === call)) heard.push({ call, far: flat(kit.x, kit.z), wide: 0 });
+        const last = heard.at(-1);
+        if (last && kit.quiet[last.call as "left" | "caught"] < 0.5) last.wide = Math.max(last.wide, 2 * Math.acos(Math.min(1, Math.abs(Quaternion.Dot(shut, jaw.rotationQuaternion!)))));
         return false;
       };
       await walk(kit, 8, { run: 1, arrived: hear }, hear);
       const said = heard.map((h) => `${h.call === "left" ? "left behind" : "caught up"} ${h.far.toFixed(1)} m from the beaver`).join(", then ") || "nothing";
       expect(heard.length === 2 && heard[0]!.call === "left" && heard[0]!.far > HURRY - 0.5 && heard[1]!.far < NEAR + 0.2, `the beaver ran 8 m and the kit came up beside it again; it called: ${said}. It should call left behind beyond ${HURRY} m, then caught up within ${NEAR} m`);
+      expect(heard.every((h) => h.wide > 0.1), `calling, the kit's jaw opened ${heard.map((h) => `${h.wide.toFixed(2)} rad (${h.call})`).join(", ")}: its mouth stayed shut`);
     }, "Around the clearing"],
     // The beaver swims out into the pond: the kit swims after it, paddles beside it, and is on its feet again on the
     // bank, where it shakes itself dry, once.
@@ -160,6 +164,49 @@ export const riverKit = (tools: Kit): Station[] => {
       // The beaver walks right up to where the kit stands: the kit makes room.
       await walkTo(kit.x, kit.z, { near: 0.15, limit: 10 });
       await until(() => flat(kit.x, kit.z) >= CLOSE - 0.02 && kit.speed === 0, 5, `the beaver walked up to the kit, the kit made no room: ${flat(kit.x, kit.z).toFixed(2)} m between them`);
+    }, "Around the clearing"],
+    // By night the kit dozes at every stop: the beaver stops, and the kit is soon asleep beside it, rubbing its face
+    // and squeaking softly in its sleep; the beaver goes on, the kit wakes and follows, and at the next stop it dozes off again.
+    ["The kit dozes at night", async () => {
+      const kit = need(), s = sky(), hour = s.hour, running = s.running;
+      const squeaks: string[] = [], off = tools.game.events.on("kitCalls", (e) => { squeaks.push(e.call); });
+      try {
+        s.setHour(23);
+        await until(() => s.dark > 0.5, 5, `the sky is set to 23:00, yet only ${s.dark.toFixed(2)} dark`);
+        await together(kit);
+        for (const stop of [1, 2]) {
+          await walk(kit, 5);
+          const limit = IDLE + DOZE + 3;
+          await until(() => kit.doing === "sleep", limit, `stop ${stop} at night: the beaver stood ${limit} s, the kit never dozed off (it is at: ${kit.doing})`);
+          // Rolled over, it stirs first with a fore paw rubbing its face, and squeaks softly as it does.
+          squeaks.length = 0;
+          await until(() => kit.stir === "rub" && squeaks.includes("doze"), CALM.first + 2, `stop ${stop} at night: asleep, the kit never rubbed its face and squeaked (it ${kit.stir || "lies still"}, heard: ${squeaks.join(", ") || "nothing"})`);
+        }
+      } finally { off(); s.setHour(hour); s.running = running; }
+    }, "Around the clearing"],
+    // Left standing about, the kit now and then stands up on its two hind feet, its head well above where it is on all
+    // fours, and pats what is before it, its fore paw out ahead. The beaver moves on a little now and then, so that
+    // the kit never tires of it. By night the kit dozes at every stop instead.
+    ["The kit stands and touches", async () => {
+      const kit = need();
+      if (sky().dark > 0.5) skip("night: the kit dozes at every stop");
+      await together(kit);
+      // Where its head and its right fore paw are, as they are drawn: m above the ground under it, and m ahead of it.
+      const skull = joint("skull"), paw = joint("paw_R");
+      const height = () => skull.getAbsolutePosition().y - world.heightAt(kit.x, kit.z);
+      const out = () => { const p = paw.getAbsolutePosition(); return (p.x - kit.x) * Math.sin(kit.heading) + (p.z - kit.z) * Math.cos(kit.heading); };
+      let low = Infinity, back = Infinity, tall = -Infinity, ahead = -Infinity;
+      const watch = () => {
+        if (kit.speed === 0 && kit.rising <= 0 && kit.doing === "stand") { low = Math.min(low, height()); back = Math.min(back, out()); }
+        if (kit.doing === "tall") tall = Math.max(tall, height());
+        if (kit.doing === "touch" || kit.doing === "lean") ahead = Math.max(ahead, out());
+        return tall > low + 0.08 && ahead > back + 0.03;
+      };
+      for (let round = 0; round < 4 && !watch(); round++) {
+        await walk(kit, 4);
+        await until(watch, 25, "").catch(() => {});
+      }
+      expect(watch(), `left standing, the kit never stood up tall (its head ${(tall - low).toFixed(2)} m above where it is on all fours) and patted something (its paw ${(ahead - back).toFixed(2)} m further out)`);
     }, "Around the clearing"],
   ];
 };

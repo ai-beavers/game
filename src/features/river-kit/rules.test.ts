@@ -1,10 +1,11 @@
 // The River kit's rules as a player meets them: it keeps up with the beaver, on land and swimming, and out of its
-// way, goes round what it cannot cross, finds something to do when the beaver stands still, and sleeps when it stays;
+// way, goes round what it cannot cross, finds something to do when the beaver stands still, and sleeps when it stays
+// (at every stop by night), squeaking in its sleep;
 // it calls when it is left behind and when it has caught up, shakes itself dry after a swim, yawns as it wakes, and
 // looks up at the beaver.
 import { expect, test } from "bun:test";
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
-import { CLOSE, FAR, GAZE, gazeAt, HURRY, IDLE, LAP, look, NEAR, newKit, PAUSE, QUIET, RISE, RUN, SHAKE, step, TIRED, WALK, type Kit } from "./rules.ts";
+import { CALM, CLOSE, DOZE, LIKES, REACH, FAR, GAZE, gazeAt, HURRY, IDLE, LAP, look, NEAR, newKit, PAUSE, QUIET, RISE, RUN, SHAKE, step, STIRS, TIRED, WALK, type Kit } from "./rules.ts";
 
 const dt = 1 / 60, anywhere = (_x: number, _z: number) => true;
 function run(k: Kit, seconds: number, beaver: () => { x: number; z: number; land: boolean }, free = anywhere, random = () => 0.5, night = false, afloat = false, deep?: number) {
@@ -43,6 +44,32 @@ test("it goes round what it cannot cross: a rock 8 m wide in its way to a beaver
   expect(away(k, beyond)).toBeLessThan(NEAR);
 });
 
+test("left standing again and again, it does one thing after another, never the same twice running, and all of them in time", () => {
+  let seed = 3;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true }, done: string[] = [];
+  for (let frame = 0; frame < 200 / dt; frame++) {
+    const was = k.doing;
+    if (frame % Math.round(15 / dt) === 0) beaver.x = beaver.x ? 0 : 5; // every 15 s the beaver moves on a little: the kit never tires
+    step(k, beaver, anywhere, dt, random);
+    if (k.doing !== was && k.doing !== "stand" && k.doing !== "lie" && k.doing !== "sleep") done.push(k.doing);
+  }
+  expect(new Set(done)).toEqual(new Set(Object.keys(LIKES)));
+  done.forEach((d, i) => { if (i) expect(d).not.toBe(done[i - 1]); });
+});
+
+test("with a thing right before it, a trunk or a rock, it stands up and leans its fore paws on it, or pats it", () => {
+  const seen = new Set<string>();
+  for (const r of [0.1, 0.3, 0.7, 0.9]) {
+    const k = newKit(0, 0), beaver = { x: 1, z: 0, land: true }, trunk = (x: number, z: number) => Math.hypot(x, z - REACH) > 0.15;
+    run(k, IDLE + 0.1, () => beaver, trunk, () => r);
+    seen.add(k.doing);
+  }
+  expect(seen.has("lean") && seen.has("touch")).toBe(true);
+  // Up tall on its feet, it looks up at the beaver as it does standing.
+  expect(gazeAt({ ...newKit(0, 0), doing: "tall" }, { x: 1, z: 1 }).yaw).not.toBe(0);
+});
+
 test("it swims after a beaver in the water, and afloat it only paddles: nothing of what it does on land", () => {
   const k = newKit(0, 0), swimmer = { x: 0, z: 8, land: false };
   run(k, 6, () => swimmer, anywhere, () => 0.9, false, true);
@@ -51,22 +78,24 @@ test("it swims after a beaver in the water, and afloat it only paddles: nothing 
   run(k, IDLE + PAUSE.sit + 30, () => swimmer, anywhere, () => 0.9, true, true); // for long, at night
   expect([k.doing, k.speed]).toEqual(["stand", 0]);
   run(k, IDLE + 0.5, () => swimmer, anywhere, () => 0.9); // on the bank again
-  expect(k.doing).toBe("sit");
+  expect(k.doing).not.toBe("stand"); // at something of its own on land
   // The beaver out on the bank, two metres off: on land the kit would stay where it is, afloat it comes out to it.
   const out = { x: 0, z: k.z + 2, land: true }, wet = newKit(k.x, k.z);
   run(wet, 3, () => out, anywhere, () => 0.9, false, true);
   expect(away(wet, out)).toBeLessThan(NEAR);
 });
 
-test("left standing it noses in the ground, looks about, sits up, grooms or sits, each for its while, and gets up and goes when the beaver goes", () => {
-  for (const [r, doing] of [[0.1, "forage"], [0.5, "look"], [0.6, "up"], [0.8, "groom"], [0.9, "sit"]] as const) {
-    const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true };
+test("left standing it noses in the ground, looks about, sits up, stands up tall, grooms, pats the ground or sits, each for its while, and gets up and goes when the beaver goes", () => {
+  for (const doing of Object.keys(LIKES) as (keyof typeof LIKES)[]) {
+    const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true }, r = 0.5;
+    k.since[doing] = 1000; // what it has not done for longest
     run(k, IDLE + 0.1, () => beaver, anywhere, () => r);
     expect(k.doing).toBe(doing);
     run(k, PAUSE[doing] - 0.5, () => beaver, anywhere, () => r);
     expect(k.doing).toBe(doing);
     run(k, 0.6, () => beaver, anywhere, () => r);
     expect(k.doing).toBe("stand");
+    k.since[doing] = 1000; // at it again
     run(k, IDLE + 0.1, () => beaver, anywhere, () => r);
     beaver.z = 9;
     step(k, beaver, anywhere, dt, () => r);
@@ -76,14 +105,25 @@ test("left standing it noses in the ground, looks about, sits up, grooms or sits
   }
 });
 
-test("beside a beaver that stays it lies down and falls asleep, sooner at night, and wakes and follows when the beaver goes", () => {
+test("beside a beaver that stays it lies down and falls asleep, at every stop at night, and wakes and follows when the beaver goes", () => {
   for (const night of [false, true]) {
-    const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true }, tired = night ? TIRED.night : TIRED.day;
-    run(k, tired, () => beaver, anywhere, () => 0.1, night);
-    expect(["lie", "sleep"]).not.toContain(k.doing);
-    run(k, PAUSE.forage + 2 * IDLE + 1, () => beaver, anywhere, () => 0.1, night); // done with what it was at
-    expect(k.doing).toBe("lie");
-    run(k, PAUSE.lie, () => beaver, anywhere, () => 0.1, night);
+    const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true };
+    if (night) {
+      // It dozes at every stop: down as soon as it is done standing, asleep DOZE s later.
+      run(k, IDLE + 0.1, () => beaver, anywhere, () => 0.1, night);
+      expect(k.doing).toBe("lie");
+      run(k, DOZE, () => beaver, anywhere, () => 0.1, night);
+    } else {
+      run(k, TIRED.day, () => beaver, anywhere, () => 0.1, night);
+      expect(["lie", "sleep"]).not.toContain(k.doing);
+      // Done with what it was at, it lies down, and after PAUSE.lie falls asleep.
+      let down = 0;
+      for (; k.doing !== "lie" && down < Math.max(...Object.values(PAUSE)) + 2 * IDLE; down += dt) step(k, beaver, anywhere, dt, () => 0.1, night);
+      expect(k.doing).toBe("lie");
+      run(k, PAUSE.lie - 0.1, () => beaver, anywhere, () => 0.1, night);
+      expect(k.doing).toBe("lie");
+      run(k, 0.2, () => beaver, anywhere, () => 0.1, night);
+    }
     expect(k.doing).toBe("sleep");
     run(k, 120, () => beaver, anywhere, () => 0.1, night);
     expect(k.doing).toBe("sleep"); // for as long as the beaver stays
@@ -93,6 +133,48 @@ test("beside a beaver that stays it lies down and falls asleep, sooner at night,
     run(k, 4, () => beaver, anywhere, () => 0.1, night);
     expect(away(k, beaver)).toBeLessThan(NEAR);
   }
+});
+
+test("waiting for a beaver it cannot follow, it sits by day and dozes off at night", () => {
+  for (const night of [false, true]) {
+    const k = newKit(0, 0), beaver = { x: 0, z: 6, land: true }, shut = () => false;
+    run(k, IDLE + DOZE + 1, () => beaver, shut, () => 0.1, night);
+    expect([k.following, k.doing]).toEqual([true, night ? "sleep" : "sit"]);
+  }
+});
+
+test("asleep, it stirs now and then as a seal pup does, each stir in its own time, and squeaks softly, never awake", () => {
+  let seed = 7;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647; // a varied sleep
+  const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true };
+  run(k, IDLE + 0.1 + DOZE, () => beaver, anywhere, random, true);
+  expect([k.doing, k.stir]).toEqual(["sleep", ""]);
+  const stirs: { stir: string; from: number; to: number }[] = [], squeaks: string[] = [], asleep = k.time;
+  for (let t = 0; t < 120; t += dt) {
+    const was = k.stir;
+    step(k, beaver, anywhere, dt, random, true);
+    if (k.stir && k.stir !== was) stirs.push({ stir: k.stir, from: t, to: t });
+    if (k.stir) stirs.at(-1)!.to = t;
+    if (k.call) { expect(k.call).toBe("doze"); squeaks.push(k.stir); }
+    expect(k.doing).toBe("sleep");
+  }
+  // The first, once it has rolled over, is the rub, with a squeak; after it all four come, in no fixed order.
+  expect(stirs[0]!.stir).toBe("rub");
+  expect(asleep + stirs[0]!.from).toBeCloseTo(CALM.first, 1);
+  expect(new Set(stirs.map((s) => s.stir))).toEqual(new Set(Object.keys(STIRS)));
+  for (const [i, s] of stirs.entries()) {
+    if (i < stirs.length - 1) expect(s.to - s.from).toBeCloseTo(STIRS[s.stir as keyof typeof STIRS], 1);
+    const gap = i ? s.from - stirs[i - 1]!.to : asleep + s.from;
+    expect(gap).toBeGreaterThan(CALM.least - 0.05);
+    expect(gap).toBeLessThan(CALM.most + 0.05);
+  }
+  expect(squeaks[0]).toBe("rub");
+  expect(squeaks.every((s) => s === "rub" || s === "peep")).toBe(true);
+  expect(squeaks.filter((s) => s === "peep").length).toBe(stirs.filter((s) => s.stir === "peep").length);
+  // Awake and about, it never stirs nor squeaks in its sleep.
+  beaver.z = 8;
+  run(k, RISE.sleep! + 0.1, () => beaver, anywhere, random, false);
+  for (let t = 0; t < 30; t += dt) { step(k, beaver, anywhere, dt, random, false); expect([k.stir, k.call === "doze"]).toEqual(["", false]); }
 });
 
 test("out of a dead end it finds the way round: a house with its back to the beaver, a tree, and a beaver that walks on meanwhile", () => {
@@ -186,6 +268,7 @@ test("once after a swim, a moment after it has dry ground under it, it shakes it
 
 test("it yawns and stretches as it gets up from its sleep, and from nothing else", () => {
   const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true };
+  k.since.sit = 1000;
   run(k, IDLE + 0.1, () => beaver, anywhere, () => 0.9); // sat down
   beaver.z = FAR + 1;
   run(k, 0.2, () => beaver);

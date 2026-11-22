@@ -1,9 +1,13 @@
 // The River kit: the beaver's child, a small four-legged beaver that keeps to the player's beaver. It waddles after
 // it over the meadow, bounds to catch up, swims after it through the water and steps out of its way. When the beaver
-// stands still it noses in the ground, looks about, sits up, grooms or sits; when the beaver stays, sooner in the
+// stands still it noses in the ground, looks about, sits up, stands up on its hind feet, grooms, pats what is before
+// it with a fore paw (or leans on it, standing) or sits; when the beaver stays, at once in the
 // dark, it lies down and sleeps until the beaver goes, and wakes with a yawn and a stretch. In the water it only
 // paddles; a moment after it is out it shakes itself dry, drops flying. Standing or sitting it looks up at the
-// beaver. Left behind it calls after the beaver as it starts to run, and chirps when it has caught up.
+// beaver. Left behind it calls after the beaver as it starts to run, and chirps when it has caught up, its mouth
+// opening as it does. By night it
+// dozes at every stop, over on its side as a seal pup dozes, eyes shut: it rubs its face, stretches its hind feet and
+// squeaks softly in its sleep.
 //
 //   import { create as riverKit } from "./features/river-kit/index.ts";
 //
@@ -21,8 +25,9 @@
 // the kit could not make room in time (still getting up, or cornered), and a child must never block its parent.
 //
 // Cost per frame: one skinned mesh of 15,000 triangles, drawn once for each layer of its fur (ten within 3 m of the
-// camera, one beyond 12 m), its long hair (12,000 triangles, cut out), one sampled clip, its head's turn (a few
-// products of quaternions, only while it looks at the beaver) and four rays for the ground under its paws. A step
+// camera, one beyond 12 m), its long hair (12,000 triangles, cut out), two small skinned meshes inside its mouth (its
+// lining and its incisors), one sampled clip, its head's and its jaw's turns (a few products of quaternions, only
+// while it looks at the beaver or calls) and four rays for the ground under its paws. A step
 // on its way asks two rays and two overlaps of the ground ahead; going round something, up to 26 times that. A shake
 // is some eighty drops from the fx feature's pool, fewer at lower quality.
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
@@ -72,7 +77,8 @@ export const create: CreateFeature = async (game) => {
       Object.assign(before, { x: kit.x, z: kit.z, heading: kit.heading });
       const shook = kit.shaking > 0;
       step(kit, { x: player.feet.x, z: player.feet.z, land: !player.afloat && !player.riding }, free, dt, Math.random, (game.sky?.dark ?? 0) > DARK, swims(kit.x, kit.z), Math.min(1, Math.max(0, (level() - height) / FLOAT)));
-      if (kit.call) events.emit("kitCalls", { place: new Vector3(kit.x, height + TRUNK, kit.z), glad: kit.call === "caught" });
+      if (kit.call) events.emit("kitCalls", { place: new Vector3(kit.x, height + TRUNK, kit.z), call: kit.call });
+      if (kit.call === "left" || kit.call === "caught") model.say(kit.call); // in its sleep the peep clip opens its mouth
       if (kit.shaking > 0 && !shook) events.emit("kitShakes", { place: new Vector3(kit.x, height + TRUNK, kit.z), seconds: kit.shaking });
     },
     update(dt, alpha) {
