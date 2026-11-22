@@ -16,6 +16,29 @@ export function meshes(root: TransformNode): Mesh[] {
   return [root, ...root.getChildMeshes()].filter((part): part is Mesh => part instanceof Mesh && part.getTotalVertices() > 0);
 }
 
+/** Merges finished meshes that never change into one mesh per material, under parent, where they stood in the world.
+ *  Each keeps what its sources had: receiveShadows (and so whether it throws them, light.ts), isPickable, layerMask.
+ *
+ *    const [wood, glass] = mergeStatic([...walls, ...windows], root);   the sources are disposed */
+export function mergeStatic(parts: Mesh[], parent: TransformNode): Mesh[] {
+  const groups = new Map<string, Mesh[]>();
+  for (const part of parts) {
+    const key = `${part.material?.uniqueId}/${part.receiveShadows}/${part.isPickable}/${part.layerMask}`;
+    groups.set(key, [...(groups.get(key) ?? []), part]);
+  }
+  return [...groups.values()].map((group) => {
+    const { name, receiveShadows, isPickable, layerMask } = group[0]!;
+    if (group.length === 1) return group[0]!;
+    const mesh = Mesh.MergeMeshes(group, true, true)!; // baked in world space, without a parent
+    mesh.name = name;
+    mesh.receiveShadows = receiveShadows;
+    mesh.isPickable = isPickable;
+    mesh.layerMask = layerMask;
+    mesh.setParent(parent);
+    return mesh;
+  });
+}
+
 export function instance(template: TransformNode, name: string, parent: TransformNode | null = null) {
   const root = new TransformNode(name, template.getScene());
   root.parent = parent;

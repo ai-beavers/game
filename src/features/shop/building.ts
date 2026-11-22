@@ -21,6 +21,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { World } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { box as boxShape, cylinder, hull as hullOf, SOLID, type PhysicsShape } from "../../physics.ts";
+import { mergeStatic } from "../../world/models.ts";
 import { RADIUS, SIGN } from "./place.ts";
 
 const WALL = 2.1, THICK = 0.14, LOW = 0.95; // m: wall height, thickness, the lower part always shown
@@ -148,7 +149,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     post.position.set(side * (half - 0.02), 0.775, Math.cos(DOOR * step) * (RADIUS + THICK / 2));
     lower.push(paint(post, wood));
   }
-  merge("shop-walls", lower, solidMat, root);
+  const walls = merge("shop-walls", lower, solidMat, root);
   // The roof: a cone of dark felt shingles over the walls, gold at the eaves.
   const roof = MeshBuilder.CreateCylinder("roof", { height: ROOF, diameterTop: 0.25, diameterBottom: 2 * (RADIUS + THICK + 0.35), tessellation: SEGMENTS }, scene);
   roof.position.y = WALL + ROOF / 2;
@@ -216,7 +217,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
   signPost.position.y = 0.95 - 0.1;
   const frame = MeshBuilder.CreateBox("sign-frame", { width: 1.5, height: 0.6, depth: 0.08 }, scene);
   frame.position.y = 1.55;
-  merge("shop-sign-post", [paint(signPost, wood), paint(frame, new Color3(0.8, 0.6, 0.25))], solidMat, sign);
+  const signWood = merge("shop-sign-post", [paint(signPost, wood), paint(frame, new Color3(0.8, 0.6, 0.25))], solidMat, sign);
   const board = MeshBuilder.CreatePlane("shop-sign-board", { width: 1.4, height: 0.52 }, scene);
   const boardMat = new StandardMaterial("shop-sign-board", scene);
   const text = signTexture(scene);
@@ -270,7 +271,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     solid(cylinder(scene, (WALL_SOLID + 0.3) / 2, 0.36), t.x, (WALL_SOLID - 0.3) / 2, t.z);
     solid(cylinder(scene, (WALL_SOLID + 0.3) / 2, 0.28), sx, (WALL_SOLID - 0.3) / 2, sz);
   }
-  merge("shop-cafe", inside, solidMat, root);
+  const cafe = merge("shop-cafe", inside, solidMat, root);
   // Lamps over the tables and the counter, warm, hanging from the roof: glowing a little by day, more at night.
   const lampMat = matte(scene, "shop-lamps");
   lampMat.diffuseColor = new Color3(1, 0.85, 0.6);
@@ -287,9 +288,12 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     cords.push(paint(cord, new Color3(0.1, 0.1, 0.1)));
   }
   merge("shop-lamps", lamps, lampMat, root);
-  const cordMesh = merge("shop-cords", cords, solidMat, root);
+  // The roof and the cords that hang from it are hidden together from inside, so they are one mesh apart from the rest.
+  const [roofMesh] = mergeStatic([upperMesh, merge("shop-cords", cords, solidMat, root)], root);
 
-  const roofParts = [upperMesh, cordMesh, ball, beamRoot, ...bulbs.map((b) => b.mesh)];
+  // Kept apart: the ball turns and its tiles are redrawn; the bulbs, the beams and the lamps each change their own
+  // colour or see-through every picture; those under the roof are hidden from inside.
+  const roofParts = [roofMesh!, ball, beamRoot, ...bulbs.map((b) => b.mesh)];
   let time = 0, spin = 0, shown = true;
   const local = (p: { x: number; z: number }) => {
     const dx = p.x - spot.x, dz = p.z - spot.z, c = Math.cos(spot.facing), s = Math.sin(spot.facing);
@@ -297,6 +301,9 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
   };
   return {
     root, turn, floorY, toWorld,
+    /** The wood's material (white, times the vertex colours), and the meshes that never change once built, for
+     *  index.ts to merge with the calendar's and the café crowd's (mergeStatic). */
+    wood: solidMat, still: [floorMesh, walls, signWood, cafe, board, back],
     /** A world point in the shop's own frame: z out of the doorway, x to its left as one walks out. */
     local,
     /** Inside the walls. */
