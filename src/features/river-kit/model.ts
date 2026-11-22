@@ -1,6 +1,8 @@
 // The River kit's mesh and clips (assets/kit.glb, tools/blender/kit.py), played by the game's clock: walk and run
-// advance by the ground covered, so the feet do not slide; what it does standing runs by time. A change of clip
-// blends from the pose it was in. Its coat is the beaver's fur (src/beaver/fur.ts) over the model's own colour map.
+// advance by the ground covered, so the feet do not slide; what it does standing runs by time; the shake and the
+// waking are played once through. A change of clip blends from the pose it was in. On top of the clip its head
+// turns to where the rules have it look. Its coat is the beaver's fur (src/beaver/fur.ts) over the model's own
+// colour map.
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup.js";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo.js";
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
@@ -9,6 +11,7 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import kitGlb from "../../../assets/kit.glb" with { type: "file" };
 import { createCoat } from "../../beaver/fur.ts";
@@ -20,12 +23,13 @@ export const SIZE = 1.35;
 const STRIDE = { walk: 0.277, run: 0.443 };
 // s a change of pose takes: down and up again is slow, as long as the rules give it to get up.
 const SLOW: Record<string, number> = { forage: 0.6, look: 0.6, ...RISE };
+// The clips played once through, from the pose before them to standing: they carry their own way in and out.
+const ONCE = new Set(["shake", "wake"]);
 // Hairs to the grown beaver's one, along and across: the model is drawn SIZE times its size, and a young coat is down.
 const FINE = 4;
 // Where the fur's copies of the skin lie along the hair: ten, for long guard hairs that do not show the steps between.
 const LAYERS = [0, 0.5, 0.25, 0.75, 1, 0.12, 0.37, 0.62, 0.87, 0.44];
 const TREAD = 0.7; // strokes a second it treads water with
-const DRY = 12; // s from dripping to dry once out of the water (as the beaver's coat)
 // Times the coat's colour on the long hair: guard hairs are paler than the fur under them.
 const LIGHT = 1.08;
 // Times the colour map, so that the flank in the sun measures as the reference's (tools/comfyui/river-kit/target.png): 146, 114, 96.
@@ -92,26 +96,33 @@ export async function loadKit(scene: Scene) {
     const node = bone.getTransformNode()!;
     return { node, from: node.rotationQuaternion!.clone(), at: node.position.clone() };
   });
+  // Its head, the joints from the kit down to its neck (whose turns the head's own is taken in), and the head as
+  // the clip alone has it.
+  const skull = joints.find((joint) => joint.node.name === "skull")!.node, neck: TransformNode[] = [];
+  for (let node = skull.parent; node && node !== root; node = node.parent) neck.unshift(node as TransformNode);
+  const bare = skull.rotationQuaternion!.clone(), carried = new Quaternion(), turn = new Quaternion();
   let active: AnimationGroup | undefined;
   let phase = 0, elapsed = 0, blend = 1, ease = 0.3, was = "stand", lastX = 0, lastZ = 0;
   return {
     root,
-    /** wet: 0 dry … 1 as deep in the water as it swims. */
-    update(k: Kit, dt: number, x: number, z: number, wet: number) {
+    update(k: Kit, dt: number, x: number, z: number) {
       fur.update();
-      fur.coat.wet = Math.max(wet, fur.coat.wet - dt / DRY); // dripping, then dry again in a while
-      // Afloat it paddles: the walk, its legs under the water, on the spot too.
-      const name = k.afloat ? "walk" : k.speed > WALK ? "run" : k.speed > 0 ? "walk" : k.doing;
+      fur.coat.wet = k.wet;
+      // Shaking itself dry and waking from its sleep come before all else. Afloat it paddles: the walk, its legs
+      // under the water, on the spot too.
+      const name = k.shaking > 0 ? "shake" : k.waking && k.rising > 0 && k.doing === "stand" ? "wake"
+        : k.afloat ? "walk" : k.speed > WALK ? "run" : k.speed > 0 ? "walk" : k.doing;
       const clip = clips.get(name)!;
       const distance = active ? Math.hypot(x - lastX, z - lastZ) : 0;
       lastX = x; lastZ = z;
       if (active !== clip) {
+        skull.rotationQuaternion!.copyFrom(bare); // the pose it was in, without the head's turn: that goes on top again
         for (const joint of joints) {
           joint.from.copyFrom(joint.node.rotationQuaternion!);
           joint.at.copyFrom(joint.node.position);
         }
         blend = active ? 0 : 1;
-        ease = Math.max(0.3, SLOW[name] ?? 0, SLOW[was] ?? 0);
+        ease = ONCE.has(name) ? 0.3 : Math.max(0.3, SLOW[name] ?? 0, SLOW[was] ?? 0);
         was = name;
         active?.stop();
         active = clip;
@@ -122,8 +133,8 @@ export async function loadKit(scene: Scene) {
       elapsed += dt;
       const stride = name === "run" ? STRIDE.run : STRIDE.walk;
       phase = (phase + distance / (stride * SIZE) + (k.afloat ? dt * TREAD : 0)) % 1;
-      const time = name === "walk" || name === "run" ? phase
-        : (elapsed * clip.targetedAnimations[0]!.animation.framePerSecond / (clip.to - clip.from)) % 1;
+      const played = elapsed * clip.targetedAnimations[0]!.animation.framePerSecond / (clip.to - clip.from);
+      const time = name === "walk" || name === "run" ? phase : ONCE.has(name) ? Math.min(1, played) : played % 1;
       clip.goToFrame(clip.from + time * (clip.to - clip.from));
       blend = Math.min(1, blend + dt / ease);
       if (blend < 1) {
@@ -132,6 +143,15 @@ export async function loadKit(scene: Scene) {
           Quaternion.SlerpToRef(from, node.rotationQuaternion!, t, node.rotationQuaternion!);
           Vector3.LerpToRef(at, node.position, t, node.position);
         }
+      }
+      // Its head turned to the beaver, on top of the clip: about the kit's own upright and its own side, whatever
+      // way its back and neck are turned in the clip.
+      bare.copyFrom(skull.rotationQuaternion!);
+      if (Math.abs(k.gaze.yaw) + Math.abs(k.gaze.pitch) > 1e-3) {
+        carried.copyFromFloats(0, 0, 0, 1);
+        for (const node of neck) carried.multiplyInPlace(node.rotationQuaternion!);
+        Quaternion.RotationYawPitchRollToRef(k.gaze.yaw, -k.gaze.pitch, 0, turn);
+        carried.conjugateToRef(skull.rotationQuaternion!).multiplyInPlace(turn).multiplyInPlace(carried).multiplyInPlace(bare);
       }
     },
   };

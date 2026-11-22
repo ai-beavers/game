@@ -14,6 +14,9 @@ forage (nose to the ground, a paw scraping), look (nose in the wind), sit (down 
 haunches, paws at its chest, looking round), groom (upright, both paws rubbing its muzzle), lie (flat on its belly,
 hind legs out behind, head up), sleep (as it lies, chin on the ground, nose and tail curled to its left, breathing). A clip's stride is the way it goes in one loop:
 the game plays walk and run by the distance covered, so the feet do not slide.
+Two are played once, from the pose before them to standing: shake (1 s: it shakes itself dry, a fast twist from side
+to side that runs from the head down to the tail) and wake (2 s, from sleep: the head comes up into a yawn, the hind
+feet are gathered, the rump goes up over the chest and the reached-out fore paws in a stretch, then it stands).
 
 The hide's vertex colours are the coat mask of the game's fur shader (src/beaver/fur.ts): red is the hair's length,
 none on the tail, the eyes and the nose, short on the paws and the face.
@@ -98,6 +101,7 @@ for fore in (True, False):
 # The poses are the bear's (tools/blender/bear.py), whose hip stands .92 m high: every length in them times M.
 M = HIP[2]/.92
 WALK, RUN = 1.5*M, 2.4*M
+SHAKE = .65  # rad its head rolls to each side when it shakes itself dry
 print("kit: strides", round(WALK, 3), round(RUN, 3), "m; hip", [round(c, 3) for c in HIP])
 
 
@@ -377,6 +381,7 @@ def pose(clip, t):
     forage, look, sit = clip == "forage", clip == "look", clip == "sit"
     up, groom, sleep = clip == "up", clip == "groom", clip == "sleep"
     upright, lie = up or groom, clip in ("lie", "sleep")
+    shake, wake = clip == "shake", clip == "wake"
     # A bound: the back rears as the hind pair pushes off and dips as the fore pair lands; the hips ride highest
     # while the hind feet swing forward under them.
     pitch = .14*sin(2*pi*(t-.1)) if run else .013*wave
@@ -387,16 +392,36 @@ def pose(clip, t):
             else -.25+.05*sin(30*pi*t) if groom else -.42 if sleep else .2 if lie else 0)
     gaze = (.28*wave if forage else .6*wave if look else .45*wave if sit else .7*wave if up else .55 if sleep
             else .35*wave if lie else -.07*beat if walk else 0)
+    # Shaking itself dry, it rolls about its own length, five times to each side in a second, the head first and
+    # furthest and each part behind it a little later and less: rad the head, the chest, the rump and the tail are
+    # rolled over (the legs stay under it, see below). It ducks a little as it does.
+    skew, chest, rump, flick = (SHAKE*ramp(t/.2)*ramp((1-t)/.3)*sin(10*pi*(t-late))*far if shake else 0
+                                for late, far in ((0, 1), (.03, .6), (.06, .42), (.1, .7)))
+    if shake:
+        lift, head = -.07*ramp(t/.2)*ramp((1-t)/.3), -.12*ramp(t/.2)*ramp((1-t)/.3)
+    # Waking, it goes from the sleep's pose to the stand's: how far its head is up off the ground (and its back and
+    # tail uncurled), how wide it yawns, how far its rump is up, and how far its chest has come up after it.
+    between = lambda a, b: ramp((t-a)/(b-a))
+    roused, yawn, risen, stood = between(.03, .2), between(.06, .22)*(1-between(.32, .46)), between(.36, .58), between(.74, .96)
+    bow = risen*(1-stood)  # rump up, chest still down: the stretch
+    if wake:
+        # The chest stays on the ground while the rump goes up: the back tips forward as the hips rise.
+        pitch, lift = .1*(1-risen)-.42*bow, -.55*(1-risen)
+        head, gaze = -.42*(1-roused)+.5*yawn+.12*bow, .55*(1-roused)
+        skew = .12*yawn  # a yawn is a little crooked
     pb["haunch"].location = rest["haunch"].inverted() @ Vector((0, 0, lift*M))
     # The waddle: hips and shoulders roll against each other and the back swings from side to side with the stride.
-    turn("haunch", 0, .06*wave if walk else 0)
-    turn("back", pitch, -.10*wave if walk else 0, .07*beat if walk else .25 if sleep else 0)
-    turn("skull", -.88*pitch+.025*wave+head, 0, gaze, pitch)
-    turn("jaw", -.06 if run else 0)
+    turn("haunch", 0, .06*wave if walk else rump)
+    turn("back", pitch, -.10*wave if walk else chest-rump, .07*beat if walk else .25 if sleep else .25*(1-roused) if wake else 0)
+    turn("skull", -.88*pitch+.025*wave+head, skew-chest, gaze, pitch)
+    turn("jaw", -.06 if run else -.7*yawn if wake else 0)
     # The flat tail trails: it sways with the stride, bounces at a run, lies on the ground when the kit is down and
     # curls round towards its nose when it sleeps.
     sway = -.8 if sleep else (.3 if walk else .12 if run else .06)*sin(2*pi*t+.6)
-    turn("tail1", (.10+.18*sin(2*pi*(t-.35)) if run else -.35 if sit else -.2 if upright else -.08 if lie else 0)+.03*wave, 0, sway)
+    if wake:
+        sway = -.8*(1-between(.05, .35))+sway*between(.05, .35)
+    sway += flick
+    turn("tail1", (.10+.18*sin(2*pi*(t-.35)) if run else -.35 if sit else -.2 if upright else -.08 if lie else -.08*(1-risen)-.3*bow if wake else 0)+.03*wave, 0, sway)
     turn("tail2", (.06+.12*sin(2*pi*(t-.5)) if run else -.15 if sit else 0), 0, sway*.8)
     for (fore, side), ((a, b, c, d), names) in legs.items():
         parent = pitch if fore else 0
@@ -419,6 +444,15 @@ def pose(clip, t):
                 f = .45*M  # the hind feet, out in front of the rump
             if lie:
                 f = (.4 if fore else -.55)*M  # flat on its belly: paws out in front, hind legs trailing behind
+            if wake:
+                # Each foot is stepped to its place, the right one first: the hind feet from behind it to under its
+                # hips before the rump goes up, the fore paws a little further out for the stretch and then back
+                # under its shoulders as the chest comes up.
+                first = .08 if side == "L" else 0
+                steps = ((.36+first, .46+first), (.76+first, .88+first)) if fore else ((.16+first, .3+first),)
+                trail = 1-between(*steps[0])  # how far a hind foot still lies behind it, its sole up
+                f = ((.4+.12*between(*steps[0]))*(1-between(*steps[1])) if fore else -.55*trail)*M
+                h = .1*M*sum(sin(pi*clamp((t-a)/(b-a)))**2 for a, b in steps)
             # Two-link sagittal IK keeps a planted wrist or ankle at its ground target as the body bobs.
             af, az = HIP[1]-a[1], a[2]-HIP[2]
             df = (a[1]-c[1])+f+af*(1-cos(parent))+az*sin(parent)
@@ -430,15 +464,17 @@ def pose(clip, t):
             upper = direction+bend*math.acos(clamp((u*u+dist*dist-l*l)/(2*u*dist), -1, 1))
             lower = direction-bend*math.acos(clamp((l*l+dist*dist-u*u)/(2*l*dist), -1, 1))
             foot = lower-lower0-1.2 if lie and not fore else -.22*h/swing  # trailing, the soles turn up
+            if wake and not fore:
+                foot = (lower-lower0-1.2)*trail+foot*(1-trail)
         ua, la = upper-upper0, lower-lower0
-        turn(names[0], ua-parent)
+        turn(names[0], ua-parent, -(chest if fore else rump))  # shaking, the legs stay upright under a body that rolls
         turn(names[1], la-ua)
         turn(names[2], foot-la)
 
 
 rig.animation_data_create()
 for name, frames in [("stand", 48), ("walk", 30), ("run", 20), ("forage", 120), ("look", 120), ("sit", 120),
-                     ("up", 120), ("groom", 150), ("lie", 120), ("sleep", 120)]:
+                     ("up", 120), ("groom", 150), ("lie", 120), ("sleep", 120), ("shake", 30), ("wake", 60)]:
     action = bpy.data.actions.new(name)
     rig.animation_data.action = action
     for frame in range(frames+1):

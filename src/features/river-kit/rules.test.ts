@@ -1,12 +1,14 @@
 // The River kit's rules as a player meets them: it keeps up with the beaver, on land and swimming, and out of its
-// way, goes round what it cannot cross, finds something to do when the beaver stands still, and sleeps when it stays.
+// way, goes round what it cannot cross, finds something to do when the beaver stands still, and sleeps when it stays;
+// it calls when it is left behind and when it has caught up, shakes itself dry after a swim, yawns as it wakes, and
+// looks up at the beaver.
 import { expect, test } from "bun:test";
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
-import { CLOSE, FAR, HURRY, IDLE, LAP, NEAR, newKit, PAUSE, RISE, RUN, step, TIRED, WALK, type Kit } from "./rules.ts";
+import { CLOSE, FAR, GAZE, gazeAt, HURRY, IDLE, LAP, look, NEAR, newKit, PAUSE, QUIET, RISE, RUN, SHAKE, step, TIRED, WALK, type Kit } from "./rules.ts";
 
 const dt = 1 / 60, anywhere = (_x: number, _z: number) => true;
-function run(k: Kit, seconds: number, beaver: () => { x: number; z: number; land: boolean }, free = anywhere, random = () => 0.5, night = false, afloat = false) {
-  for (let t = 0; t < seconds; t += dt) step(k, beaver(), free, dt, random, night, afloat);
+function run(k: Kit, seconds: number, beaver: () => { x: number; z: number; land: boolean }, free = anywhere, random = () => 0.5, night = false, afloat = false, deep?: number) {
+  for (let t = 0; t < seconds; t += dt) step(k, beaver(), free, dt, random, night, afloat, deep);
 }
 const away = (k: Kit, b: { x: number; z: number }) => Math.hypot(k.x - b.x, k.z - b.z);
 
@@ -128,4 +130,99 @@ test("it steps out of the way of a beaver that walks up to it, on land only", ()
   const other = newKit(0, 0);
   run(other, 2, () => ({ ...beaver, land: false }));
   expect([other.x, other.z]).toEqual([0, 0]);
+});
+
+test("left behind it calls once as it starts to run, chirps once when it has caught up, and never chatters", () => {
+  const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true }, heard: string[] = [];
+  const hear = (seconds: number) => { for (let t = 0; t < seconds; t += dt) { step(k, beaver, anywhere, dt, () => 0.5); if (k.call) heard.push(k.call); } };
+  hear(1);
+  beaver.z = FAR + 0.5; // a few steps off: it walks, and says nothing
+  hear(4);
+  expect([heard, away(k, beaver) < NEAR]).toEqual([[], true]);
+  beaver.z += HURRY + 3; // left behind
+  step(k, beaver, anywhere, dt, () => 0.5);
+  expect([k.speed, k.call]).toEqual([RUN, "left"]);
+  hear(5);
+  expect(heard).toEqual(["caught"]); // on the way no more calls, beside the beaver the chirp
+  expect(away(k, beaver)).toBeLessThan(NEAR);
+  // A beaver that dashes off again and again: no call of a kind within QUIET s of the last.
+  heard.length = 0;
+  for (let i = 0; i < 4; i++) { beaver.z += HURRY + 1; hear(QUIET / 4); }
+  expect(heard.filter((c) => c === "left").length).toBeLessThanOrEqual(1);
+  expect(heard.filter((c) => c === "caught").length).toBeLessThanOrEqual(1);
+  hear(QUIET);
+  beaver.z += HURRY + 1;
+  hear(4);
+  expect(heard.slice(-2)).toEqual(["left", "caught"]); // after a quiet while it calls again
+});
+
+test("once after a swim, a moment after it has dry ground under it, it shakes itself much drier, and never in the water", () => {
+  const k = newKit(0, 0), beaver = { x: 0, z: 1, land: false };
+  run(k, 3, () => beaver, anywhere, () => 0.5, false, true); // swimming beside the beaver
+  expect([k.wet, k.shaking]).toEqual([1, 0]);
+  run(k, 3, () => beaver, anywhere, () => 0.5, false, false, 0.5); // wading in the shallows: still in the water
+  expect([k.wet > 0.5, k.shaking]).toEqual([true, 0]);
+  beaver.land = true;
+  run(k, SHAKE.after - 0.1, () => beaver); // out on the bank
+  expect(k.shaking).toBe(0);
+  run(k, 0.2, () => beaver);
+  expect(k.shaking).toBeGreaterThan(0);
+  // The beaver runs off meanwhile: the kit shakes to the end where it stands, then catches up.
+  beaver.z = 8;
+  const wet = k.wet;
+  run(k, SHAKE.lasts - 0.2, () => beaver);
+  expect([k.z, k.shaking > 0]).toEqual([0, true]);
+  run(k, 0.3, () => beaver);
+  expect(k.shaking).toBeLessThanOrEqual(0);
+  expect(k.wet).toBeLessThan(wet / 2); // in a second, what dripping alone takes most of DRY for
+  run(k, 5, () => beaver);
+  expect([away(k, beaver) < NEAR, k.shaking > 0]).toEqual([true, false]); // beside it again, and no second shake
+  // A kit that never swam, only waded, does not shake.
+  const wader = newKit(0, 0);
+  run(wader, 2, () => beaver, anywhere, () => 0.5, false, false, 0.5);
+  run(wader, 2, () => beaver);
+  expect(wader.shaking).toBe(0);
+});
+
+test("it yawns and stretches as it gets up from its sleep, and from nothing else", () => {
+  const k = newKit(0, 0), beaver = { x: 0, z: 1, land: true };
+  run(k, IDLE + 0.1, () => beaver, anywhere, () => 0.9); // sat down
+  beaver.z = FAR + 1;
+  run(k, 0.2, () => beaver);
+  expect([k.rising > 0, k.waking]).toEqual([true, false]); // getting up from sitting: no yawn
+  run(k, TIRED.day + PAUSE.lie + PAUSE.sit + 3 * IDLE, () => beaver, anywhere, () => 0.9);
+  expect(k.doing).toBe("sleep");
+  beaver.z += FAR + 1;
+  run(k, 0.2, () => beaver);
+  expect([k.doing, k.waking, k.rising]).toEqual(["stand", true, expect.closeTo(RISE.sleep! - 0.2, 1)]);
+});
+
+test("standing or sitting it looks up at the beaver, no further round than its neck turns, and busy its head is its own", () => {
+  const k = newKit(0, 0);
+  expect(gazeAt(k, { x: 0, z: 2 }).yaw).toBeCloseTo(0); // straight ahead
+  expect(gazeAt(k, { x: 2, z: 2 }).yaw).toBeCloseTo(Math.PI / 4); // to its left (+x, facing +z)
+  expect(gazeAt(k, { x: -2, z: 2 }).yaw).toBeCloseTo(-Math.PI / 4);
+  expect(gazeAt(k, { x: 1, z: -2 }).yaw).toBe(GAZE.yaw); // behind it: as far round as it can
+  k.heading = Math.PI / 2; // facing +x
+  expect(gazeAt(k, { x: 2, z: 0 }).yaw).toBeCloseTo(0);
+  // Up at a face GAZE.above m over its own: more the nearer the beaver stands, never more than GAZE.pitch.
+  expect(gazeAt(k, { x: 2, z: 0 }).pitch).toBeCloseTo(Math.atan2(GAZE.above, 2));
+  expect(gazeAt(k, { x: 0.3, z: 0 }).pitch).toBe(GAZE.pitch);
+  for (const busy of [{ doing: "forage" }, { doing: "groom" }, { doing: "lie" }, { doing: "sleep" }, { speed: 1 }, { afloat: true }, { rising: 0.3 }, { shaking: 0.3 }] as Partial<Kit>[]) {
+    expect(gazeAt({ ...k, ...busy }, { x: 2, z: 2 }), JSON.stringify(busy)).toEqual({ yaw: 0, pitch: 0 });
+  }
+  expect(gazeAt({ ...k, doing: "sit" }, { x: 2, z: 2 }).yaw).not.toBe(0);
+  // Its head follows eased: part of the way in a tenth of a second, all but there in a second, and back as slowly.
+  const beaver = { x: 2, z: 2 }, to = gazeAt(k, beaver);
+  for (let t = 0; t < 0.1; t += dt) look(k, beaver, dt);
+  expect(k.gaze.yaw / to.yaw).toBeGreaterThan(0.2);
+  expect(k.gaze.yaw / to.yaw).toBeLessThan(0.6);
+  for (let t = 0; t < 1; t += dt) look(k, beaver, dt);
+  expect(k.gaze.yaw).toBeCloseTo(to.yaw, 1);
+  expect(k.gaze.pitch).toBeCloseTo(to.pitch, 1);
+  k.doing = "forage";
+  for (let t = 0; t < 0.1; t += dt) look(k, beaver, dt);
+  expect(k.gaze.yaw / to.yaw).toBeGreaterThan(0.4);
+  for (let t = 0; t < 1; t += dt) look(k, beaver, dt);
+  expect(k.gaze.yaw).toBeCloseTo(0, 1);
 });

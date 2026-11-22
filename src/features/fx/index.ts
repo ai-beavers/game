@@ -1,6 +1,6 @@
 // The "fx" feature: small effects that make the world answer to the beaver. Dust under its feet on bare earth and
 // sand, blades kicked up when it runs through grass, a puff when it lands; a splash, rings and a wake in the pond,
-// drops falling off when it climbs out; a tall splash or a puff of dust for a tail slap; dust when it drops a stick; motes drifting in the light near the camera and
+// drops falling off when it climbs out, and flying off the River kit as it shakes itself dry; a tall splash or a puff of dust for a tail slap; dust when it drops a stick; motes drifting in the light near the camera and
 // now and then a leaf falling under the trees. The work (src/features/build): chips from each bite, leaves shaken loose
 // when a tree starts to fall, dust and leaves where it lands, splinters when it breaks, mud or a splash for each stick
 // in the dam, a cheerful burst when the dam is finished. The weather (game.sky): rain splashing on the ground and the
@@ -288,6 +288,10 @@ export const create: CreateFeature = (game) => {
 
   let dripping = 0;
   events.on("leaveWater", () => { dripping = 2.5; });
+  // The River kit shakes itself dry (src/features/river-kit): drops fly off it all round for as long as it shakes.
+  let shaking = 0, flung = 0;
+  const shaker = new Vector3();
+  events.on("kitShakes", ({ place, seconds }) => { shaking = seconds; shaker.copyFrom(place); });
   events.on("drop", ({ place }) => {
     facing();
     const at = place.add(forward.scale(0.45));
@@ -544,6 +548,20 @@ export const create: CreateFeature = (game) => {
             foam(x, z, side.x * s * 0.25 - forward.x * 0.05, side.z * s * 0.25 - forward.z * 0.05, 0.16);
           }
         }
+      }
+    }
+    // Flung off the shaking kit: a fine spray, out to all sides and a little up.
+    if (shaking > 0) {
+      shaking -= dt;
+      flung -= dt * budget.rate;
+      while (flung <= 0) {
+        flung += 0.012;
+        const a = random(0, Math.PI * 2), out = random(0.6, 2);
+        make({
+          kind: KIND.drop, mode: MODE.streak, floor: FLOOR.die, x: shaker.x + Math.cos(a) * 0.1, y: shaker.y + random(-0.05, 0.1), z: shaker.z + Math.sin(a) * 0.1,
+          vx: Math.cos(a) * out, vy: random(0.2, 1.1), vz: Math.sin(a) * out, gravity: 1, drag: 0.3, life: 1.5, fadeIn: 0.03, fadeOut: 0.1,
+          size: random(0.008, 0.014), grow: 0.01, r: WATER.r, g: WATER.g, b: WATER.b, a: 0.7,
+        });
       }
     }
     // Dripping after climbing out.

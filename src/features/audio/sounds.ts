@@ -284,6 +284,18 @@ const RECIPES = {
     burst(ctx, out, t, { filter: "bandpass", freq: 1500, to: 500, q: 0.8, attack: 0.001, decay: 0.1, peak: 0.7 });
     tone(ctx, out, t, { freq: 150, to: 50, attack: 0.002, decay: 0.2, peak: 0.6 });
   },
+  /** The River kit left behind: a thin, anxious whine, up and then longer down. */
+  squeak(ctx, out, t) {
+    const v = rand(0.94, 1.06);
+    for (const [at, freq, to, decay] of [[0, 1050, 1350, 0.1], [0.15, 1300, 950, 0.22]] as const) {
+      tone(ctx, out, t, { at, type: "triangle", freq: freq * v, to: to * v, attack: 0.03, decay, peak: 0.2 });
+    }
+  },
+  /** The River kit beside the beaver again: a short, glad chirp, two quick notes going up. */
+  chirp(ctx, out, t) {
+    const v = rand(0.94, 1.06);
+    for (const [at, freq] of [[0, 1500], [0.09, 1800]] as const) tone(ctx, out, t, { at, freq: freq * v, to: freq * v * 1.5, attack: 0.008, decay: 0.05, peak: 0.2 });
+  },
   /** One chirp of a cricket: three quick pulses of a high tone; amount picks its pitch. */
   cricket(ctx, out, t, amount) {
     const f = 4300 + amount * 600;
