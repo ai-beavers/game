@@ -7,7 +7,7 @@
 //   apply(state, { type: "bite", tree: 4 });          true when it changed something; the only way to change state
 //   used(state, "w3")                                 the stick left the world: in the dam, lodge, cache, or traded
 //   live(state.trees[4])                              the tree standing or lying there now (undefined: only a stump)
-//   bitesToFell(radius) · woodFrom(tree, trunk) · damPlan() · moundHeight(placed) · goals(state) · pondRise(placed)
+//   bitesToFell(radius) · woodFrom(tree, trunk) · damPlan() · moundHeight(placed) · mudHeight(x, z, placed) · goals(state) · pondRise(placed)
 //   pondLevel(full, placed): where the pond's surface stands with this many sticks in the dam
 //   lodgeGrow(placed): how far the lodge stands out of the pond (after the dam's SLOTS sticks come LODGE onto it)
 //   cachePlan(): where the CACHE sticks of the food cache go, on the pond's bed at CACHE_AT (after the lodge's)
@@ -198,6 +198,15 @@ export function profile(x: number, z: number) {
 /** Height of the mud mound's crest with this many sticks placed: none for the first few, then up to just under the
  *  top layer of sticks. */
 export const moundHeight = (placed: number) => DAM.height * 0.85 * Math.max(0, Math.min(1, (placed - 4) / (SLOTS - 4))) ** 0.8;
+
+/** m the mud's foot lies below the ground, so its edge never shows a gap. */
+export const MUD_SINK = 0.04;
+/** Height of the mud above the ground at (x, z) of the dam's frame with this many sticks placed, m: the mound's
+ *  height eased across its profile (before the mud's own bumps, which build/dam.ts adds). */
+export function mudHeight(x: number, z: number, placed: number) {
+  const p = profile(x, z);
+  return moundHeight(placed) * p * p * (3 - 2 * p);
+}
 
 /** Height of the crest the beaver walks on (the collider): the mud, or the sticks on it, whichever is higher. */
 export const crestHeight = (placed: number) => placed ? Math.max(moundHeight(placed), Math.min(DAM.height, slotLift(placed - 1) + 0.03)) : 0;

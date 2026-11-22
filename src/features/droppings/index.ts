@@ -10,8 +10,7 @@
 // no one else sees them. Events droppingLeft and droppingsWashed. rules.ts holds them as plain numbers.
 //
 // Debug, for bun shot --eval (window.droppings): droppings.count · droppings.most · droppings.text (what E offers) ·
-// droppings.offered (whether E offers it here now) · droppings.at() (stands by the dam's land side facing it,
-// empty-pawed).
+// droppings.at() (stands by the dam's land side facing it, empty-pawed).
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
@@ -22,19 +21,19 @@ import type { Actor, Offer } from "../../player/index.ts";
 import { SLAP_COOLDOWN } from "../../player/state.ts";
 import { material } from "../../world/models.ts";
 import { buildOf } from "../build/index.ts";
-import { DAM, SLOTS } from "../build/rules.ts";
+import { DAM, MUD_SINK, SLOTS } from "../build/rules.ts";
 import { dawnCame } from "../flag/state.ts";
 import { MOST, next, offered, spot, type Happening } from "./rules.ts";
 
 const LEAVE: Offer = { action: "use", text: "Leave a dropping" };
-/** s from E to the dropping landing (sitting with its back to the dam), and the whole squat, the slap included: no
- *  shorter than the tail's cooldown (SLAP_COOLDOWN), so the next one's slap may go too. */
-const DROP_AT = 1.0, SQUAT = Math.max(2, SLAP_COOLDOWN + 0.1);
+/** s from E to the dropping landing (sitting with its back to the dam), and the sit, the slap that pats it included.
+ *  BUSY, s from E: no next one is offered before the tail may slap again (SLAP_COOLDOWN), so its slap goes too. */
+const DROP_AT = 1.0, SIT = 1.6, BUSY = DROP_AT + SLAP_COOLDOWN + 0.1;
 /** s after it lands that it is patted flat if no tail slap came (the slap still cooling down from the last one). */
 const PAT_LATEST = 0.7;
 /** How flat a patted dropping is, of its height. */
 const FLAT = 0.55;
-/** Where the feet may stand to leave one, in the dam's frame: on its land side, beside the crest (x from the crest's
+/** Where the feet may stand to leave one, m in the dam's frame: on its land side, beside the crest (x from the crest's
  *  land edge out past the mound's foot; z along it). Short, so the Flag's pole nearby keeps its own E. */
 const REACH = { from: -(DAM.base + 0.45), to: 0, along: DAM.length / 2 - 0.1 };
 
@@ -70,7 +69,7 @@ export const create: CreateFeature = (game) => {
   /** Puts dropping n on the dam's top where its spot is now (it rises with the crest). */
   const lay = (n: number) => {
     const s = spot(n, placed()), at = dam.at(s.x, s.z), m = shown[n]!;
-    at.y = dam.top(at) ?? world.heightAt(at.x, at.z) - 0.04 + s.y;
+    at.y = dam.top(at) ?? world.heightAt(at.x, at.z) - MUD_SINK + s.y;
     m.position.copyFrom(at).y -= 0.004;
   };
   let settle = 0; // pictures left to lay them again: a stick or the mud just moved is in its new place a picture later
@@ -105,7 +104,7 @@ export const create: CreateFeature = (game) => {
       const s = spot(count, placed()), at = dam.at(s.x, s.z);
       const face = Math.atan2(player.feet.x - at.x, player.feet.z - at.z); // its back, and its tail, to the spot
       sitting = { t: 0, face, patAt: Infinity };
-      player.sit(SQUAT, face);
+      player.sit(SIT, face);
       return undefined; // no lasting action: the beaver sits (player.sit), the feature times it
     },
     offer(carrying) { return canLeave(carrying) ? LEAVE : before?.offer?.(carrying); },
@@ -120,7 +119,6 @@ export const create: CreateFeature = (game) => {
       get count() { return count; },
       most: MOST,
       text: LEAVE.text,
-      get offered() { return canLeave(!!player.carrying); },
       /** Stands on the dam's land side, beside the middle of its crest, facing it, with empty paws. */
       at() {
         player.drop();
@@ -154,7 +152,7 @@ export const create: CreateFeature = (game) => {
             patting = { n: count - 1, t: 0 };
             player.slap();
           }
-        } else if (sitting.t >= SQUAT) sitting = undefined;
+        } else if (sitting.t >= BUSY) sitting = undefined;
       }
     },
     update(dt) {

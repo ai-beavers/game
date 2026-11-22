@@ -25,7 +25,7 @@ import type { World } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { hull as hullOf, place, SOLID, type PhysicsBody } from "../../physics.ts";
 import { fbm, seeded } from "../../world/noise.ts";
-import { CACHE_AT, cachePlan, DAM, damPlan, LODGE, moundHeight, crestHeight, profile, SLOTS, STICKS } from "./rules.ts";
+import { CACHE_AT, cachePlan, DAM, damPlan, LODGE, moundHeight, mudHeight, MUD_SINK, crestHeight, SLOTS, STICKS } from "./rules.ts";
 
 export function createDam(stage: Stage, world: World) {
   const { scene, physics } = stage, site = world.site!, pond = world.pond!;
@@ -70,9 +70,9 @@ export function createDam(stage: Stage, world: World) {
     const height = moundHeight(placed);
     mud.setEnabled(height > 0.005);
     for (let i = 0; i < local.length; i += 3) {
-      const x = local[i]!, z = local[i + 2]!, at = toWorld(x,z), p = profile(x,z);
+      const x = local[i]!, z = local[i + 2]!, at = toWorld(x,z);
       positions[i] = at.x;
-      positions[i + 1] = world.heightAt(at.x, at.z) - 0.04 + height * p * p * (3 - 2 * p) * (1 + 0.3 * fbm(at.x * 4, at.z * 4, 3));
+      positions[i + 1] = world.heightAt(at.x, at.z) - MUD_SINK + mudHeight(x, z, placed) * (1 + 0.3 * fbm(at.x * 4, at.z * 4, 3));
       positions[i + 2] = at.z;
     }
     mud.updateVerticesData("position", positions, true);

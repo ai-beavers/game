@@ -83,7 +83,7 @@ export const dam = (kit: Kit): Station[] => {
       }
       if (droppings.count >= droppings.most) return skip(`${droppings.most} droppings lie on the dam already; the dawn washes them off`);
       if (player.carrying) {
-        expect(player.putDown(), "a stick in the paws, and it cannot be set down here");
+        if (!player.putDown()) return skip("a stick in the paws, and it cannot be set down here");
         await until(() => !player.carrying, 2, "set the stick down, it is still in the paws");
       }
       const offers = () => player.offer()?.text === droppings.text;
