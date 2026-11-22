@@ -8,6 +8,7 @@ What the code does not say in one place about how the picture is made. Read it b
 - **Concepts and examples**: `https://doc.babylonjs.com/llms.txt` indexes the official documentation; every page is Markdown at its address plus `.md`.
 - Import each class from its own module file (`@babylonjs/core/Materials/shaderMaterial.js`), as the code does. The bundle holds only what is imported.
 - The game runs on the WebGL2 engine. `tools/build.ts` leaves the WebGPU shaders out of the bundle.
+- `engine=webgpu` in the address runs it on Babylon's WebGPU engine instead, a trial for phones (`src/webgpu.ts`, a second bundle of its own). There the game's GLSL is turned into WGSL by Babylon, the fur's material is forced to GLSL and the fireflies are left out (WebGPU has no point sprites).
 
 ## One light, and shaders that light themselves
 

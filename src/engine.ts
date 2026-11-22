@@ -1,5 +1,6 @@
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -11,8 +12,19 @@ import { sendChanges } from "./hud-upload.ts";
 
 export const STEP = 1 / 60;
 
+/** The WebGL2 engine; with `engine=webgpu` in the address Babylon's WebGPU engine, a trial to be measured on a phone. */
+async function createEngine(canvas: HTMLCanvasElement): Promise<AbstractEngine> {
+  if (new URLSearchParams(location.search).get("engine") === "webgpu") {
+    const { createWebGPU } = await import("./webgpu.ts");
+    const engine = await createWebGPU(canvas);
+    if (engine) return engine;
+    console.warn("engine=webgpu: this browser has no WebGPU, the game runs on WebGL2.");
+  }
+  return new Engine(canvas, true, { stencil: true, preserveDrawingBuffer: true });
+}
+
 export async function start(canvas: HTMLCanvasElement) {
-  const engine = new Engine(canvas, true, { stencil: true, preserveDrawingBuffer: true });
+  const engine = await createEngine(canvas);
   engine.setHardwareScalingLevel(1 / Math.min(devicePixelRatio, 2));
   const scene = new Scene(engine);
   scene.useRightHandedSystem = true;

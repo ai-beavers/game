@@ -26,6 +26,7 @@ Combine them with `&`. `README.md` lists the tour ones.
 | `touch` | touch controls on a desktop page |
 | `debug` | draws the colliders |
 | `standins` | plain shapes instead of `assets/props.glb` |
+| `engine=webgpu` | Babylon's WebGPU engine instead of WebGL2, where the browser has it (a trial); shaders compile for seconds after `ready` |
 
 A fixed picture for comparing before and after: `?play&hour=13&clock=stop&weather=fair&mute`.
 
