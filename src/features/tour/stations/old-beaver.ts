@@ -8,7 +8,7 @@
 // (window.oldBeaver), which the issue made for the tour: the HUD shows no state or facing to check.
 import { CLOSING, EARSHOT, LORES, START, type XZ } from "../../old-beaver/rules.ts";
 import { NAME } from "../../old-beaver/panel.ts";
-import { skip, type Kit } from "../kit.ts";
+import { Skip, skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 /** What the feature puts on window for tools (src/features/old-beaver/index.ts); only the part the tour needs. */
@@ -31,14 +31,21 @@ export const oldBeaver = (kit: Kit): Station[] => {
       const him = (window as { oldBeaver?: OldBeaverDebug }).oldBeaver ?? skip("no Old Beaver feature");
       him.reset();
       await until(() => him.loaded, 20, "the Old Beaver's beaver never loaded");
-      // In a shared world the telling is the room's: far from him at the spawn, he is ready for the next lore by itself.
-      await until(() => him.state === "idle" && !shown("old-beaver-line"), 12, `far from him he stays ${him.state}, the speech box ${shown("old-beaver-line") ? "shown" : "hidden"}`);
+      // In a shared world he tells once for everyone (docs/adr/0010), to whoever is nearest. With another beaver in
+      // his earshot (the stream's own, in the Tour's world) what this page sees is not this beaver's visit: then
+      // the station skips where it would fail.
+      const others = (window as { net?: { remotes: Map<number, { feet: XZ; node: { isEnabled(): boolean } }> } }).net?.remotes;
+      const company = () => [...others?.values() ?? []].some((r) => r.node.isEnabled() && Math.hypot(r.feet.x - him.place.x, r.feet.z - him.place.z) < EARSHOT + 2);
+      let met = company();
+      const watch = setInterval(() => { met ||= company(); }, 250);
       let heard = 0;
       const off = game.events.on("oldBeaverSpeaks", () => heard++);
       // His murmur's syllables and his Voice's lines (where the server says them) both count as his sound started.
       const played = () => (window as { audio?: { played: Record<string, number> } }).audio?.played;
       const murmurs = () => (played()?.murmur ?? 0) + (played()?.voice ?? 0), before = murmurs();
       try {
+        // In a shared world the telling is the room's: far from him at the spawn, he is ready for the next lore by itself.
+        await until(() => him.state === "idle" && !shown("old-beaver-line"), 12, `far from him he stays ${him.state}, the speech box ${shown("old-beaver-line") ? "shown" : "hidden"}`);
         // Towards him from the Clearing's middle, the way a player wandering out comes; the last metres walked.
         const p = him.place, r = Math.hypot(p.x, p.z), at = (d: number) => ({ x: p.x - (p.x / r) * d, z: p.z - (p.z / r) * d });
         const outside = at(START + 3), stand = at(START - 1.5);
@@ -66,7 +73,10 @@ export const oldBeaver = (kit: Kit): Station[] => {
           expect(!shown("old-beaver-speaker"), "he has fallen silent, and the speaker is still over his head");
         }
         if (live) await wait(1);
-      } finally { off(); }
+      } catch (e) {
+        if (!(e instanceof Skip) && (met || company())) skip(`another beaver is with him (${(e as Error).message})`);
+        throw e;
+      } finally { off(); clearInterval(watch); }
     }, "Visit the Old Beaver"],
   ];
 };
