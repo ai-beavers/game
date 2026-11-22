@@ -137,8 +137,8 @@ export const shopping = (kit: Kit): Station[] => {
           swum = Math.hypot(player.feet.x - from.x, player.feet.z - from.z); took = time.t - t0;
         } finally { want.to = undefined; time.on = false; }
         expect(took > 1.5, `swam only ${took.toFixed(2)} s before landing on the far shore`);
-        const speed = swum / took;
-        expect(speed > 0.65 && speed < 0.85, `a Swimmer swims at ${speed.toFixed(2)} m/s, not about 0.75 (no class: ${SWIM_SPEED})`);
+        const speed = swum / took, swimmer = beaverClass("swimmer")!.swimSpeed;
+        expect(Math.abs(speed - swimmer) < 0.1, `a Swimmer swims at ${speed.toFixed(2)} m/s, not about ${swimmer} (no class: ${SWIM_SPEED})`);
         if (live) await wait(2);
 
         // Back at the counter, a Gnawer, and a tree no one has bitten gnawed down: each bite in 0.4 s, as many as ever.
@@ -152,8 +152,8 @@ export const shopping = (kit: Kit): Station[] => {
         try { await fell(tree); } finally { off(); gnawed.on = false; }
         const need = bitesToFell(measure(world.trees![tree]!).radius);
         expect(bites.length === need, `tree ${tree} fell after ${bites.length} bites, it takes ${need} as without a class`);
-        const each = (bites.at(-1)! - bites[0]!) / (bites.length - 1);
-        expect(Math.abs(each - 0.4) < 0.06, `a Gnawer bites every ${each.toFixed(2)} s, not about 0.4 (no class: ${BITE_TIME})`);
+        const gnawer = beaverClass("gnawer")!.biteTime, each = (bites.at(-1)! - bites[0]!) / (bites.length - 1);
+        expect(Math.abs(each - gnawer) < 0.06, `a Gnawer bites every ${each.toFixed(2)} s, not about ${gnawer} (no class: ${BITE_TIME})`);
 
         // And back to no class: the card shows only the level, the beaver swims and bites as every beaver.
         await toCounter(shop);
