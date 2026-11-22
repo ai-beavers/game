@@ -29,7 +29,11 @@ bunx wrangler dev            the game as it runs on Cloudflare, on port 8787, fr
 
 ## On Cloudflare
 
-Everyone plays at <https://beaver.uq-dev.workers.dev/>, in one shared world of up to 16 players.
+Everyone plays at <https://game.ai-beavers.com/>, in one shared world of up to 16 players.
+
+- **Addresses**: `game.ai-beavers.com` is a custom hostname (Cloudflare for SaaS) on the `uq.dev` zone: the
+  ai-beavers.com owner's proxied CNAME points it at `aib-game.uq.dev`, and the Worker route `aib-game.uq.dev/*`, set in
+  the dashboard and not in `wrangler.jsonc`, sends both to the Worker. <https://beaver.uq-dev.workers.dev/> still works.
 
 - **Publishing**: every push to `main` that passes `check` is deployed by the `deploy` job of `.github/workflows/check.yml`
   (`wrangler deploy`). Players reconnect by themselves and load the new build once. The world's work stays.
@@ -40,7 +44,7 @@ Everyone plays at <https://beaver.uq-dev.workers.dev/>, in one shared world of u
 - **Credentials**: the GitHub environment `production` holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and
   takes runs from `main` only.
 - **Starting the world afresh**: set the token once with `bunx wrangler secret put RESET_TOKEN`, then
-  `curl -X POST -H "Authorization: Bearer <token>" https://beaver.uq-dev.workers.dev/net/reset`. Without the secret
+  `curl -X POST -H "Authorization: Bearer <token>" https://game.ai-beavers.com/net/reset`. Without the secret
   the address answers 404.
 - **The Old Beaver's voice**: set the key once with `bunx wrangler secret put ELEVENLABS_API_KEY`. The world's
   Durable Object asks ElevenLabs for each line once and sends the sound to every player (ADR 0010); every talk with
