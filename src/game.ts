@@ -21,6 +21,7 @@ import { createPlayerControls, type PlayerControls } from "./player/index.ts";
 import { OWN_LAYER } from "./player/camera.ts";
 import { loadProps } from "./props/index.ts";
 import { createSettings, type SettingsStore } from "./settings.ts";
+import type { ClassEffect } from "./features/shop/rules.ts";
 import type { SkyState } from "./features/sky/index.ts";
 import { createWorld } from "./world/index.ts";
 
@@ -38,6 +39,9 @@ export interface Game {
   /** The player's lantern, once the lantern feature runs (it puts itself here): out of the backpack, and switched
    *  off by a flash. */
   lantern?: { readonly out: boolean; readonly off: boolean };
+  /** What the player's Class makes better, once the shop feature runs (it puts itself here): seconds per bite of the
+   *  player's own gnawing (src/features/build) and the swimming speed, m/s. Missing: as every beaver. */
+  classEffect?: Readonly<ClassEffect>;
 }
 
 export interface Feature {

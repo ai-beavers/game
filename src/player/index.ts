@@ -66,6 +66,9 @@ export interface PlayerControls extends Player {
   velocity: Vector3;
   facing: number;
   afloat: boolean;
+  /** m/s the beaver swims at, SWIM_SPEED unless something sets it (src/features/shop: the Swimmer class). Walking,
+   *  running, crawling and the canoe keep their own. */
+  swimSpeed: number;
   /** Under the surface on purpose (the dive key held while swimming), and the breath left, 0 … 1. */
   readonly diving: boolean;
   readonly breath: number;
@@ -166,6 +169,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   const lift = new Vector3(); // m the picture still lags behind the last steps up (and a climb out of the water)
   const push = new Vector3(); // m/s a toss still carries it over the ground, until it lands (toss())
   let facing = 0, facingBefore = 0, speed = 0, vy = 0, grounded = false, afloat = false, actHeld = false, slapHeld = false, under = false;
+  let swimSpeed = SWIM_SPEED; // the Class may change it (PlayerControls.swimSpeed)
   let foe: PlayerControls["foe"], leaping = false, spin = 0, spinBefore = 0; // the leaping slap, and how far round it has turned, radians
   let actor: Actor | undefined, aim: number | undefined, ride: Ride | undefined; // aim: where a lasting action turns the beaver
   let hold: PlayerControls["hold"], freeing = false; // freeing: a pickup waits for the paws to be free
@@ -346,7 +350,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     if (sitFor > 0) sitFor = moving || busy || input.jump || !grounded || afloat || ride ? 0 : Math.max(0, sitFor - dt);
     // On land the dive key sits and Y crawls, while held (sitting the beaver does not move: moving gets it up).
     const { low, slow } = stepLow(!!input.dive || sitFor > 0, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: !!ride });
-    const top = ride ? RIDE_SPEED : afloat ? SWIM_SPEED : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
+    const top = ride ? RIDE_SPEED : afloat ? swimSpeed : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
     const [accel, brake] = ride ? [RIDE_ACCEL, RIDE_BRAKE] : afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
     const going = speed; // m/s before steering brakes it: a walk asked for by turnTo keeps it
     steering.facing = facing; steering.speed = speed;
@@ -463,6 +467,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     node, motion, step, update, keys, input, camera, body, collisions: mover.collisions, feet, velocity,
     get facing() { return facing; },
     get afloat() { return afloat; },
+    get swimSpeed() { return swimSpeed; },
+    set swimSpeed(v: number) { swimSpeed = Number.isFinite(v) && v > 0 ? v : SWIM_SPEED; },
     get diving() { return dive.diving; },
     get breath() { return dive.breath / BREATH; },
     get waterLevel() { return waterLevel(); },

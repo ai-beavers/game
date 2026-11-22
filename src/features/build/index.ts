@@ -309,8 +309,8 @@ export const create: CreateFeature = (game) => {
       if (job?.kind === "gnaw") {
         const i = job.tree, before = live(state.trees[i]);
         if (!held || !before || (before.fell !== undefined && !before.rest)) return (job = undefined);
-        if ((job.timer += dt) < BITE_TIME) return progressOf(i);
-        job.timer -= BITE_TIME;
+        if ((job.timer += dt) < biteTime()) return progressOf(i);
+        job.timer -= biteTime();
         commit({ type: "bite", tree: i });
         const t = live(state.trees[i])!;
         if (t.fell === undefined && t.bites >= bitesToFell(measure(world.trees![i]!).radius)) {
@@ -339,9 +339,13 @@ export const create: CreateFeature = (game) => {
     },
   };
 
+  /** Seconds per bite of the player's own gnawing: their Class's (game.classEffect, from the shop), else BITE_TIME.
+   *  The bites a tree takes stay the same. */
+  const biteTime = () => game.classEffect?.biteTime ?? BITE_TIME;
+
   /** How far tree i is towards falling (standing) or breaking (lying), with the bite under way. */
   const progressOf = (i: number) => {
-    const t = live(state.trees[i]), timer = job?.kind === "gnaw" && job.tree === i ? job.timer / BITE_TIME : 0;
+    const t = live(state.trees[i]), timer = job?.kind === "gnaw" && job.tree === i ? Math.min(1, job.timer / biteTime()) : 0;
     if (t?.rest) return Math.min(1, (t.splitBites + timer) / BITES_TO_SPLIT);
     return Math.min(1, ((t?.bites ?? 0) + timer) / bitesToFell(measure(world.trees![i]!).radius));
   };

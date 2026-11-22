@@ -1,12 +1,17 @@
 // The Shop: walk to it, in through the doorway, Use at the counter, buy the cheapest Outfit there is and wear it,
 // then put the default look back on. Played through input as a person would; only the Experience to pay with is
 // given to the tour's own saved game (building enough sticks first is too slow for the fast tour).
+// Pick a class: at the same counter, Swimmer, then a swim across the pond timed; Gnawer, then a tree gnawed down with
+// its bites timed and counted; then back to no class.
 // The Calendar board beside it: walk up the path to it, read the week it shows with Build Fridays and the House of AI
 // events the tour gives it (as a test it plays without the network; live, the real ones), and find it solid over its
 // whole width.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Look } from "../../../contracts.ts";
-import { DEFAULT, OUTFITS, type ShopState } from "../../shop/rules.ts";
+import { BITE_TIME, bitesToFell, live as standing } from "../../build/rules.ts";
+import { measure } from "../../build/tree.ts";
+import { beaverClass, DEFAULT, OUTFITS, type ShopState } from "../../shop/rules.ts";
+import { SWIM_SPEED } from "../../../player/state.ts";
 import type { HouseEvent } from "../../shop/feed.ts";
 import { BUILD_FRIDAYS, dayKey, span, type CalendarEntry, type CalendarWeek } from "../../shop/week.ts";
 import { skip, type Kit } from "../kit.ts";
@@ -29,11 +34,55 @@ interface ShopDebug {
 const same = (a: Look, b: Look) => [...a.shirt, ...a.hat].every((v, i) => Math.abs(v - [...b.shirt, ...b.hat][i]!) < 1e-3);
 
 export const shopping = (kit: Kit): Station[] => {
-  const { beaver, player, want, live, wait, until, walkTo, reach, tap, key, expect, hudText } = kit;
+  const { beaver, player, world, game, want, live, frame, wait, until, walkTo, reach, tap, key, expect, hudText, pond, clear, needBuild, standingTrees, fell } = kit;
   const panel = () => document.querySelector<HTMLDialogElement>("dialog#shop-panel");
   const button = (label: string) => panel()?.querySelector<HTMLButtonElement>(`button[aria-label^="${label}"]`) ?? null;
   // The Experience there is to spend, as the Shopkeeper's panel shows it (the player card shows the level instead).
   const experience = () => Number(/(\d+) Experience/.exec(hudText("shop-experience"))?.[1] ?? NaN);
+  /** Over land to the doorway (hopped over in the fast tour), in, and Use at the counter: the panel opens. */
+  const toCounter = async (shop: ShopDebug) => {
+    const door = shop.door(1.6);
+    await walkTo(door.x, door.z, { near: 0.5, limit: 90, hop: true });
+    if (live) await wait(3);
+    const inside = shop.door(-1.5);
+    await walkTo(inside.x, inside.z, { near: 0.5, limit: 20 });
+    await reach("use", () => shop.counter());
+    expect(!panel()?.open, "the shop panel is open before Use was pressed");
+    await tap("act");
+    await until(() => !!panel()?.open, 2, "pressed Use at the counter, no shop panel opened");
+    if (live) await wait(2);
+  };
+  const closePanel = async () => {
+    key("Escape");
+    await until(() => !panel()?.open, 2, "Escape did not close the shop panel");
+    expect(!kit.stage.paused, "Escape on the shop panel opened the pause menu as well");
+  };
+  /** Out of the shop the way it came in, through the doorway: straight from the counter it walks into the wall. */
+  const leave = async (shop: ShopDebug) => {
+    const inside = shop.door(-1.5), out = shop.door(2.5);
+    await walkTo(inside.x, inside.z, { near: 0.5, limit: 20 });
+    await walkTo(out.x, out.z, { near: 0.6, limit: 20 });
+  };
+  /** Presses the class's button in the open panel and sees it marked current, on the player card too, for free. */
+  const pickClass = async (shop: ShopDebug, name: string) => {
+    const had = experience(), choice = button(`Choose ${name}`);
+    expect(!!choice && !choice.disabled, `no button to choose ${name} in the panel (or it is greyed out)`);
+    choice!.click();
+    await until(() => !!button(`Current: ${name}`), 2, `chose ${name}, the panel does not mark it current`);
+    expect(!button(`Choose ${name}`), `${name} is still offered to choose after choosing it`);
+    const level = () => hudText("player-level");
+    const card = name === "No class" ? /^LV \d+$/ : new RegExp(`^LV \\d+ · ${name}$`);
+    await until(() => card.test(level()), 2, () => `chose ${name}, the player card reads "${level()}"`);
+    expect(experience() === had, `choosing ${name} changed the Experience from ${had} to ${experience()}`);
+    expect((beaverClass(shop.state.class)?.name ?? "No class") === name, `chose ${name}, the saved class is ${shop.state.class}`);
+    if (live) await wait(2);
+  };
+  /** Game seconds since started, counted frame by frame (the fast tour runs FAST times real time). */
+  const clock = () => {
+    const c = { t: 0, on: true };
+    void (async () => { while (c.on) c.t += await frame(); })();
+    return c;
+  };
   return [
     ["Buy an outfit", async () => {
       const shop = (window as { shop?: ShopDebug }).shop ?? skip("no shop feature");
@@ -44,16 +93,7 @@ export const shopping = (kit: Kit): Station[] => {
       const had = shop.state.experience, lookBefore = beaver.look;
 
       // Over land to the doorway (hopped over in the fast tour); live, a pause there before going in.
-      const door = shop.door(1.6);
-      await walkTo(door.x, door.z, { near: 0.5, limit: 90, hop: true });
-      if (live) await wait(3);
-      const inside = shop.door(-1.5);
-      await walkTo(inside.x, inside.z, { near: 0.5, limit: 20 });
-      await reach("use", () => shop.counter());
-      expect(!panel()?.open, "the shop panel is open before Use was pressed");
-      await tap("act");
-      await until(() => !!panel()?.open, 2, "pressed Use at the counter, no shop panel opened");
-      if (live) await wait(2);
+      await toCounter(shop);
       expect(experience() === had, `the HUD shows ${experience()} Experience, the player has ${had}`);
 
       const buy = button(`Buy ${pick.name}`);
@@ -73,12 +113,64 @@ export const shopping = (kit: Kit): Station[] => {
       expect(experience() === had - pick.price, "wearing the default look cost Experience");
       expect(shop.state.wearing === DEFAULT && !!button(`Wearing ${classic.name}`), "the default is not worn after choosing it");
       expect(!!button(`Wear ${pick.name}`), `${pick.name} is not kept to wear again after taking it off`);
-      key("Escape");
-      await until(() => !panel()?.open, 2, "Escape did not close the shop panel");
-      expect(!kit.stage.paused, "Escape on the shop panel opened the pause menu as well");
+      await closePanel();
       if (live) {
         const out = shop.door(2.5);
         await walkTo(out.x, out.z, { near: 0.6, limit: 20 });
+      }
+    }, "Shopping"],
+    ["Pick a class", async () => {
+      const shop = (window as { shop?: ShopDebug }).shop ?? skip("no shop feature");
+      if (!pond) return skip("no pond");
+      if (shop.state.class !== null) shop.reset(); // a run cut short left one: start as every beaver does
+      try {
+        await toCounter(shop);
+        await pickClass(shop, "Swimmer");
+        await closePanel();
+        await leave(shop);
+
+        // Into the pond from its west shore and straight across, east: timed once it swims at full speed.
+        const z = pond.z - clear(), west = pond.x - pond.radius - 1.2, east = pond.x + pond.radius + 2;
+        await walkTo(west, z, { near: 0.6, limit: 60 });
+        await walkTo(east, z, { arrived: () => player.afloat, limit: 20 });
+        expect(player.afloat, "walked into the pond, never afloat");
+        want.to = new Vector3(east, 0, z);
+        const time = clock();
+        let from: Vector3 | undefined, t0 = 0, swum = 0, took = 0;
+        try {
+          await until(() => time.t > 0.8, 3, "");
+          from = player.feet.clone(); t0 = time.t;
+          await until(() => time.t - t0 >= 2 || !player.afloat, 4, "");
+          swum = Math.hypot(player.feet.x - from.x, player.feet.z - from.z); took = time.t - t0;
+        } finally { want.to = undefined; time.on = false; }
+        expect(took > 1.5, `swam only ${took.toFixed(2)} s before landing on the far shore`);
+        const speed = swum / took, swimmer = beaverClass("swimmer")!.swimSpeed;
+        expect(Math.abs(speed - swimmer) < 0.1, `a Swimmer swims at ${speed.toFixed(2)} m/s, not about ${swimmer} (no class: ${SWIM_SPEED})`);
+        if (live) await wait(2);
+
+        // Back at the counter, a Gnawer, and a tree no one has bitten gnawed down: each bite in 0.4 s, as many as ever.
+        await walkTo(east, z, { arrived: () => !player.afloat, limit: 20 });
+        await toCounter(shop);
+        await pickClass(shop, "Gnawer");
+        await closePanel();
+        await leave(shop);
+        const b = needBuild(), tree = standingTrees(b).find((i) => (standing(b.state.trees[i])?.bites ?? 0) === 0) ?? skip("no unbitten tree left");
+        const bites: number[] = [], gnawed = clock();
+        const off = game.events.on("gnaw", (e) => { if (e.tree === tree) bites.push(gnawed.t); });
+        try { await fell(tree); } finally { off(); gnawed.on = false; }
+        const need = bitesToFell(measure(world.trees![tree]!).radius);
+        expect(bites.length === need, `tree ${tree} fell after ${bites.length} bites, it takes ${need} as without a class`);
+        const gnawer = beaverClass("gnawer")!.biteTime, each = (bites.at(-1)! - bites[0]!) / (bites.length - 1);
+        expect(Math.abs(each - gnawer) < 0.06, `a Gnawer bites every ${each.toFixed(2)} s, not about ${gnawer} (no class: ${BITE_TIME})`);
+
+        // And back to no class: the card shows only the level, the beaver swims and bites as every beaver.
+        await toCounter(shop);
+        await pickClass(shop, "No class");
+        expect(player.swimSpeed === SWIM_SPEED && game.classEffect?.biteTime === BITE_TIME, `with no class it swims at ${player.swimSpeed} m/s and bites in ${game.classEffect?.biteTime} s, not ${SWIM_SPEED} and ${BITE_TIME}`);
+        await closePanel();
+        if (live) await leave(shop);
+      } finally {
+        if (shop.state.class !== null) shop.reset();
       }
     }, "Shopping"],
     ["Read the calendar", async () => {
