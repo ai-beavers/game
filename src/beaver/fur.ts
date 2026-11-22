@@ -4,6 +4,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage.js";
 import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 
 const LAYERS = [0, 0.55, 0.27, 0.82, 0.4, 0.68];
@@ -25,6 +26,12 @@ class Coat extends MaterialPluginBase {
   sun: DirectionalLight | null = null;
 
   constructor(material: PBRMaterial) {
+    // The coat is written in GLSL. On WebGPU (src/webgpu.ts) the glTF loader made the material for WGSL; it is
+    // switched back before the plugin joins it, and Babylon turns its GLSL into WGSL as it does for ShaderMaterials.
+    if (material.getScene().getEngine().isWebGPU) {
+      Object.assign(material, { _forceGLSL: true, _shaderLanguage: ShaderLanguage.GLSL });
+      material._createUniformBuffer();
+    }
     super(material, "Beaver coat", 200, {}, true, true);
   }
 

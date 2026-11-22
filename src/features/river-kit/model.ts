@@ -15,7 +15,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import kitGlb from "../../../assets/kit.glb" with { type: "file" };
 import { createCoat } from "../../beaver/fur.ts";
-import { RISE, WALK, type Kit } from "./rules.ts";
+import { RISE, STIRS, WALK, type Kit } from "./rules.ts";
 
 /** Times the model's own size (0.52 m long): a child beside the metre-tall beaver, not a mouse. */
 export const SIZE = 1.35;
@@ -23,13 +23,16 @@ export const SIZE = 1.35;
 const STRIDE = { walk: 0.277, run: 0.443 };
 // s a change of pose takes: down and up again is slow, as long as the rules give it to get up.
 const SLOW: Record<string, number> = { forage: 0.6, look: 0.6, ...RISE };
-// The clips played once through, from the pose before them to standing: they carry their own way in and out.
-const ONCE = new Set(["shake", "wake"]);
+// The clips played once through, from the pose before them to standing (or, the stirs, from sleep back to sleep):
+// they carry their own way in and out.
+const ONCE = new Set(["shake", "wake", ...Object.keys(STIRS)]);
 // Hairs to the grown beaver's one, along and across: the model is drawn SIZE times its size, and a young coat is down.
 const FINE = 4;
 // Where the fur's copies of the skin lie along the hair: ten, for long guard hairs that do not show the steps between.
 const LAYERS = [0, 0.5, 0.25, 0.75, 1, 0.12, 0.37, 0.62, 0.87, 0.44];
 const TREAD = 0.7; // strokes a second it treads water with
+// rad its jaw drops as it calls, and s its mouth is open for each call (src/features/audio/sounds.ts: squeak, chirp).
+const SAY = { open: 0.3, left: 0.45, caught: 0.35 };
 // Times the coat's colour on the long hair: guard hairs are paler than the fur under them.
 const LIGHT = 1.08;
 // Times the colour map, so that the flank in the sun measures as the reference's (tools/comfyui/river-kit/target.png): 146, 114, 96.
@@ -90,7 +93,15 @@ export async function loadKit(scene: Scene) {
   body.receiveShadows = true; // and so it throws them (src/light.ts)
   body.isPickable = false;
   body.setBoundingInfo(new BoundingInfo(new Vector3(-0.32, -0.02, -0.42), new Vector3(0.32, 0.5, 0.42))); // sitting up, it is taller than at rest
+  // Its glossy eyeballs, hidden while it sleeps: its eyes are shut.
+  const eyes = root.getChildMeshes().filter((mesh) => mesh.name.startsWith("eye_"));
+  if (eyes.length !== 2) throw new Error("kit.glb is missing its eyes");
   const clips = new Map(asset.animationGroups.map((group) => [group.name, group]));
+  // The rules end a stir when its clip has played: they must be as long.
+  for (const [name, seconds] of Object.entries(STIRS)) {
+    const clip = clips.get(name), fps = clip?.targetedAnimations[0]?.animation.framePerSecond ?? 30;
+    if (!clip || Math.abs((clip.to - clip.from) / fps - seconds) > 0.05) throw new Error(`kit.glb's ${name} clip is not the ${seconds} s that rules.ts STIRS says`);
+  }
   for (const clip of clips.values()) clip.stop();
   const joints = asset.skeletons[0]!.bones.map((bone) => {
     const node = bone.getTransformNode()!;
@@ -101,6 +112,9 @@ export async function loadKit(scene: Scene) {
   const skull = joints.find((joint) => joint.node.name === "skull")!.node, neck: TransformNode[] = [];
   for (let node = skull.parent; node && node !== root; node = node.parent) neck.unshift(node as TransformNode);
   const bare = skull.rotationQuaternion!.clone(), carried = new Quaternion(), turn = new Quaternion();
+  // Its jaw, opened on top of the clip while it calls, and the joints it is carried on: down to the skull.
+  const jaw = joints.find((joint) => joint.node.name === "jaw")!.node, head = [...neck, skull], own = new Quaternion();
+  let saying = 0, says = 1;
   let active: AnimationGroup | undefined;
   let phase = 0, elapsed = 0, blend = 1, ease = 0.3, was = "stand", lastX = 0, lastZ = 0;
   return {
@@ -111,7 +125,7 @@ export async function loadKit(scene: Scene) {
       // Shaking itself dry and waking from its sleep come before all else. Afloat it paddles: the walk, its legs
       // under the water, on the spot too.
       const name = k.shaking > 0 ? "shake" : k.waking && k.rising > 0 && k.doing === "stand" ? "wake"
-        : k.afloat ? "walk" : k.speed > WALK ? "run" : k.speed > 0 ? "walk" : k.doing;
+        : k.afloat ? "walk" : k.speed > WALK ? "run" : k.speed > 0 ? "walk" : k.doing === "sleep" && k.stir ? k.stir : k.doing;
       const clip = clips.get(name)!;
       const distance = active ? Math.hypot(x - lastX, z - lastZ) : 0;
       lastX = x; lastZ = z;
@@ -129,6 +143,7 @@ export async function loadKit(scene: Scene) {
         clip.start(false);
         clip.pause();
         elapsed = 0;
+        for (const eye of eyes) eye.isVisible = name !== "sleep" && !(name in STIRS);
       }
       elapsed += dt;
       const stride = name === "run" ? STRIDE.run : STRIDE.walk;
@@ -153,6 +168,17 @@ export async function loadKit(scene: Scene) {
         Quaternion.RotationYawPitchRollToRef(k.gaze.yaw, -k.gaze.pitch, 0, turn);
         carried.conjugateToRef(skull.rotationQuaternion!).multiplyInPlace(turn).multiplyInPlace(carried).multiplyInPlace(bare);
       }
+      // Calling, its mouth opens and shuts again, about the kit's own side as the head's turn.
+      if (saying > 0) {
+        saying = Math.max(0, saying - dt);
+        carried.copyFromFloats(0, 0, 0, 1);
+        for (const node of head) carried.multiplyInPlace(node.rotationQuaternion!);
+        Quaternion.RotationAxisToRef(Vector3.RightReadOnly, SAY.open * Math.sin(Math.PI * (1 - saying / says)), turn);
+        own.copyFrom(jaw.rotationQuaternion!);
+        carried.conjugateToRef(jaw.rotationQuaternion!).multiplyInPlace(turn).multiplyInPlace(carried).multiplyInPlace(own);
+      }
     },
+    /** It calls: its mouth opens for as long as the call lasts. */
+    say(call: "left" | "caught") { saying = says = SAY[call]; },
   };
 }

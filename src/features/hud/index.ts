@@ -454,7 +454,8 @@ export const create: CreateFeature = game => {
       if (hung.y+hung.h+8+size.h <= markerY[1]!) top = Math.max(top, hung.y+hung.h+8);
       else x = Math.max(x, hung.x+hung.w+8+size.w/2);
     }
-    const y = Scalar.Clamp(behind ? h : p.y,top+size.h,markerY[1]!) - 5*Math.abs(Math.sin(performance.now()/300));
+    // It bobs, but not on a touch screen: each move sends the whole HUD's texture to the GPU again, 18 ms on a phone (measured).
+    const y = Scalar.Clamp(behind ? h : p.y,top+size.h,markerY[1]!) - (touch ? 0 : 5*Math.abs(Math.sin(performance.now()/300)));
     // Clear of the name tags and bubbles (net/ui.ts): they keep their places, the marker goes up above them.
     const spot = place([...floating.map(f => ({x: f.x+f.w/2, y: f.y+f.h, w: f.w, h: f.h})), {x, y, ...size}], w, h).at(-1)!;
     marker.at(spot.x, spot.y);

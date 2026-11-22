@@ -8,6 +8,7 @@ What the code does not say in one place about how the picture is made. Read it b
 - **Concepts and examples**: `https://doc.babylonjs.com/llms.txt` indexes the official documentation; every page is Markdown at its address plus `.md`.
 - Import each class from its own module file (`@babylonjs/core/Materials/shaderMaterial.js`), as the code does. The bundle holds only what is imported.
 - The game runs on the WebGL2 engine. `tools/build.ts` leaves the WebGPU shaders out of the bundle.
+- `engine=webgpu` in the address runs it on Babylon's WebGPU engine instead, a trial for phones (`src/webgpu.ts`, a second bundle of its own). There the game's GLSL is turned into WGSL by Babylon, the fur's material is forced to GLSL and the fireflies are left out (WebGPU has no point sprites).
 
 ## One light, and shaders that light themselves
 
@@ -47,6 +48,11 @@ The golden hour (`game.sky.golden`: a low sun in clear air) is made in `src/feat
 - Many equal things are instances or thin instances of one mesh, culled per instance. A new kind of thing joins that scheme instead of adding a mesh per thing.
 - What nobody can see is not stepped and not drawn: animals outside their hours, life in the pond with no player near.
 - The shadow map's cast list is rebuilt only when it changes. A predicate evaluated per frame marks every material's lights dirty.
+- Every mesh is handled in JavaScript each frame and drawn in up to three passes: the picture, the sun's shadow map, the pond's mirror. Where JavaScript is slow that is the whole cost: an iPhone on a plain `http://` page runs it without its compiler (see `docs/agents/verify.md`) and took 45 µs for each draw; the same phone over `https://` draws the same frame in 7 ms. So count meshes and materials, not triangles.
+- What never changes once built is one mesh per material: `mergeStatic` in `src/world/models.ts` (the Shop, the Trading Post). A rigid part on a bone is skinned to that bone in the model's script and joined with the others (`tools/blender/build.py`: a beaver is 14 meshes, was 28).
+- A value on `scene.imageProcessingConfiguration` (exposure, contrast) set to something new marks every material dirty on every mesh. One that follows the day changes in steps (`src/features/sky/index.ts`).
+- A static collider (`physics.fixed`) is not put in place again before each step; a body made with `physics.body` is. Use `fixed` for whatever stands still.
+- Measure before and after on the device that is slow. `freezeWorldMatrix()` on every mesh that stands still took 4% off the visibility pass (M4 Max): not worth its rules. `scene.performancePriority` turns picking off for new meshes (Babylon's documentation): not for this game.
 
 ## The HUD
 
@@ -57,6 +63,7 @@ Everything a player sees is drawn by Babylon. The reason is in `docs/adr/0001-ba
 - Colours, type scale and each element's place on screen come from `src/features/hud/style.ts` (`layout`, read through `hudLayout(stage)`). Regions never overlap; a new element gets a home there instead of fixed pixels.
 - One face: Nunito, bundled as `assets/nunito.woff2` (OFL, `assets/nunito-OFL.txt`) and loaded by `overlay.ts`, never fetched from a font service. Every overlay lays itself out again once it has loaded. Icons are inline SVG (`hud/icons.ts`), key caps `Overlay.cap` (none on touch: it has no keys).
 - Babylon GUI has no backdrop blur: panels are the 80% `PANEL` alone.
+- A change to a control costs by its size: `src/hud-upload.ts` draws each changed rectangle of the fullscreen texture again by itself and sends only those to the GPU (Babylon GUI sent the whole texture for any change: 12 to 18 ms on a phone). So a small control may change every frame; a change that covers more than half the screen, or more than eight separate ones in a frame, sends everything. Still let nothing move by the clock without need.
 - The HUD must read at 640x360, 1280x720, 1920x1080, 390x844 and 844x390.
 - A test (`src/features/hud/dom.test.ts`) fails when another file creates a DOM element.
 - Panels around the game on the stream (queue, titles, chat) belong to OBS, outside this repository.

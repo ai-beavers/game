@@ -397,13 +397,33 @@ def attach(obj, bone_name):
     bpy.ops.object.parent_set(type="BONE")
 
 
+def bind(obj, bone_name):
+    obj.vertex_groups.new(name=bone_name).add(range(len(obj.data.vertices)), 1, "REPLACE")
+
+
+# The rigid parts (face, brows, hands, feet, claws) are one skinned mesh, each part weighted wholly to its bone, so
+# the file holds one mesh per material of them: nine instead of twenty-three. Every mesh of a beaver is drawn in
+# the picture, in the sun's shadow map and in the pond's mirror, and a phone pays for each (measured, iPhone).
 for o in face:
-    attach(o, "head")
+    bind(o, "head")
 for lr in "LR":
-    attach(brows[lr], f"brow_{lr}")
+    bind(brows[lr], f"brow_{lr}")
     for kind, limbs in (("hand", hands), ("foot", feet)):
-        attach(limbs[lr], f"{kind}_{lr}")
-        attach(claws[kind, lr], f"{kind}_{lr}")
+        bind(limbs[lr], f"{kind}_{lr}")
+        bind(claws[kind, lr], f"{kind}_{lr}")
+details = [*face, *brows.values(), *hands.values(), *feet.values(), *claws.values()]
+activate(*details)
+bpy.ops.object.join()
+details = bpy.context.object
+details.name = "details"
+bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+details.parent = rig
+details.modifiers.new("rig", "ARMATURE").object = rig
+# Where the beaver sees from: between the middles of its eyes, on the head bone.
+eyes = bpy.data.objects.new("eyes", None)
+scene.collection.objects.link(eyes)
+eyes.location = (head_size(side(EYE, 1)) + head_size(side(EYE, -1))) / 2
+attach(eyes, "head")
 # The paddle bends between its two bones: weights by distance along it.
 for name in ("tail1", "tail2"):
     tail.vertex_groups.new(name=name)

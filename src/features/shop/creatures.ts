@@ -94,12 +94,9 @@ const CODE = [
 ];
 
 /** A laptop: base, and a lid whose screen shows a terminal scrolling with code. */
-function laptop(scene: Scene, parent: TransformNode, seed: number) {
+function laptop(scene: Scene, parent: TransformNode, seed: number, metal: StandardMaterial) {
   const node = new TransformNode("laptop", scene);
   node.parent = parent;
-  const metal = new StandardMaterial("laptop-case", scene);
-  metal.diffuseColor = new Color3(0.55, 0.57, 0.6);
-  metal.specularColor.setAll(0.3);
   const base = MeshBuilder.CreateBox("laptop-base", { width: 0.3, height: 0.015, depth: 0.2 }, scene);
   base.material = metal; base.parent = node; base.isPickable = false;
   const lid = new TransformNode("laptop-lid", scene);
@@ -131,11 +128,11 @@ function laptop(scene: Scene, parent: TransformNode, seed: number) {
     line++;
   };
   draw();
-  return { node, draw };
+  return { node, draw, case: [base, back] };
 }
 
 /** A creature sitting on a stool: a body and head of simple shapes in one mesh, and two paws on the keys. */
-function creature(scene: Scene, parent: TransformNode, kind: Kind) {
+function creature(scene: Scene, parent: TransformNode, kind: Kind, mat: StandardMaterial) {
   const f = FUR[kind], node = new TransformNode(`worker-${kind}`, scene);
   node.parent = parent;
   const parts: Mesh[] = [];
@@ -172,9 +169,6 @@ function creature(scene: Scene, parent: TransformNode, kind: Kind) {
   }
   for (const s of [-1, 1]) add(sphere(0.03), f.dark, s * headD * 0.25, hy + headD * 0.12, headD * 0.42); // eyes
   for (const s of [-1, 1]) add(sphere(0.09), f.coat, s * 0.08, 0.32, 0.12, 1, 0.7, 1.6); // the legs on the stool
-  const mat = new StandardMaterial(`worker-${kind}`, scene);
-  mat.diffuseColor = Color3.White();
-  mat.specularColor.setAll(0.04);
   const mesh = Mesh.MergeMeshes(parts, true)!;
   mesh.name = `worker-${kind}`; mesh.material = mat; mesh.parent = node; mesh.isPickable = false;
   const paws = [-1, 1].map((s) => {
@@ -184,23 +178,31 @@ function creature(scene: Scene, parent: TransformNode, kind: Kind) {
     paw.position.set(s * 0.07, 0.3 + body * 0.75, body * 0.45);
     return paw;
   });
-  return { node, paws, y: paws[0]!.position.y };
+  return { node, paws, body: mesh, y: paws[0]!.position.y };
 }
 
 export function workers(stage: Stage, parent: TransformNode) {
   const { scene } = stage, kinds: Kind[] = ["beaver", "fox", "squirrel"];
+  const fur = new StandardMaterial("worker", scene); // white, times the vertex colours: one for every kind
+  fur.diffuseColor = Color3.White();
+  fur.specularColor.setAll(0.04);
+  const metal = new StandardMaterial("laptop-case", scene);
+  metal.diffuseColor = new Color3(0.55, 0.57, 0.6);
+  metal.specularColor.setAll(0.3);
   const crowd = TABLES.map((t, i) => {
-    const c = creature(scene, parent, kinds[i % kinds.length]!);
+    const c = creature(scene, parent, kinds[i % kinds.length]!, fur);
     // On the stool beside the table, facing it.
     c.node.position.set(t.x + Math.sin(t.seat) * 0.5, 0, t.z + Math.cos(t.seat) * 0.5);
     c.node.rotation.y = t.seat + Math.PI;
-    const l = laptop(scene, parent, i);
+    const l = laptop(scene, parent, i, metal);
     l.node.position.set(t.x + Math.sin(t.seat) * 0.08, 0.5, t.z + Math.cos(t.seat) * 0.08);
     l.node.rotation.y = t.seat; // its keys towards the one sitting there
     return { ...c, screen: l, phase: i * 1.7, every: 0.35 + i * 0.12, wait: 0 };
   });
   let time = 0;
   return {
+    /** The bodies and the laptops' cases, which never change once built; the paws move and the screens are redrawn. */
+    still: crowd.flatMap((c) => [c.body, ...c.screen.case]),
     /** lively false (settings.quality low): the paws still type, the screens' code stands still. */
     update(dt: number, lively: boolean) {
       time += dt;

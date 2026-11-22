@@ -30,6 +30,7 @@ import { EVENTS_PATH } from "../net/protocol.ts";
 import { calendarBoard } from "./calendar.ts";
 import { readEvents, type HouseEvent } from "./feed.ts";
 import { shopHud } from "./panel.ts";
+import { mergeStatic } from "../../world/models.ts";
 import { buy, choose, classEffect, earn, load, outfit, wear, type ClassId, type OutfitId, type ShopState } from "./rules.ts";
 import { RADIUS, SHOP, SIGN } from "./place.ts";
 
@@ -53,6 +54,7 @@ export const create: CreateFeature = async (game) => {
   const shop = buildShop(stage, world, { ...SHOP, facing: FACING });
   const crowd = workers(stage, shop.root);
   const calendar = calendarBoard(stage, shop, new Date());
+  mergeStatic([...shop.still, ...calendar.still, ...crowd.still], shop.root); // one mesh per material: fewer draws a picture
   let checked = Date.now(), asked = -Infinity;
   const askEvents = () => {
     asked = Date.now();
