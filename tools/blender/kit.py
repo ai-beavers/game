@@ -184,7 +184,7 @@ for v in body.data.vertices:
         part = named[g.group].split("_")[0]
         on[part] = on.get(part, 0)+g.weight
     bare = on.get("tail1", 0)+on.get("tail2", 0)+on.get("paw", 0)+on.get("foot", 0)  # the tail and the paws
-    hair = 1-bare-.35*(on.get("forearm", 0)+on.get("shin", 0))-.82*on.get("skull", 0)
+    hair = 1-bare-.35*(on.get("forearm", 0)+on.get("shin", 0))-.9*on.get("skull", 0)
     # None on the eyes and the nose, short on the muzzle so that its shape and the mouth show.
     hair *= ramp((eye_off(v.co)-EYEBALL*.9)/(EYEBALL*.6))*ramp((v.co-tip).length/.03-.6)*(.3+.7*ramp((v.co-tip).length/.08))
     if (v.co-tip).length < .05:
@@ -296,7 +296,7 @@ for side, sign in (("R", -1), ("L", 1)):
     iris = eye.data.color_attributes.new("iris", "FLOAT_COLOR", "POINT")
     for v in eye.data.vertices:
         out = v.normal.dot(look)
-        iris.data[v.index].color = (.004, .003, .003, 1) if out > .86 else (.2, .085, .03, 1) if out > .25 else (.014, .009, .007, 1)
+        iris.data[v.index].color = (.004, .003, .003, 1) if out > .8 else (.07, .03, .012, 1) if out > .25 else (.014, .009, .007, 1)
     eyes.append(eye)
 # The whiskers: seven thin pale hairs a side, out of the muzzle beside and below the nose, each sagging to its tip.
 random.seed(7)

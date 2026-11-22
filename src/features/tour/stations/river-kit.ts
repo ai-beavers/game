@@ -70,9 +70,9 @@ export const riverKit = (tools: Kit): Station[] => {
       expect(player.afloat, "walked out into the pond, yet the beaver does not swim");
       // Beside it: within FAR, from where on it would set off after the beaver again.
       await until(() => { watch(); return wet() && flat(kit.x, kit.z) < FAR + 0.2 && kit.speed === 0; }, 20, `the beaver swims in the pond, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${wet() ? "in the water" : "on dry ground"}`);
-      // Back out the way it came, three metres up the bank: the kit does not stay behind in the water.
+      // Back out the way it came, two metres up the bank and more: the kit does not stay behind in the water.
       const edge = trail.at(-1)!, back = trail.findLast((p) => Vector3.Distance(p, edge) > 3) ?? trail[0]!;
-      await walkTo(back.x, back.z, { near: 0.4, arrived: watch, limit: 40 });
+      await walkTo(back.x, back.z, { near: 0.4, arrived: () => { watch(); return !player.afloat && Vector3.Distance(player.feet, edge) > 2; }, limit: 40 });
       await until(() => { watch(); return !kit.afloat && flat(kit.x, kit.z) < FAR + 0.2 && kit.speed === 0; }, 20, `the beaver is back on land, the kit is ${flat(kit.x, kit.z).toFixed(1)} m off, ${kit.afloat ? "afloat" : "on its feet"}`);
       expect(!other, `afloat the kit did not only paddle: it was at ${other}`);
     }, "Around the clearing"],
