@@ -9,7 +9,7 @@
 // none); on the WebGPU engine, and wherever one of them is missing, Babylon's own way stays. Take it out when Babylon
 // GUI draws and uploads rectangles itself.
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture.js";
-import type { Engine } from "@babylonjs/core/Engines/engine.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { Measure } from "@babylonjs/gui/2D/measure.js";
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -38,7 +38,7 @@ export function changed(marks: [number, number, number, number][], width: number
   return out.reduce((area, r) => area + r.w * r.h, 0) > width * height / 2 ? undefined : out;
 }
 
-export function sendChanges(hud: AdvancedDynamicTexture, engine: Engine) {
+export function sendChanges(hud: AdvancedDynamicTexture, engine: AbstractEngine) {
   type Inner = { _gl?: WebGL2RenderingContext; _bindTextureDirectly?(target: number, texture: unknown, forTextureDataUpdate?: boolean, force?: boolean): boolean; _unpackFlipY?(value: boolean): void };
   type Drawn = { _render(skipRender?: boolean): void; _invalidatedRectangle: Measure | null; _rootContainer: { _render(context: unknown, rect: Measure): void } };
   const inner = engine as unknown as Inner, gl = inner._gl, drawn = hud as unknown as Drawn;
