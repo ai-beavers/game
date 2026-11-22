@@ -10,6 +10,11 @@
   "assets": { "directory": "dist" },
   "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }],
+  // The one copy of the House of AI events (src/features/shop/events.ts). The namespace exists in the account: always
+  // give its id, since the deploy token may upload a script with the binding but not make a namespace.
+  "kv_namespaces": [{ "binding": "EVENTS", "id": "e121e97c2a9c4915aa64bd02139a5ed4" }],
+  // Once a day the Worker renews that copy from Luma's feed (scheduled() in worker.ts).
+  "triggers": { "crons": ["17 4 * * *"] },
   // Who joined and left, and what failed, in the dashboard's logs.
   "observability": { "enabled": true }
 }
