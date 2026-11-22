@@ -1,5 +1,5 @@
 import { hex as colorFromHex } from "../../world/color.ts";
-// The map: the ground painted from world.heightAt (water, sand, grass, hill shading), again whenever the pond's
+// The map: the ground painted from world.heightAt (water, sand, grass, the path, hill shading), again whenever the pond's
 // level changes, then drawn each frame into a canvas with what is there now: standing trees, sticks, the dam as far
 // as it is built, the lodge, other players as named dots, and the beaver as an arrow.
 //
@@ -9,6 +9,7 @@ import { hex as colorFromHex } from "../../world/color.ts";
 //
 // North up, fixed: up on the map is +z, the way the camera looks at the start, so right is -x.
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { pathAt } from "../../world/terrain.ts";
 import { FONT, GOLD, INK, PANEL, PAPER, PLAYERS, STICKS } from "./style.ts";
 
 /** Half the width of the mapped square around the middle of the clearing, m, and metres per pixel. */
@@ -17,7 +18,7 @@ const RESOLUTION = 0.2;
 const OUTSIDE = "#4a5f36"; // beyond the painted square: thicket
 
 const C = (hex: number) => colorFromHex(hex).toLinearSpace();
-const DEEP = C(0x3a6f8c), SHALLOW = C(0x7db3c0), SAND = C(0xc4b28a), GRASS = C(0x7c9b4b), HIGH = C(0x5a7a36), BANK = C(0x3f5530);
+const DEEP = C(0x3a6f8c), SHALLOW = C(0x7db3c0), SAND = C(0xc4b28a), PATH = C(0xb09a6e), GRASS = C(0x7c9b4b), HIGH = C(0x5a7a36), BANK = C(0x3f5530);
 const SAND_REACH = 1.4; // m from the water's edge
 
 interface Point { x: number; z: number }
@@ -54,8 +55,11 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
   ground.width = ground.height = size;
   const image = ground.getContext("2d")!.createImageData(size, size);
   // Pixel (i, j) shows world x = EXTENT - i·RESOLUTION, z = EXTENT - j·RESOLUTION (north up, right is -x).
-  const heights = new Float32Array(size * size);
-  for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) heights[j * size + i] = heightAt(EXTENT - i * RESOLUTION, EXTENT - j * RESOLUTION);
+  const heights = new Float32Array(size * size), paths = new Float32Array(size * size);
+  for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+    heights[j * size + i] = heightAt(EXTENT - i * RESOLUTION, EXTENT - j * RESOLUTION);
+    paths[j * size + i] = pathAt(EXTENT - i * RESOLUTION, EXTENT - j * RESOLUTION);
+  }
   const height = (i: number, j: number) => heights[Math.min(size - 1, Math.max(0, j)) * size + Math.min(size - 1, Math.max(0, i))]!;
   let painted = waterLevel;
   // Sand: low ground within SAND_REACH of water.
@@ -76,6 +80,7 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
       else {
         Color3.LerpToRef(GRASS, HIGH, Math.min(1, above / 3), color);
         Color3.LerpToRef(color, BANK, Math.max(0, Math.min(1, (above - 2.5) / 1.5)), color);
+        Color3.LerpToRef(color, PATH, paths[j * size + i]! * 0.8, color);
       }
       if (above >= 0) {
         // Hill shading: light from the top left of the map.

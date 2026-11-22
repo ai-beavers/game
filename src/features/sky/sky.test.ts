@@ -2,7 +2,7 @@ import { hex } from "../../world/color.ts";
 // The day's numbers and the weather's rules: the tuned afternoon at the start, a believable sun, no jumps.
 import { describe, expect, test } from "bun:test";
 import { ENVIRONMENT, EXPOSURE, SUN_COLOR, SUN_DIRECTION, SUN_INTENSITY } from "../../light.ts";
-import { dayAt, START } from "./clock.ts";
+import { dayAt, goldenHour, START } from "./clock.ts";
 import { newClock } from "./day.ts";
 import { holdWeather, newWeather, nextKind, stepWeather } from "./weather.ts";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
@@ -160,4 +160,12 @@ describe("weather", () => {
     for (let t = 0; t < 4 * 3600; t += 0.5) { stepWeather(w, 0.5, random); seen.add(w.kind); }
     expect([...seen].sort()).toEqual(["cloudy", "fair", "fog", "rain"]);
   });
+});
+
+test("the golden hour shows only under a low sun in clear air", () => {
+  expect(goldenHour(dayAt(19.8), 0, 0)).toBeGreaterThan(0.9); // evening
+  expect(goldenHour(dayAt(6.3), 0, 0)).toBeGreaterThan(0.9); // and morning
+  for (const hour of [13, START, 23, 3]) expect(goldenHour(dayAt(hour), 0, 0)).toBe(0);
+  expect(goldenHour(dayAt(19.8), 1, 0)).toBe(0); // overcast
+  expect(goldenHour(dayAt(19.8), 0, 1)).toBe(0); // fog
 });

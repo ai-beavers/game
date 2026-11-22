@@ -8,8 +8,9 @@ import type { StandardMaterial } from "@babylonjs/core/Materials/standardMateria
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { Stage } from "../engine.ts";
 import { daylightOf, LANTERN_GLSL, LANTERN_UNIFORMS } from "../light.ts";
-import { seeded } from "./noise.ts";
-import { BASIN, FIRST_RIM, groundColor, heightAt, RIM, SITE, pondRatio, slopeAt, WATER_LEVEL } from "./terrain.ts";
+import { fbm, noise, seeded } from "./noise.ts";
+import { FLOWER, FLOWER_REACH } from "../features/mrs-beaver/rules.ts";
+import { BASIN, FIRST_RIM, groundColor, heightAt, pathAt, RIM, SITE, pondRatio, slopeAt, WATER_LEVEL } from "./terrain.ts";
 
 const TILE = 11, REACH = 27; // m: the side of a tile of grass; the farthest a blade still stands (the shader's reach)
 
@@ -33,11 +34,12 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
     vertexSource: `precision highp float; attribute vec3 position; attribute vec4 ground;
       #include<instancesDeclaration>
       uniform mat4 viewProjection, lightMatrix; uniform highp sampler2DShadow shadowMap;
-      uniform vec3 eye, sky, sun, toSun, soil, fogColor; uniform float time, wind, fogDensity, edge, gamma;
+      uniform vec3 eye, sky, sun, toSun, soil, fogColor; uniform float time, wind, fogDensity, edge, gamma, exposure;
       varying vec3 colour; ${LANTERN_GLSL}
       void main() {
         #include<instancesVertex>
-        float far = length(finalWorld[3].xyz - eye), reach = mix(9., ${REACH}., ground.w); // each blade stands up to its own distance, then shrinks away
+        float flower = step(1.5, ground.w); // a flower carries its share + 2 (below)
+        float far = length(finalWorld[3].xyz - eye), reach = mix(9., ${REACH}., ground.w - 2. * flower); // each blade stands up to its own distance, then shrinks away
         vec4 p = finalWorld * vec4(position * smoothstep(reach, reach - 3., far), 1.);
         float tip = position.y * 4., h = tip * 1.4;
         float tall = length(finalWorld[1].xyz), weed = step(2., tall); // grass is at most 1.3 high, pondweed 4 and more
@@ -49,12 +51,14 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
         float shadow = all(greaterThanEqual(uvz, vec3(0.))) && all(lessThanEqual(uvz, vec3(1.))) ? texture(shadowMap, uvz) : 1.;
         shadow = mix(shadow, 1., smoothstep(1. - edge, 1., clamp(dot(clip.xy, clip.xy), 0., 1.)));
         float facing = max(0., toSun.y) + .3 * h * length(toSun.xz) * step(0., toSun.y); // a low sun lights the tips
-        vec3 lit = ground.rgb * soil * mix(vec3(.55,.57,.52), vec3(1.15,1.2,.95), h) * clamp(sky + sun * facing * shadow + lantern(p.xyz), 0., 1.);
+        vec3 own = mix(ground.rgb, vec3(.3, .42, .15), flower * step(position.y, .095)); // a flower's stalk is green
+        own *= mix(1., min(1., 1. / exposure), flower); // near white: however far the eye opens up, a petal is no brighter than by day (it would bloom)
+        vec3 lit = own * soil * mix(vec3(.55,.57,.52), vec3(1.15,1.2,.95), h) * clamp(sky + sun * facing * shadow + lantern(p.xyz), 0., 1.);
         colour = pow(mix(fogColor, lit, clamp(exp(-pow(fogDensity * far, 2.)), 0., 1.)), vec3(gamma));
       }`,
     fragmentSource: `precision highp float; varying vec3 colour; void main(){ gl_FragColor = vec4(colour, 1.); }`,
   }, { attributes: ["position", "ground"], uniforms: ["world", "viewProjection", "lightMatrix", "eye", "time", "wind", "sky", "sun", "toSun",
-    "soil", "fogColor", "fogDensity", "edge", "gamma", ...LANTERN_UNIFORMS], samplers: ["shadowMap"] });
+    "soil", "fogColor", "fogDensity", "edge", "gamma", "exposure", ...LANTERN_UNIFORMS], samplers: ["shadowMap"] });
   mesh.material = mat;
   mat.backFaceCulling = false;
   const light = daylightOf(scene)!;
@@ -75,7 +79,7 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
   };
   for (let i = 0; i < 26000 * (RIM / FIRST_RIM) ** 2; i++) { // as thick as in the first, smaller clearing
     const x = (random() * 2 - 1) * RIM, z = (random() * 2 - 1) * RIM;
-    if (Math.hypot(x,z) > RIM || pondRatio(x,z) < 1.18 || blocked(x,z) || Math.hypot(x-SITE.x,z-SITE.z) < SITE.radius) continue;
+    if (Math.hypot(x,z) > RIM || pondRatio(x,z) < 1.18 || blocked(x,z) || Math.hypot(x-SITE.x,z-SITE.z) < SITE.radius || pathAt(x,z) > 0.5) continue;
     const h = heightAt(x,z);
     at(x, z);
     matrices.push(...Matrix.Compose(Vector3.One().scale(0.5 + random() * 0.8), Quaternion.RotationAxis(Vector3.Up(), random()*6.28),
@@ -108,6 +112,28 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
   }
   mesh.thinInstanceSetBuffer("matrix", new Float32Array(weeds.matrices), 16, true);
   mesh.thinInstanceSetBuffer("ground", new Float32Array(weeds.grounds), 4, true);
+  // Flowers in drifts through the meadow, daisies and buttercups: a thin stalk with a small head, in the grass's
+  // shader and its wind. One mesh for all of them (the shader lets each stand only so far from the camera); not
+  // drawn on low quality (src/features/post). Small, white and yellow: Mrs. Beaver's dropped flower
+  // (features/mrs-beaver), large and pink, still stands out.
+  const flowers = new Mesh("flowers", scene), bloom = new VertexData(), petals = { matrices: [] as number[], grounds: [] as number[] };
+  bloom.positions = [-0.003,0,0, 0.003,0,0, 0,0.094,0, 0,0.09,0, 0.02,0.105,0, 0,0.105,0.02, -0.02,0.105,0, 0,0.105,-0.02, 0,0.118,0];
+  bloom.indices = [0,1,2, 3,4,5, 3,5,6, 3,6,7, 3,7,4, 8,5,4, 8,6,5, 8,7,6, 8,4,7];
+  bloom.applyToMesh(flowers);
+  flowers.material = mat;
+  const pick = seeded(23), DAISY = new Color3(0.8, 0.78, 0.72), BUTTERCUP = new Color3(0.85, 0.62, 0.08); // under the bloom's threshold in full sun
+  for (let i = 0; i < 30000; i++) {
+    const x = (pick() * 2 - 1) * RIM, z = (pick() * 2 - 1) * RIM, drift = fbm(x * 0.22 + 60, z * 0.22 - 30, 2);
+    if (drift < 0.12 || Math.hypot(x,z) > RIM || pondRatio(x,z) < 1.3 || blocked(x,z) || Math.hypot(x-SITE.x,z-SITE.z) < SITE.radius + 0.5 || pathAt(x,z) > 0.2
+      || FLOWER.some((f) => Math.hypot(f.x - x, f.z - z) < 2 * FLOWER_REACH)) continue; // plain grass round where her flower may lie
+    const daisy = noise(x * 0.3 + 9, z * 0.3) + (pick() - 0.5) > 0, wide = daisy ? 1.3 : 0.9;
+    petals.matrices.push(...Matrix.Compose(new Vector3(wide, 0.8 + pick() * 0.7, wide), Quaternion.RotationAxis(Vector3.Up(), pick() * 6.28),
+      new Vector3(x, heightAt(x, z) - 0.01, z)).asArray());
+    petals.grounds.push(...(daisy ? DAISY : BUTTERCUP).asArray(), 2.4 + 0.6 * pick()); // + 2: a flower, for the shader
+  }
+  flowers.thinInstanceSetBuffer("matrix", new Float32Array(petals.matrices), 16, true);
+  flowers.thinInstanceSetBuffer("ground", new Float32Array(petals.grounds), 4, true);
+  flowers.thinInstanceRefreshBoundingInfo();
   const sky = new Color3(), sun = new Color3(), toSun = new Vector3();
   return { update(time: number) {
     // A tile all of whose blades stand farther than they reach (the shader's REACH) is not drawn at all. Cost per
@@ -123,6 +149,6 @@ export function buildGrass({ scene, camera }: Stage, blocked: (x: number, z: num
     mat.setFloat("time", time).setFloat("wind", wind.value).setColor3("sky", sky).setColor3("sun", sun).setVector3("toSun", toSun)
       .setColor3("soil", soil.diffuseColor).setColor3("fogColor", scene.fogColor).setFloat("fogDensity", scene.fogMode ? scene.fogDensity : 0)
       .setFloat("edge", light.shadows.frustumEdgeFalloff).setFloat("gamma", scene.imageProcessingConfiguration.applyByPostProcess ? 2.2 : 1).setVector3("eye", (scene.activeCamera ?? camera).globalPosition)
-      .setVector3("lanternAt", light.lantern.at).setColor3("lanternGlow", light.lantern.glow);
+      .setFloat("exposure", scene.imageProcessingConfiguration.exposure).setVector3("lanternAt", light.lantern.at).setColor3("lanternGlow", light.lantern.glow);
   } };
 }

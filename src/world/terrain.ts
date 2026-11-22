@@ -113,8 +113,23 @@ export const heightAt = (x: number, z: number) => clearing.heightAt(x, z);
 export const slopeAt = (x: number, z: number) => clearing.slopeAt(x, z);
 
 
+/** The worn path, as a line on the plan, m: from behind the spawn (place.ts SPAWN) to the building site, east of Mrs.
+ *  Beaver's waiting spot and the crates; world.test.ts holds it to those places. */
+const PATH = [[-1.4, -6.5], [-1.5, -3], [-1.3, 1.2], [-0.7, 3.4]] as const;
+/** 1 on the path's trodden middle (about 1.1 m wide), 0 in the meadow beside it; the edge wanders. */
+export function pathAt(x: number, z: number) {
+  const px = x + noise(x * 0.35 + 50, z * 0.35) * 0.4, pz = z + noise(x * 0.35, z * 0.35 + 90) * 0.4;
+  let near = Infinity;
+  for (let i = 1; i < PATH.length; i++) {
+    const [ax, az] = PATH[i - 1]!, [bx, bz] = PATH[i]!, dx = bx - ax, dz = bz - az;
+    const t = Math.min(1, Math.max(0, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)));
+    near = Math.min(near, Math.hypot(px - ax - dx * t, pz - az - dz * t));
+  }
+  return near > 1.4 ? 0 : 1 - smoothstep(0.55, 1.1, near + noise(x * 2.3, z * 2.3) * 0.15);
+}
+
 const PALETTE = {
-  grass: hex(0x56732a), lush: hex(0x3f6122), dry: hex(0x8a8a3c), earth: hex(0x6e5638), sand: hex(0xa89572),
+  path: hex(0x8f7248), grass: hex(0x56732a), lush: hex(0x3f6122), dry: hex(0x8a8a3c), earth: hex(0x6e5638), sand: hex(0xa89572),
   mud: hex(0x3a3324), rock: hex(0x7a766c), forest: hex(0x3b4424),
 };
 
@@ -127,6 +142,7 @@ export function groundColor(x: number, z: number, h: number, slope: number, out:
   const ds = Math.hypot(x - SITE.x, z - SITE.z);
   Color3.LerpToRef(out, PALETTE.earth, Math.max(1 - smoothstep(SITE.radius - 0.3, SITE.radius + 0.9, ds) + noise(x * 2, z * 2) * 0.25,
     smoothstep(0.32, 0.5, fbm(x * 0.3 + 40, z * 0.3, 2))) * 0.9, out);
+  Color3.LerpToRef(out, PALETTE.path, pathAt(x, z) * 0.9, out);
   // Forest floor up on the bank.
   const bank = smoothstep(RIM + 0.3, RIM + 2.5, rimDistance(x, z));
   Color3.LerpToRef(out, PALETTE.forest, bank, out);

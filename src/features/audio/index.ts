@@ -1,7 +1,7 @@
 // Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
-// that src/features/life shows, calling from where they are; the Bear's growl and its grunt at a tail slap (src/features/bear); the steps and splashes of other players
+// that src/features/life shows, calling from where they are; the Bear's growl and its grunt at a tail slap (src/features/bear); the River kit's calls (src/features/river-kit); the steps and splashes of other players
 // (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 // The one sound not made here is the Old Beaver's Voice: the server sends it as ElevenLabs makes it, and it plays through the same mix.
 //
@@ -124,6 +124,8 @@ export const create: CreateFeature = (game) => {
   // The Bear growls as it notices the beaver, and grunts when a tail slap lands (src/features/bear).
   events.on("bearNotices", ({ place }) => play("growl", place));
   events.on("bearSlapped", ({ place }) => { play("smack", place); play("grunt", place); });
+  // The River kit calls after a beaver that left it behind, and chirps when it has caught up (src/features/river-kit).
+  events.on("kitCalls", ({ place, glad }) => play(glad ? "chirp" : "squeak", place));
 
   // A burning Flag crackles until it is burnt down (src/features/flag).
   let fire: Vector3 | undefined, crackle = 0;

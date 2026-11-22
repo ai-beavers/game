@@ -260,11 +260,13 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     const b = needBuild();
     // Only a tree lying still can be gnawed (build: the "rest" change); one leaning on another may never be.
     await until(() => !!standing(b.state.trees[i])?.rest, 8, `tree ${i} never came to rest after its fall (leaning on something?)`);
-    // The nearest point of the trunk as it lies now, a little off its foot; then further along it.
+    // The nearest point of the trunk as it lies now, a little off its foot; then further along it. Hopped to in the
+    // fast tour: walked from the spawn, the way leads over the building site, and its crates end up pushed in front
+    // of the Calendar board.
     await reach("split", (attempt) => {
       const { from, along } = b.views.get(i)?.trunkLine() ?? { from: world.trees![i]!.place, along: new Vector3() };
       return from.add(along.scale(attempt || Scalar.Clamp(Vector3.Dot(player.feet.subtract(from), along), 0.3, 2)));
-    });
+    }, true);
     const splits = after("treeSplits");
     want.act = true;
     try { await until(splits, 10, "gnawed the lying tree for 10 s, still whole"); } finally { want.act = false; }

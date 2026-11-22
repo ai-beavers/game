@@ -4,6 +4,7 @@ import type { CreateFeature } from "../game.ts";
 import { create as audio } from "./audio/index.ts";
 import { create as bakery } from "./bakery/index.ts";
 import { create as bear } from "./bear/index.ts";
+import { create as riverKit } from "./river-kit/index.ts";
 import { create as canoe } from "./canoe/index.ts";
 import { create as build } from "./build/index.ts";
 import { create as controls } from "./controls/index.ts";
@@ -26,4 +27,4 @@ import { create as tour } from "./tour/index.ts";
 import { create as trade } from "./trade/index.ts";
 import { create as workbench } from "./workbench/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, workbench, shop, canoe, race, flag, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, net, audio, hud, debug, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, workbench, shop, canoe, race, flag, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, riverKit, net, audio, hud, debug, tour];
