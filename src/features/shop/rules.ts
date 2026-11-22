@@ -12,6 +12,8 @@
 // The state is plain JSON, kept in localStorage beside the build feature's saved game.
 
 import { DEFAULT_LOOK, type RGB } from "../../contracts.ts";
+// No class plays as every beaver does: those values are owned by the player (swimming) and the build feature (each
+// bite), so they are read from there rather than copied (one owner per fact).
 import { SWIM_SPEED } from "../../player/state.ts";
 import { BITE_TIME } from "../build/rules.ts";
 
