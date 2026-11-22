@@ -194,9 +194,10 @@ body.data.color_attributes.active_color = mask
 
 uvs = body.data.uv_layers.active.data
 
-# Measured against the reference part by part (in the game, in direct light), the trunk and legs came out a little
-# dark and the paws light: the colour map of each is brought to the reference's.
-TONE = {**{part: (1.12, 1.14, 1.12) for part in ("haunch", "back", "arm", "forearm", "thigh", "shin")}, "paw": (.76, .74, .68), "foot": (.76, .74, .68)}
+# Measured against the reference part by part (in the game, in direct light), the trunk, legs and tail came out a
+# little dark and the paws light: the colour map of each is brought to the reference's.
+TONE = {**{part: (1.12, 1.14, 1.12) for part in ("haunch", "back", "arm", "forearm", "thigh", "shin")}, "paw": (.84, .81, .74), "foot": (.84, .81, .74),
+        "tail1": (1.12, 1.2, 1.14), "tail2": (1.12, 1.2, 1.14)}
 texels = np.array(colour.pixels[:]).reshape(height, width, 4)
 TONE["brow"] = (.9, .94, .92)  # the top of the head, above the eyes
 brow = max(socket.z for socket in sockets.values())+.012
