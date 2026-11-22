@@ -62,7 +62,7 @@ Everything a player sees is drawn by Babylon. The reason is in `docs/adr/0001-ba
 - Colours, type scale and each element's place on screen come from `src/features/hud/style.ts` (`layout`, read through `hudLayout(stage)`). Regions never overlap; a new element gets a home there instead of fixed pixels.
 - One face: Nunito, bundled as `assets/nunito.woff2` (OFL, `assets/nunito-OFL.txt`) and loaded by `overlay.ts`, never fetched from a font service. Every overlay lays itself out again once it has loaded. Icons are inline SVG (`hud/icons.ts`), key caps `Overlay.cap` (none on touch: it has no keys).
 - Babylon GUI has no backdrop blur: panels are the 80% `PANEL` alone.
-- Any change to any control sends the whole fullscreen texture to the GPU again: 18 ms on a phone (measured). Change a control only when what it shows changes, and let nothing on the HUD move by the clock on a touch screen.
+- A change to a control costs by its size: `src/hud-upload.ts` draws each changed rectangle of the fullscreen texture again by itself and sends only those to the GPU (Babylon GUI sent the whole texture for any change: 12 to 18 ms on a phone). So a small control may change every frame; a change that covers more than half the screen, or more than eight separate ones in a frame, sends everything. Still let nothing move by the clock without need.
 - The HUD must read at 640x360, 1280x720, 1920x1080, 390x844 and 844x390.
 - A test (`src/features/hud/dom.test.ts`) fails when another file creates a DOM element.
 - Panels around the game on the stream (queue, titles, chat) belong to OBS, outside this repository.

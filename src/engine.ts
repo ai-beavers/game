@@ -7,6 +7,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture.js";
 import { PhysicsViewer } from "@babylonjs/core/Debug/physicsViewer.js";
 import { createPhysics, loadHavok, type PhysicsBody } from "./physics.ts";
+import { sendChanges } from "./hud-upload.ts";
 
 export const STEP = 1 / 60;
 
@@ -24,6 +25,7 @@ export async function start(canvas: HTMLCanvasElement) {
   camera.setTarget(new Vector3(0, 0.5, 0));
   const physics = createPhysics(scene, await loadHavok());
   const hud = AdvancedDynamicTexture.CreateFullscreenUI("hud", true, scene);
+  sendChanges(hud, engine);
   // The loose things (sticks, logs, crates), each a dynamic body on its node, while it lies in the world.
   const bound = new Map<TransformNode, PhysicsBody>();
   const observer = new ResizeObserver(() => engine.resize());
