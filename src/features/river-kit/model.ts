@@ -27,7 +27,7 @@ const LAYERS = [0, 0.5, 0.25, 0.75, 1, 0.12, 0.37, 0.62, 0.87, 0.44];
 const TREAD = 0.7; // strokes a second it treads water with
 const DRY = 12; // s from dripping to dry once out of the water (as the beaver's coat)
 // Times the coat's colour on the long hair: guard hairs are paler than the fur under them.
-const LIGHT = 1.22;
+const LIGHT = 1.08;
 // Times the colour map, so that the flank in the sun measures as the reference's (tools/comfyui/river-kit/target.png): 146, 114, 96.
 const COAT = new Color3(1.45, 1.27, 1.52);
 
@@ -82,7 +82,7 @@ export async function loadKit(scene: Scene) {
   const fur = createCoat(body, body.material as PBRMaterial, LAYERS);
   fur.coat.dressed = false; // no shirt to keep the fur under
   fur.coat.fine = FINE;
-  fur.coat.guard = 1;
+  fur.coat.guard = 0.35; // of the paling to the tips: the coat is the reference picture, which is not pale
   body.receiveShadows = true; // and so it throws them (src/light.ts)
   body.isPickable = false;
   body.setBoundingInfo(new BoundingInfo(new Vector3(-0.32, -0.02, -0.42), new Vector3(0.32, 0.5, 0.42))); // sitting up, it is taller than at rest

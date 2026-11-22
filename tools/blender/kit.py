@@ -196,8 +196,10 @@ uvs = body.data.uv_layers.active.data
 
 # Measured against the reference part by part (in the game, in direct light), the trunk and legs came out a little
 # dark and the paws light: the colour map of each is brought to the reference's.
-TONE = {**{part: (1.06, 1.06, 1.08) for part in ("haunch", "back", "arm", "forearm", "thigh", "shin")}, "paw": (.76, .74, .68), "foot": (.76, .74, .68)}
+TONE = {**{part: (1.12, 1.14, 1.12) for part in ("haunch", "back", "arm", "forearm", "thigh", "shin")}, "paw": (.76, .74, .68), "foot": (.76, .74, .68)}
 texels = np.array(colour.pixels[:]).reshape(height, width, 4)
+TONE["brow"] = (.9, .94, .92)  # the top of the head, above the eyes
+brow = max(socket.z for socket in sockets.values())+.012
 tone = np.ones((height, width, 3))
 for f in body.data.polygons:
     on = {}
@@ -206,6 +208,8 @@ for f in body.data.polygons:
             part = body.vertex_groups[g.group].name.split("_")[0]
             on[part] = on.get(part, 0)+g.weight/len(f.vertices)
     part = max(on, key=on.get) if on else None
+    if part == "skull" and min(body.data.vertices[i].co.z for i in f.vertices) > brow:
+        part = "brow"
     if part in TONE:
         corners = np.array([(uvs[l].uv.x % 1*width, uvs[l].uv.y % 1*height) for l in f.loop_indices])
         (x0, y0), (x1, y1) = np.floor(corners.min(axis=0)).astype(int), np.ceil(corners.max(axis=0)).astype(int)
