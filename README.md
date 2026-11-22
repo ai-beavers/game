@@ -8,7 +8,8 @@ WebSocket: the Bun server on a local network, a Worker on Cloudflare for everyon
 bun install --frozen-lockfile
 bun dev                      the game on port 5180, for everyone on the network (server.ts); prints the addresses.
                              With ELEVENLABS_API_KEY in .env the Old Beaver says his lores in his voice, and the
-                             terminal shows every talk with ElevenLabs; without it he murmurs
+                             terminal shows every talk with ElevenLabs; without it he murmurs.
+                             In it: F4 Inspector, F6 free camera, F8 Spector (docs/dev-tools.md)
 bun shot <url> --out shots/x.png      look at a page without a desktop: screenshot + console (tools/shot.ts)
 bun run check                typecheck and tests
 bun run tour --once --here   the whole tour once as a check, on the files as they are: one line per station, exit code 0 or 1;
