@@ -196,11 +196,12 @@ uvs = body.data.uv_layers.active.data
 
 # Measured against the reference part by part (in the game, in direct light), the trunk, legs and tail came out a
 # little dark and the paws light: the colour map of each is brought to the reference's.
-TONE = {**{part: (1.12, 1.14, 1.12) for part in ("haunch", "back", "arm", "forearm", "thigh", "shin")}, "paw": (.84, .81, .74), "foot": (.84, .81, .74),
+TONE = {"haunch": (1, 1.07, 1.02), "back": (1, 1.07, 1.02), **{part: (1.12, 1.14, 1.12) for part in ("arm", "forearm", "thigh", "shin")}, "paw": (.84, .81, .74), "foot": (.84, .81, .74),
         "tail1": (1.12, 1.2, 1.14), "tail2": (1.12, 1.2, 1.14)}
 texels = np.array(colour.pixels[:]).reshape(height, width, 4)
 TONE["brow"] = (.9, .94, .92)  # the top of the head, above the eyes
 brow = max(socket.z for socket in sockets.values())+.012
+eyes, PALE = min(socket.z for socket in sockets.values()), (1.19, 1.19, 1.22)
 tone = np.ones((height, width, 3))
 for f in body.data.polygons:
     on = {}
@@ -211,10 +212,13 @@ for f in body.data.polygons:
     part = max(on, key=on.get) if on else None
     if part == "skull" and min(body.data.vertices[i].co.z for i in f.vertices) > brow:
         part = "brow"
-    if part in TONE:
+    # The cheeks, the jowls and the throat (below the eyes, behind the muzzle, as far as the shoulders) are pale in
+    # the reference, where long light hair lies over them: placed by eye and nose, they measured a sixth darker.
+    pale = ramp((eyes-.008-f.center.z)/.02)*ramp((f.center.y-tip.y-.035)/.03)*ramp((.02-f.center.y)/.05)*ramp((f.center.z-.13)/.04)
+    if part in TONE or pale > 0:
         corners = np.array([(uvs[l].uv.x % 1*width, uvs[l].uv.y % 1*height) for l in f.loop_indices])
         (x0, y0), (x1, y1) = np.floor(corners.min(axis=0)).astype(int), np.ceil(corners.max(axis=0)).astype(int)
-        tone[max(0, y0):y1+1, max(0, x0):x1+1] = TONE[part]
+        tone[max(0, y0):y1+1, max(0, x0):x1+1] = np.array(TONE.get(part, (1, 1, 1)))*(1+pale*(np.array(PALE)-1))
 texels[:, :, :3] *= tone
 colour.pixels.foreach_set(texels.astype(np.float32).ravel())
 colour.update()
