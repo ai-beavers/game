@@ -51,25 +51,25 @@ export const meeting = (kit: Kit): Station[] => {
         const dx = at.x - player.feet.x, dz = at.z - player.feet.z, d = Math.hypot(dx, dz);
         const stop = { x: at.x - (dx / d) * STOP, z: at.z - (dz / d) * STOP };
         await walkTo(stop.x, stop.z, { near: 0.4, limit: 40, hop: true });
-        await until(() => shown(tag) && hudText(tag) === name, 3, `near the visitor its tag reads "${hudText(tag)}" (${shown(tag) ? "shown" : "hidden"}), not "${name}"`);
+        await until(() => shown(tag) && hudText(tag) === name, 3, () => `near the visitor its tag reads "${hudText(tag)}" (${shown(tag) ? "shown" : "hidden"}), not "${name}"`);
 
         const list = await listed();
         expect(list.includes(name), `Tab held, the Players list reads "${list.join(" / ")}", without "${name}"`);
 
         // The visitor sees the beaver come near from its state messages, as any client would; then it turns and greets.
         const near = () => { const b = visitor.seen(net.me); return b && Math.hypot(b.x - at.x, b.z - at.z) < GREET ? b : undefined; };
-        await until(() => !!near(), 3, `the beaver stands ${Math.hypot(player.feet.x - at.x, player.feet.z - at.z).toFixed(1)} m from the visitor, and the visitor never heard it come near`);
+        await until(() => !!near(), 3, () => `the beaver stands ${Math.hypot(player.feet.x - at.x, player.feet.z - at.z).toFixed(1)} m from the visitor, and the visitor never heard it come near`);
         const beaver = near()!;
         visitor.face(Math.atan2(beaver.x - at.x, beaver.z - at.z));
         visitor.say(HELLO);
-        await until(() => (net.drawn(id)?.faces ?? Infinity) < FACES, 4, `the visitor stays turned ${net.drawn(id)?.faces.toFixed(2)} rad away from the beaver`);
-        await until(() => shown(bubble) && hudText(bubble) === HELLO, 3, `the visitor's bubble reads "${hudText(bubble)}" (${shown(bubble) ? "shown" : "hidden"}), not "${HELLO}"`);
+        await until(() => (net.drawn(id)?.faces ?? Infinity) < FACES, 4, () => `the visitor stays turned ${net.drawn(id)?.faces.toFixed(2)} rad away from the beaver`);
+        await until(() => shown(bubble) && hudText(bubble) === HELLO, 3, () => `the visitor's bubble reads "${hudText(bubble)}" (${shown(bubble) ? "shown" : "hidden"}), not "${HELLO}"`);
         const line = `${name}: ${HELLO}`;
-        await until(() => hudText("chat-log").split("\n").includes(line), 2, `the chat log reads "${hudText("chat-log").split("\n").slice(-3).join(" / ")}", without "${line}"`);
+        await until(() => hudText("chat-log").split("\n").includes(line), 2, () => `the chat log reads "${hudText("chat-log").split("\n").slice(-3).join(" / ")}", without "${line}"`);
         if (live) await wait(4); // the stream reads the bubble before the visitor goes
       } finally { visitor.close(); }
 
-      await until(() => !net.remotes.has(id) && !stage.hud.getControlByName(tag), 5, `the visitor left, and its ${net.remotes.has(id) ? "Remote" : `tag "${hudText(tag)}"`} stays`);
+      await until(() => !net.remotes.has(id) && !stage.hud.getControlByName(tag), 5, () => `the visitor left, and its ${net.remotes.has(id) ? "Remote" : `tag "${hudText(tag)}"`} stays`);
       // Another visitor of the same name may have come in since (another tour): only those still here may be listed.
       const after = await listed(), still = [...net.remotes.values()].filter((r) => r.name === name).length;
       expect(after.filter((n) => n === name).length <= still, `the visitor left, and the Players list still reads "${after.join(" / ")}"`);

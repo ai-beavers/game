@@ -221,7 +221,7 @@ Another player's beaver as this browser draws it.
 _Avoid_: peer, other client
 
 **Bot**:
-A player without a browser that joins over the network and does beaver work under the same rules as a person.
+A player no person drives, that joins over the network under the same rules as a person: the Bot program does beaver work; the tour's visitor, opened from the tour's page, only stands and says hello.
 _Avoid_: NPC, AI player
 
 **Animal**:

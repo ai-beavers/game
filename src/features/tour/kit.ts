@@ -66,8 +66,8 @@ export interface Kit {
   paint(): Promise<unknown>;
   /** Seconds of the game's time. */
   wait(seconds: number): Promise<void>;
-  /** Until done() is true; throws why after limit s. */
-  until(done: () => boolean, limit: number, why: string): Promise<void>;
+  /** Until done() is true; throws why (or what why() writes then) after limit s. */
+  until(done: () => boolean, limit: number, why: string | (() => string)): Promise<void>;
   /** Holds a key the tour's input has for hold s. */
   tap(key: "act" | "jump" | "slap", hold?: number): Promise<void>;
   /** A keyboard event on window, as a person's key. */
@@ -137,8 +137,8 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   const frame = () => new Promise<number>((done) => waiters.push(done));
   const paint = () => new Promise(requestAnimationFrame); // a picture, also while paused (frame() waits for the world)
   const wait = async (seconds: number) => { for (let t = 0; t < seconds;) t += await frame(); };
-  const until = async (done: () => boolean, limit: number, why: string) => {
-    for (let t = 0; !done();) if ((t += await frame()) > limit) throw new Error(why);
+  const until = async (done: () => boolean, limit: number, why: string | (() => string)) => {
+    for (let t = 0; !done();) if ((t += await frame()) > limit) throw new Error(typeof why === "string" ? why : why());
   };
   const tap = async (key: "act" | "jump" | "slap", hold = 0.15) => { want[key] = true; await wait(hold); want[key] = false; };
   const press = (code: string, type: "keydown" | "keyup") => window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true }));
