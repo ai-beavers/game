@@ -113,6 +113,14 @@ export interface PlayerControls extends Player {
    *  at that speed, under its normal movement and physics, told in the Motion as an ordinary slow walk; it stops where
    *  a step would take it into the water. undefined: none. */
   turnTo: { heading: number; rate: number; speed?: number } | undefined;
+  /** Sits the beaver down where it stands on land, as the sit key does, for `seconds` from the next step, turning to
+   *  face (radians, as facing) if given (src/features/droppings). Moving, a jump, an action or leaving the ground gets it
+   *  up early. */
+  sit(seconds: number, face?: number): void;
+  /** Seconds the sit asked for by sit() still lasts; 0 once it is over or cut short. */
+  readonly sitting: number;
+  /** Slaps the tail once in the next step, as the slap key does, when it may (src/features/droppings). */
+  slap(): void;
 }
 
 /** How a ride sits on the water, m: the feet above the level, the least water under them, how far ahead the bow is
@@ -162,6 +170,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   let actor: Actor | undefined, aim: number | undefined, ride: Ride | undefined; // aim: where a lasting action turns the beaver
   let hold: PlayerControls["hold"], freeing = false; // freeing: a pickup waits for the paws to be free
   let turnTo: PlayerControls["turnTo"], turned = 0; // turned: rad turnTo turned this step
+  let sitFor = 0, sitFace: number | undefined, slapAsked = false; // sit() and slap(): asked for by another part
   const desired = new Vector3(), forward = new Vector3();
 
   // The live level: the pond rises with the dam (src/world/water.ts); options.waterLevel alone where there is no pond.
@@ -299,7 +308,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // Under water: no tail slap (it is the alarm on the surface); pickup and drop work, and the actor offers only what
     // can be done there (build/index.ts: wedging a stick into the food cache, no gnawing).
     const slapping = slap.progress > 0;
-    stepSlap(slap, dt, !!input.slap && !slapHeld, (grounded || afloat) && act.action === "none" && !under);
+    stepSlap(slap, dt, (!!input.slap && !slapHeld) || slapAsked, (grounded || afloat) && act.action === "none" && !under);
+    slapAsked = false;
     slapHeld = !!input.slap;
     const leaps = !slapping && slap.progress > 0 && !!foe && grounded && !afloat && !ride;
     if (leaps) leaping = true; else if (slap.progress === 0) leaping = false;
@@ -333,13 +343,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     forward.set(-Math.sin(camera.yaw), 0, -Math.cos(camera.yaw)); // camera to look point, on the ground
     desired.set(forward.x * input.move.y - forward.z * input.move.x, 0, forward.z * input.move.y + forward.x * input.move.x);
     const moving = desired.lengthSquared() > 0.01, wants = !busy && moving;
+    if (sitFor > 0) sitFor = moving || busy || input.jump || !grounded || afloat || ride ? 0 : Math.max(0, sitFor - dt);
     // On land the dive key sits and Y crawls, while held (sitting the beaver does not move: moving gets it up).
-    const { low, slow } = stepLow(!!input.dive, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: !!ride });
+    const { low, slow } = stepLow(!!input.dive || sitFor > 0, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: !!ride });
     const top = ride ? RIDE_SPEED : afloat ? SWIM_SPEED : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
     const [accel, brake] = ride ? [RIDE_ACCEL, RIDE_BRAKE] : afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
     const going = speed; // m/s before steering brakes it: a walk asked for by turnTo keeps it
     steering.facing = facing; steering.speed = speed;
-    steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
+    steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : sitFor > 0 ? sitFace : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
     facing = steering.facing; speed = steering.speed;
     turned = 0;
     if (turnTo && !wants && !busy && !ride && grounded && !afloat) {
@@ -504,6 +515,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       speed = vy = steering.spin = 0;
       lift.setAll(0); push.setAll(0);
       ride = undefined;
+      sitFor = 0;
     },
     ride(value) {
       ride = value;
@@ -512,6 +524,9 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     },
     get riding() { return !!ride; },
     get touched() { return keys.touched + camera.touched; },
+    sit(seconds, face) { sitFor = seconds; sitFace = face; },
+    get sitting() { return sitFor; },
+    slap() { slapAsked = true; },
     get turnTo() { return turnTo; },
     set turnTo(value) { turnTo = value; },
   };

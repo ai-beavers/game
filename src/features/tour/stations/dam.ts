@@ -1,13 +1,17 @@
 // Dam work: fell a tree, gnaw it into wood, watch it grow back, carry a stick, build the dam, the lodge, the food cache.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { CACHE, LODGE, REGROW, SLOTS, SPROUT, STICKS } from "../../build/rules.ts";
+import { CACHE, LODGE, moundHeight, REGROW, SLOTS, SPROUT, STICKS } from "../../build/rules.ts";
+import { DAWN } from "../../flag/state.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
+
+/** What the droppings feature puts on window for tools (src/features/droppings/index.ts); the part the tour needs. */
+interface DroppingsDebug { count: number; most: number; text: string }
 
 const BATCH = 3; // sticks built per visit, live and plain; fast builds to the next half of the dam, then the lodge
 
 export const dam = (kit: Kit): Station[] => {
-  const { player, world, fast, live, requested, want, wait, until, walkTo, tap, expect, after, last, hudText, needBuild, standingTrees, fell, split, fetchStick, buildUpTo, regrowing } = kit;
+  const { player, world, fast, live, requested, want, wait, until, walkTo, tap, expect, after, last, hudText, needBuild, standingTrees, fell, split, fetchStick, buildUpTo, regrowing, reach, sky } = kit;
   let felled = -1;
   return [
     ["Fell a tree", async () => {
@@ -65,6 +69,65 @@ export const dam = (kit: Kit): Station[] => {
       const n = needBuild().state.dam.length;
       if (n >= SLOTS) return skip("the dam is full");
       await buildUpTo(Math.min(SLOTS, fast ? (n * 2 < SLOTS ? SLOTS / 2 : SLOTS) : n + BATCH), false);
+    }, "Dam work"],
+    // A joke on one's own dam (a viewer's wish): by its land side with empty paws, once its mud shows, E offers "Leave
+    // a dropping"; the beaver sits with its back to it, a dropping lands on the crest and the tail pats it flat. Not
+    // live it fills the dam's five, sees the offer go, and rolls the sky to dawn, which washes them off. Run alone
+    // (station=Leave a dropping) it builds the tour's own dam up to its mud first.
+    ["Leave a dropping", async () => {
+      const droppings = (window as { droppings?: DroppingsDebug }).droppings ?? skip("no droppings feature");
+      const b = needBuild();
+      if (!(moundHeight(Math.min(SLOTS, b.state.dam.length)) > 0)) {
+        if (!requested.includes("Leave a dropping")) return skip("the dam's mud does not show yet");
+        b.fill(5);
+      }
+      if (droppings.count >= droppings.most) return skip(`${droppings.most} droppings lie on the dam already; the dawn washes them off`);
+      if (player.carrying) {
+        if (!player.putDown()) return skip("a stick in the paws, and it cannot be set down here");
+        await until(() => !player.carrying, 2, "set the stick down, it is still in the paws");
+      }
+      const offers = () => player.offer()?.text === droppings.text;
+      const { origin, across } = b.dam.frame, along = { x: -across.z, z: across.x };
+      // 1. To the dam's land side, beside its crest.
+      await reach("use", (attempt) => {
+        const side = [0, 0.35, -0.35][attempt]!;
+        return { x: origin.x - across.x * 0.85 + along.x * side, z: origin.z - across.z * 0.85 + along.z * side };
+      }, true);
+      expect(offers(), `by the dam's land side E would "${player.offer()?.text}", not "${droppings.text}"`);
+      // 2. E: it sits with its back to the dam, one lands, the tail pats it.
+      const leave = async () => {
+        const before = droppings.count, left = after("droppingLeft"), slapped = after("tailSlap");
+        await tap("act");
+        await until(left, 3, `pressed E by the dam, no dropping was left`);
+        expect(droppings.count === before + 1, `${droppings.count} droppings lie on the dam, not ${before + 1}`);
+        await until(slapped, 2, "a dropping landed, the tail never patted it");
+        await until(() => !player.sitting, 3, "the beaver never got up after leaving a dropping");
+      };
+      await leave();
+      if (live) return;
+      const s = sky(), hour = s.hour, running = s.running;
+      try {
+        s.running = false; s.setHour(13); // held, so no dawn comes while it fills them
+        // 3. Up to five, then no more offered.
+        while (droppings.count < droppings.most) {
+          await until(offers, 3, `with ${droppings.count} droppings on the dam E would "${player.offer()?.text}", not "${droppings.text}"`);
+          await leave();
+        }
+        await wait(0.3);
+        expect(!offers(), `${droppings.count} droppings on the dam, and E still offers another`);
+        // 4. The next dawn washes them off.
+        const washed = after("droppingsWashed");
+        s.setHour(DAWN.from - 0.3);
+        await wait(0.2);
+        expect(droppings.count === droppings.most, `before dawn (${s.hour.toFixed(1)} h) ${droppings.count} droppings lie there, not ${droppings.most}`);
+        s.setHour(DAWN.from + 0.5);
+        await until(washed, 1, `at dawn (${s.hour.toFixed(1)} h) the droppings were not washed off`);
+        expect(droppings.count === 0, `washed off at dawn, ${droppings.count} droppings still lie there`);
+        // The last one's tail may not slap again yet (it offers none until then), so wait for the offer.
+        await until(offers, 3, `the dam washed clean, E would "${player.offer()?.text}", not "${droppings.text}"`);
+      } finally {
+        s.setHour(hour); s.running = running;
+      }
     }, "Dam work"],
     // After the dam: swim sticks out to the lodge. Run alone (station=Build the lodge) it finishes the tour's own dam
     // first, so the lodge is there; in the whole tour it waits for a full dam.

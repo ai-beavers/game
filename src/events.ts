@@ -67,6 +67,10 @@ export interface GameEvents {
   /** From the flag feature (src/features/flag): the Flag caught fire, and has burnt down to a charred rag. */
   flagLit: { place: Vector3 };
   flagBurnt: { place: Vector3 };
+  /** From the droppings feature (src/features/droppings), the local player's own: a dropping landed on the dam (count:
+   *  how many lie there now), and they were washed off (at dawn, or the dam emptied). */
+  droppingLeft: { place: Vector3; count: number };
+  droppingsWashed: { why: "dawn" | "emptied" };
   /** From the Old Beaver feature (src/features/old-beaver): he begins a line of a lore, or his closing word, from
    *  where he sits: murmured, one syllable a word, syllable s apart. words 0: he falls silent, or says the line in
    *  his voice (oldBeaverVoice follows). Either way what he said before is cut. earshot: m his voice carries. */

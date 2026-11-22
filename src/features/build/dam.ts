@@ -11,6 +11,8 @@ import { instance, material } from "../../world/models.ts";
 //   dam.freeze(mesh)            draws a stick mesh (already fitted to its slot) as part of the dam or lodge
 //   dam.shape(placed)           mud and collider for this many sticks
 //   dam.frame                   the dam's own frame: origin on the ground, x across (towards the water), z along
+//   dam.at(x, z) · dam.top(at)  a point of the frame in the world · the height of the dam's top there (its mud or a
+//                               stick on it), or undefined off the dam
 //   dam.lodge(grow)             the lodge in the pond, grow 0 … 1 (rising out of the water)
 //   dam.hint(i, time)           a glowing stick where slot i is, so the player sees where the next one goes; -1 hides it
 //                               (over the cache its beam reaches up out of the water, seen from the surface)
@@ -18,11 +20,12 @@ import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { Ray } from "@babylonjs/core/Culling/ray.js";
 import type { World } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { hull as hullOf, place, SOLID, type PhysicsBody } from "../../physics.ts";
 import { fbm, seeded } from "../../world/noise.ts";
-import { CACHE_AT, cachePlan, DAM, damPlan, LODGE, moundHeight, crestHeight, profile, SLOTS, STICKS } from "./rules.ts";
+import { CACHE_AT, cachePlan, DAM, damPlan, LODGE, moundHeight, mudHeight, MUD_SINK, crestHeight, SLOTS, STICKS } from "./rules.ts";
 
 export function createDam(stage: Stage, world: World) {
   const { scene, physics } = stage, site = world.site!, pond = world.pond!;
@@ -67,9 +70,9 @@ export function createDam(stage: Stage, world: World) {
     const height = moundHeight(placed);
     mud.setEnabled(height > 0.005);
     for (let i = 0; i < local.length; i += 3) {
-      const x = local[i]!, z = local[i + 2]!, at = toWorld(x,z), p = profile(x,z);
+      const x = local[i]!, z = local[i + 2]!, at = toWorld(x,z);
       positions[i] = at.x;
-      positions[i + 1] = world.heightAt(at.x, at.z) - 0.04 + height * p * p * (3 - 2 * p) * (1 + 0.3 * fbm(at.x * 4, at.z * 4, 3));
+      positions[i + 1] = world.heightAt(at.x, at.z) - MUD_SINK + mudHeight(x, z, placed) * (1 + 0.3 * fbm(at.x * 4, at.z * 4, 3));
       positions[i + 2] = at.z;
     }
     mud.updateVerticesData("position", positions, true);
@@ -159,8 +162,18 @@ export function createDam(stage: Stage, world: World) {
     haze.alpha = 0.3 + 0.2 * breath;
   };
 
+  const down = new Vector3(0, -1, 0);
+  /** The height of the dam's top at a point of the world: the mud, or a laid stick on it, whichever is higher. */
+  const top = (at: Vector3) => {
+    const from = new Vector3(at.x, world.heightAt(at.x, at.z) + 1, at.z);
+    const hit = scene.pickWithRay(new Ray(from, down, 1.2), (mesh) => mesh.isEnabled() && mesh.isDescendantOf(group));
+    return hit?.hit && hit.pickedPoint ? hit.pickedPoint.y : undefined;
+  };
+
   return {
     frame: { origin, turn, across },
+    at: toWorld,
+    top,
     slot,
     fit,
     freeze,
