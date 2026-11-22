@@ -23,7 +23,8 @@ interface Tag {
   at: string; x: number; y: number; distance: number;
 }
 
-// The tour's live view is a stream nobody plays: no chat row, no chat log; the tags over the beavers stay.
+// The tour's live view is a stream nobody plays: no chat row; the chat log and the tags over the beavers stay, so viewers
+// read what other beavers say.
 const live = new URLSearchParams(location.search).get("tour") === "live";
 
 export function createUi(stage: Stage, actions: { send(text: string): void; rename(): void; canChat(): boolean }) {
@@ -41,15 +42,17 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
     layer.dom.append(log);
     const at = hudLayout(stage), {x, y, w: width, h: rowH} = at.chatRow, size = Math.round(at.small*1.05);
     const iconSize = Math.round(size*1.2), capSize = Math.round(size*1.35), pad = Math.round(rowH*.4), keys = !document.getElementById("touch-controls"); // touch has no keys
-    const pillW = Math.round(pad*2+iconSize+6+measure("Chat",size,"800")+(keys ? 8+capSize : 0));
-    const chat = layer.button("chat-open","Chat",box(x,y,pillW,rowH),openChat);
-    chat.panel.background = PANEL; chat.panel.cornerRadius = rowH/2; chat.panel.thickness = 0;
-    chat.element.addEventListener("blur",() => { chat.panel.thickness = 0; });
-    chat.caption.fontSize = size; chat.caption.fontWeight = "800";
-    chat.caption.textHorizontalAlignment = 0; // left
-    layer.move(chat.caption,box(x+pad+iconSize+6,y,pillW,rowH));
-    layer.icon("chat-icon","chat",box(x+pad,y+(rowH-iconSize)/2,iconSize,iconSize),PAPER);
-    if (keys) layer.cap("chat-key","T",box(x+pillW-pad-capSize,y+(rowH-capSize)/2,capSize,capSize),Math.round(size*.8));
+    if (!live) { // the stream has no chat row: nobody there types
+      const pillW = Math.round(pad*2+iconSize+6+measure("Chat",size,"800")+(keys ? 8+capSize : 0));
+      const chat = layer.button("chat-open","Chat",box(x,y,pillW,rowH),openChat);
+      chat.panel.background = PANEL; chat.panel.cornerRadius = rowH/2; chat.panel.thickness = 0;
+      chat.element.addEventListener("blur",() => { chat.panel.thickness = 0; });
+      chat.caption.fontSize = size; chat.caption.fontWeight = "800";
+      chat.caption.textHorizontalAlignment = 0; // left
+      layer.move(chat.caption,box(x+pad+iconSize+6,y,pillW,rowH));
+      layer.icon("chat-icon","chat",box(x+pad,y+(rowH-iconSize)/2,iconSize,iconSize),PAPER);
+      if (keys) layer.cap("chat-key","T",box(x+pillW-pad-capSize,y+(rowH-capSize)/2,capSize,capSize),Math.round(size*.8));
+    }
     const lineH = Math.round(at.small*1.3*1.1);
     status = layer.label("connection-status",statusText,box(x,at.log.y,width,lineH),at.small);
     messages = layer.label("chat-log","",box(x,at.log.y+lineH,width,at.log.h-lineH-(typing ? 42 : 0)),at.small);
@@ -148,7 +151,7 @@ export function createUi(stage: Stage, actions: { send(text: string): void; rena
     me(_value: string) {},
     update() {
       const visible = !stage.paused && !document.querySelector("dialog:modal");
-      layer.show(visible && !live); tagLayer.show(visible);
+      layer.show(visible); tagLayer.show(visible);
       if (!visible) { if (typing) closeChat(); return; }
       const now = performance.now(), w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
       messages.text = lines.filter(l => typing || now-l.at<SHOW).slice(-5).map(l => l.text).join("\n");
