@@ -43,6 +43,7 @@ export const PLAYED: Record<SoundName, { bus: Bus; at: number; amount: number; s
   smack: { bus: "sfx", at: CAMERA + 2, amount: 1, seconds: 1.5 }, // the tail landing on it
   squeak: { bus: "sfx", at: CAMERA + 2, amount: 1, seconds: 1.2 }, // the River kit, left a few metres behind the beaver
   chirp: { bus: "sfx", at: CAMERA + 1, amount: 1, seconds: 1 }, // and beside it again
+  doze: { bus: "ambience", at: CAMERA + 1, amount: 1, seconds: 1 }, // and asleep beside it
   creak: { bus: "sfx", at: CAMERA + 1, amount: 1, seconds: 4 },
   crash: { bus: "sfx", at: CAMERA + 2, amount: 0.7, seconds: 4 },
   crack: { bus: "sfx", at: CAMERA, amount: 1, seconds: 2.5 },

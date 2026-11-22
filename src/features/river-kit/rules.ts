@@ -1,6 +1,7 @@
 // The River kit's rules as plain logic, apart from drawing, so they can be tested alone: how it keeps to the player's
 // beaver, on land and through the water, and out of its way, what it does when the beaver stands still, and when
-// it sleeps; when it calls after the beaver, when it shakes itself dry, and where its head turns to look at it.
+// it sleeps; when it calls after the beaver or squeaks in its sleep, when it shakes itself dry, and where its head
+// turns to look at it.
 //
 //   const kit = newKit(x, z);
 //   step(kit, { x, z, land }, free, dt, random, night, afloat, deep)   free(x, z): ground or water with nothing in the way
@@ -21,17 +22,35 @@ export const WALK = 1.0, RUN = 2.4;
 /** m from the beaver within which it steps out of the beaver's way. */
 export const CLOSE = 0.7;
 /** s it stands before it finds something to do, and s it stays at what it does: nosing in the ground, looking
- *  about, upright on its haunches looking round, rubbing its muzzle with both paws, sitting, lying on its belly. */
-export const IDLE = 2.5, PAUSE = { forage: 6, look: 4, up: 4, groom: 5, sit: 8, lie: 10 };
-/** s beside a beaver that stays where it is before the kit lies down, by day and by night. Lain down for PAUSE.lie,
- *  it falls asleep and sleeps until the beaver goes. */
-export const TIRED = { day: 30, night: 8 };
+ *  about, upright on its haunches looking round, up on its two hind feet looking round, rubbing its muzzle with both
+ *  paws, patting what is before it with a fore paw, sitting, lying on its belly, and up on its hind feet with its
+ *  fore paws on a thing before it. */
+export const IDLE = 2.5, PAUSE = { forage: 6, look: 4, up: 4, tall: 5, groom: 5, touch: 4, sit: 8, lie: 10, lean: 5 };
+/** What it does when left standing, and how much it likes each: it does what it has not done for longest, its time
+ *  since times its liking times a die of 0.5 … 1.5, so that it does one thing after another, now this, now that. With
+ *  a thing right before it, REACH m ahead of its middle (a trunk, a rock, a log), it leans on it or touches it. */
+export const LIKES: Record<Idle, number> = { forage: 0.25, look: 0.15, up: 0.1, tall: 0.15, groom: 0.1, touch: 0.13, sit: 0.12 };
+export const REACH = 0.45;
+export type Idle = "forage" | "look" | "up" | "tall" | "groom" | "touch" | "sit";
+/** s beside a beaver that stays where it is before the kit lies down, by day and by night: by night it dozes at every
+ *  stop, lying down as soon as it is done standing (IDLE), even where it waits for a beaver it cannot follow. Lain
+ *  down for PAUSE.lie, by night DOZE, it falls asleep and sleeps until the beaver goes. */
+export const TIRED = { day: 30, night: 2 }, DOZE = 3;
+/** Asleep it lies over on its side as a seal pup dozes (tools/blender/kit.py) and stirs now and then, as the pup
+ *  does: it rubs its face with a fore paw, lifts, spreads and stretches its hind feet, nuzzles the ground or lifts its
+ *  head as it squeaks. s each stir lasts (the clips of the same names), how likely it is, and s it lies still between
+ *  two: the least and the most, and before its first, once it has rolled over. Its first stir is the rub. It squeaks
+ *  softly as it peeps, and as it rubs its face on its first stir and about every other one after. */
+export const STIRS = { rub: 3, stretch: 2.5, nuzzle: 2, peep: 1.5 };
+export const LIKELY: Record<Stir, number> = { rub: 0.3, stretch: 0.35, nuzzle: 0.2, peep: 0.15 };
+export const CALM = { first: 2.5, least: 1, most: 5 };
+export type Stir = keyof typeof STIRS;
 /** s on its way to a beaver that stays where it is without coming nearer to it, after which it gives up and waits
  *  where it is (the beaver is where it cannot follow: over a fence, inside the lodge) until the beaver moves: with a
  *  free way ahead, and while it goes round something (LAP: once round a house). */
 export const GIVE_UP = 5, LAP = 30;
 /** s it takes to get up from what it does low down, before it goes. */
-export const RISE: Partial<Record<Doing, number>> = { sit: 0.5, up: 0.5, groom: 0.5, lie: 0.8, sleep: 2 };
+export const RISE: Partial<Record<Doing, number>> = { sit: 0.5, up: 0.5, tall: 0.6, groom: 0.5, lean: 0.6, touch: 0.3, lie: 0.8, sleep: 2 };
 /** s between two calls of one kind at the least, so that it never chatters. */
 export const QUIET = 6;
 /** s from dripping to dry once out of the water (as the beaver's coat). */
@@ -78,13 +97,19 @@ export interface Kit {
   side: number; along: number; met: number;
   /** Whether it swims: the water where it is is too deep to stand in. */
   afloat: boolean;
+  /** Asleep: how it stirs now ("" lying still), s that stir still lasts or s until the next, and whether it has
+   *  stirred since it fell asleep. */
+  stir: Stir | ""; stirring: number; calm: number; stirred: boolean;
+  /** s since it last did each of what it does when left standing. */
+  since: Record<Idle, number>;
   /** Whether it went round something since it was last nearer the beaver: then it gives itself LAP, not GIVE_UP. */
   rounded: boolean;
   /** Whether what it gets up from, or last got up from, is its sleep: then it yawns and stretches as it does. */
   waking: boolean;
   /** Whether it ran on this way to the beaver, what it calls in this step ("left": anxious, left behind, as it
-   *  starts to run; "caught": glad, beside the beaver again after a run; else ""), and s since it last called each. */
-  hurried: boolean; call: Call | ""; quiet: Record<Call, number>;
+   *  starts to run; "caught": glad, beside the beaver again after a run; "doze": a soft squeak in its sleep; else
+   *  ""), and s since it last called each of the first two. */
+  hurried: boolean; call: Call | ""; quiet: Record<"left" | "caught", number>;
   /** How wet its coat is: 0 dry … 1 dripping. */
   wet: number;
   /** Whether it swam and has not shaken itself since, s it has been on dry ground since that swim, and s its shake
@@ -93,22 +118,22 @@ export interface Kit {
   /** Rad its head is turned to the beaver now: to its left, and up. */
   gaze: { yaw: number; pitch: number };
 }
-export type Call = "left" | "caught";
+export type Call = "left" | "caught" | "doze";
 
-export const newKit = (x: number, z: number): Kit => ({ x, z, heading: 0, speed: 0, following: false, doing: "stand", time: 0, still: 0, rising: 0, nearest: Infinity, stuck: 0, seen: { x, z }, last: { x, z }, side: 0, along: 0, met: 0, rounded: false, afloat: false, waking: false, hurried: false, call: "", quiet: { left: QUIET, caught: QUIET }, wet: 0, swam: false, ashore: 0, shaking: 0, gaze: { yaw: 0, pitch: 0 } });
+export const newKit = (x: number, z: number): Kit => ({ x, z, heading: 0, speed: 0, following: false, doing: "stand", time: 0, still: 0, rising: 0, nearest: Infinity, stuck: 0, seen: { x, z }, last: { x, z }, side: 0, along: 0, met: 0, stir: "", stirring: 0, calm: 0, stirred: false, since: { forage: 30, look: 30, up: 30, tall: 30, groom: 30, touch: 30, sit: 30 }, rounded: false, afloat: false, waking: false, hurried: false, call: "", quiet: { left: QUIET, caught: QUIET }, wet: 0, swam: false, ashore: 0, shaking: 0, gaze: { yaw: 0, pitch: 0 } });
 
 const turnBetween = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
 /** Says the call, unless it called the same less than QUIET s ago. */
-function call(k: Kit, kind: Call) {
+function call(k: Kit, kind: keyof Kit["quiet"]) {
   if (k.quiet[kind] < QUIET) return;
   k.call = kind;
   k.quiet[kind] = 0;
 }
 
 /** Advances the kit by dt s. beaver: where the player's beaver is, and whether it is on land (not afloat, not in the
- *  canoe). free: whether the kit can be at x, z, on its feet or swimming. night: whether it is dark, when it tires
- *  sooner. afloat: whether it swims where it is; swimming it only paddles, after the beaver or on the spot. deep:
+ *  canoe). free: whether the kit can be at x, z, on its feet or swimming. night: whether it is dark, when it dozes
+ *  at every stop. afloat: whether it swims where it is; swimming it only paddles, after the beaver or on the spot. deep:
  *  how deep it stands in the water, 0 on dry ground … 1 where it swims. */
 export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z: number) => boolean, dt: number, random: () => number, night = false, afloat = false, deep = afloat ? 1 : 0) {
   const dx = beaver.x - k.x, dz = beaver.z - k.z, far = Math.hypot(dx, dz);
@@ -119,6 +144,7 @@ export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z
   k.call = "";
   k.quiet.left += dt;
   k.quiet.caught += dt;
+  for (const idle in k.since) k.since[idle as Idle] += dt;
   // Its coat is as wet as the water is deep, drips dry in DRY s, and much sooner while it shakes itself.
   k.wet = Math.max(deep, k.wet - (k.shaking > 0 ? SHAKE.dries : 1) * dt / DRY);
   // Once after each swim it shakes itself dry: a moment after it has dry ground under it again, never in the water.
@@ -168,7 +194,7 @@ export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z
     // It turns to the way it found and goes once it faces free ground; with no way on (the beaver is where it found
     // no way to) it waits here, looking after it.
     // From what it does low down (sat, lain, asleep) it gets up first.
-    if (way !== undefined && k.doing !== "stand") { k.rising = RISE[k.doing] ?? 0; k.waking = k.doing === "sleep"; k.doing = "stand"; k.time = 0; }
+    if (way !== undefined && k.doing !== "stand") { k.rising = RISE[k.doing] ?? 0; k.waking = k.doing === "sleep"; k.doing = "stand"; k.time = 0; k.stir = ""; }
     if (way !== undefined && k.rising > 0) { k.rising -= dt; return; }
     k.heading += Math.max(-TURN * dt, Math.min(TURN * dt, turnBetween(k.heading, way ?? straight)));
     const x = k.x + Math.sin(k.heading) * pace * dt, z = k.z + Math.cos(k.heading) * pace * dt;
@@ -183,18 +209,40 @@ export function step(k: Kit, beaver: XZ & { land: boolean }, free: (x: number, z
   if (afloat) { k.doing = "stand"; k.time = 0; k.still = 0; return; } // in the water it only paddles, which is no rest
   if (k.doing === "stand") {
     if (k.time < IDLE) return;
-    const r = random();
-    k.doing = k.following ? "sit" : k.still > (night ? TIRED.night : TIRED.day) ? "lie"
-      : r < 0.35 ? "forage" : r < 0.55 ? "look" : r < 0.7 ? "up" : r < 0.85 ? "groom" : "sit";
+    const before = !free(k.x + Math.sin(k.heading) * REACH, k.z + Math.cos(k.heading) * REACH), r = random();
+    k.doing = k.still > (night ? TIRED.night : TIRED.day) && (night || !k.following) ? "lie" : k.following ? "sit"
+      : before && r < 0.6 ? (r < 0.3 ? "lean" : "touch") : likeliest(k, random);
+    if (k.doing in k.since) k.since[k.doing as Idle] = 0;
     k.time = 0;
-  } else if (k.doing === "lie" && k.time >= PAUSE.lie) { k.doing = "sleep"; k.time = 0; }
-  else if (k.doing !== "sleep" && k.doing !== "lie" && k.time >= PAUSE[k.doing] && !k.following) { k.doing = "stand"; k.time = 0; } // waiting for the beaver, it stays sat
+  } else if (k.doing === "lie" && k.time >= (night ? DOZE : PAUSE.lie)) {
+    Object.assign(k, { doing: "sleep", time: 0, stir: "", calm: CALM.first, stirred: false });
+  } else if (k.doing === "sleep") {
+    if (k.stir && (k.stirring -= dt) <= 0) { k.stir = ""; k.calm = CALM.least + random() * (CALM.most - CALM.least); }
+    else if (!k.stir && (k.calm -= dt) <= 0) {
+      const first = !k.stirred, r = random();
+      let sum = 0;
+      k.stir = first ? "rub" : (Object.keys(LIKELY) as Stir[]).find((s) => (sum += LIKELY[s]) > r) ?? "peep";
+      k.stirring = STIRS[k.stir];
+      k.stirred = true;
+      if (k.stir === "peep" || (k.stir === "rub" && (first || random() < 0.5))) k.call = "doze";
+    }
+  } else if (k.doing !== "lie" && k.time >= PAUSE[k.doing] && !k.following) { k.doing = "stand"; k.time = 0; } // waiting for the beaver, it stays sat
+}
+
+/** What it does next when left standing: what it has not done for longest, as much as it likes it, by a die. */
+function likeliest(k: Kit, random: () => number): Idle {
+  let best: Idle = "sit", most = -1;
+  for (const idle of Object.keys(LIKES) as Idle[]) {
+    const score = k.since[idle] * LIKES[idle] * (0.5 + random());
+    if (score > most) { best = idle; most = score; }
+  }
+  return best;
 }
 
 /** Where its head would be turned to look at the beaver's face: rad to its left and up, no further than GAZE. It
- *  looks at the beaver only while it stands or sits; busy with anything else, its head is its own. */
+ *  looks at the beaver only while it stands, sits or stands up tall; busy with anything else, its head is its own. */
 export function gazeAt(k: Kit, beaver: XZ) {
-  const idle = (k.doing === "stand" || k.doing === "sit") && k.speed === 0 && k.rising <= 0 && k.shaking <= 0 && !k.afloat;
+  const idle = (k.doing === "stand" || k.doing === "sit" || k.doing === "tall") && k.speed === 0 && k.rising <= 0 && k.shaking <= 0 && !k.afloat;
   if (!idle) return { yaw: 0, pitch: 0 };
   const dx = beaver.x - k.x, dz = beaver.z - k.z;
   return {

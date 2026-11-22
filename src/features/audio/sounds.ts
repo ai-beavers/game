@@ -291,6 +291,13 @@ const RECIPES = {
       tone(ctx, out, t, { at, type: "triangle", freq: freq * v, to: to * v, attack: 0.03, decay, peak: 0.2 });
     }
   },
+  /** The River kit squeaking in its sleep, as a seal pup does: soft and breathy, a slow whimper up and down. */
+  doze(ctx, out, t) {
+    const v = rand(0.9, 1.1);
+    tone(ctx, out, t, { type: "triangle", freq: 820 * v, to: 1050 * v, attack: 0.08, decay: 0.16, peak: 0.07 });
+    tone(ctx, out, t, { at: 0.18, type: "triangle", freq: 1000 * v, to: 720 * v, attack: 0.05, decay: 0.3, peak: 0.06 });
+    burst(ctx, out, t, { filter: "bandpass", freq: 1400, q: 1.5, attack: 0.06, decay: 0.35, peak: 0.04 });
+  },
   /** The River kit beside the beaver again: a short, glad chirp, two quick notes going up. */
   chirp(ctx, out, t) {
     const v = rand(0.94, 1.06);
