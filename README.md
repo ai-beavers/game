@@ -40,7 +40,10 @@ Everyone plays at <https://game.ai-beavers.com/>, in one shared world of up to 1
 - **What runs there**: one Worker (`worker.ts`, `wrangler.jsonc`). Cloudflare serves the files of `dist/` itself. One
   Durable Object holds the world with the same rules as `server.ts`: both run `src/features/net/room.ts`.
 - **House of AI events**: both servers answer `/net/events` from the House of AI Hamburg's public Luma calendar
-  (`src/features/shop/events.ts`), one copy kept for an hour; the Calendar board asks it hourly (ADR 0006).
+  (`src/features/shop/events.ts`); the Calendar board asks it hourly (ADR 0006). On Cloudflare the Cron Trigger
+  `17 4 * * *` (`wrangler.jsonc`) fetches the feed once a day into the Workers KV namespace `beaver-house-of-ai-events`
+  (binding `EVENTS`, fixed id, so a deploy never makes one), and requests only read it. The Bun server asks once a day
+  and, with `WORLD_FILE`, keeps its copy in `${WORLD_FILE}.events` over restarts.
 - **Credentials**: the GitHub environment `production` holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and
   takes runs from `main` only.
 - **Starting the world afresh**: set the token once with `bunx wrangler secret put RESET_TOKEN`, then

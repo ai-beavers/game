@@ -30,12 +30,13 @@
 //                                        he murmurs. Every talk with ElevenLabs is logged here.
 // GET /net/info answers 200 with JSON while the server runs: it is the health check too. Its changes come only with
 // ?build (the page asks once as it loads). GET /net/events answers the House of AI events for the Calendar board
-// (src/features/shop/events.ts), from Luma's feed or HOUSE_OF_AI_FEED=<iCal address> (the tests' fixture).
+// (src/features/shop/events.ts), from Luma's feed or HOUSE_OF_AI_FEED=<iCal address> (the tests' fixture), asked once
+// a day; with WORLD_FILE the copy is kept in ${WORLD_FILE}.events over restarts.
 import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { networkInterfaces, hostname } from "node:os";
 import index from "./index.html";
 import { clientAddress, EVENTS_PATH, INFO_PATH, MAX_MESSAGE, PATH, PROXY_HEADERS, TOUR_WORLD, worldOf } from "./src/features/net/protocol.ts";
-import { houseOfAiEvents } from "./src/features/shop/events.ts";
+import { keptEvents } from "./src/features/shop/events.ts";
 import { newRoom, type Conn } from "./src/features/net/room.ts";
 import { voiceWith } from "./src/features/old-beaver/voice.ts";
 import type { Built } from "./tools/build.ts";
@@ -115,7 +116,18 @@ function roomFor(file: string | undefined, sandbox: boolean) {
 const rooms = { "": roomFor(WORLD_FILE, false), [TOUR_WORLD]: roomFor(WORLD_FILE && `${WORLD_FILE}.${TOUR_WORLD}`, true) };
 if (WORLD_FILE) for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { for (const room of Object.values(rooms)) room.save(); process.exit(0); });
 
-const events = houseOfAiEvents(process.env.HOUSE_OF_AI_FEED || undefined);
+// The House of AI events, renewed from the feed once a day; with WORLD_FILE kept beside it over a restart.
+const EVENTS_FILE = WORLD_FILE && `${WORLD_FILE}.events`;
+const events = keptEvents({
+  feed: process.env.HOUSE_OF_AI_FEED || undefined,
+  store: EVENTS_FILE ? {
+    read: () => existsSync(EVENTS_FILE) ? readFileSync(EVENTS_FILE, "utf8") : undefined,
+    write: (text) => {
+      try { writeFileSync(`${EVENTS_FILE}.new`, text); renameSync(`${EVENTS_FILE}.new`, EVENTS_FILE); }
+      catch (error) { console.error(`Could not keep the House of AI events in ${EVENTS_FILE}:`, error); }
+    },
+  } : undefined,
+});
 
 /** address: what the per-address limit counts the socket under; room: the world it asked for; conn: the room's side
  *  of it, once it is open. */

@@ -87,18 +87,41 @@ function feedFixture(down = false) {
 for (const kind of ["server.ts", "worker.ts"] as const) describe(kind, () => {
   const bun = kind === "server.ts", start = (env: Record<string, string> = {}) => bun ? startBun(env) : startWorker(env);
 
+  // The Bun server waits for the feed when it has no copy at all; the Worker never does: its first answer, with an empty
+  // KV, is no events, and the one fetch it starts fills KV for the next.
   test("answers the House of AI events from the calendar's feed as JSON, asking the feed once for many players", async () => {
     const feed = feedFixture();
     try {
       const { port } = await start({ HOUSE_OF_AI_FEED: feed.url });
       const ask = () => fetch(`http://localhost:${port}${EVENTS_PATH}`);
-      const res = await ask();
+      let res = await ask();
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toStartWith("application/json");
+      if (!bun) {
+        expect(await res.json()).toEqual([]);
+        for (let i = 0; i < 100 && feed.asked === 0; i++) await Bun.sleep(50);
+        await Bun.sleep(200); // the fetch's write to KV
+        res = await ask();
+      }
       const events = await res.json() as { name: string; start: string; end: string }[];
       expect(events.map((e) => e.name)).toEqual(["Community Lunch"]);
       expect(Date.parse(events[0]!.end) - Date.parse(events[0]!.start)).toBe(2 * 3600_000);
       await Promise.all([ask(), ask(), ask()]);
+      expect(feed.asked).toBe(1);
+    } finally { feed.stop(); }
+  }, 60000);
+
+  test.if(bun)("keeps the House of AI events for a day, and with WORLD_FILE over a restart, without asking the feed again", async () => {
+    const feed = feedFixture(), file = join(mkdtempSync(join(tmpdir(), "beaver-")), "world.json");
+    try {
+      let { port } = await start({ HOUSE_OF_AI_FEED: feed.url, WORLD_FILE: file });
+      const names = async () => (await (await fetch(`http://localhost:${port}${EVENTS_PATH}`)).json() as { name: string }[]).map((e) => e.name);
+      expect(await names()).toEqual(["Community Lunch"]);
+      expect(await names()).toEqual(["Community Lunch"]);
+      expect(feed.asked).toBe(1);
+      await stop();
+      ({ port } = await start({ HOUSE_OF_AI_FEED: feed.url, WORLD_FILE: file }));
+      expect(await names()).toEqual(["Community Lunch"]);
       expect(feed.asked).toBe(1);
     } finally { feed.stop(); }
   }, 60000);

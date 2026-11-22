@@ -1,8 +1,8 @@
-// The game on Cloudflare: this Worker answers /net and below (/net/events, the House of AI events, itself; the rest
-// through the World); every other address is a file of dist/, which
-// Cloudflare serves without running this (wrangler.jsonc). One Durable Object, World, is the shared world: it runs
-// the same room as server.ts (src/features/net/room.ts) on Cloudflare's WebSockets and keeps the world's work in its
-// own storage. A second object of the same class is the tour's world (?world=tour, protocol.ts TOUR_WORLD).
+// The game on Cloudflare: this Worker answers /net and below (/net/events, the House of AI events, itself from Workers
+// KV, which a daily Cron Trigger renews from Luma's feed; the rest through the World); every other address is a file
+// of dist/, which Cloudflare serves without running this (wrangler.jsonc). One Durable Object, World, is the shared
+// world: it runs the same room as server.ts (src/features/net/room.ts) on Cloudflare's WebSockets and keeps the
+// world's work in its own storage. A second object of the same class is the tour's world (?world=tour, protocol.ts TOUR_WORLD).
 //
 //   bun run build && bunx wrangler dev      the Worker on this machine, port 8787 (no account needed)
 //   bunx wrangler deploy                    what the deploy job of .github/workflows/check.yml runs on main
@@ -21,24 +21,30 @@ import { DurableObject } from "cloudflare:workers";
 import { clientAddress, EVENTS_PATH, INFO_PATH, PATH, PROXY_HEADERS, RESET_PATH, TOUR_WORLD, worldOf } from "./src/features/net/protocol.ts";
 import { newRoom, type Socket } from "./src/features/net/room.ts";
 import { voiceWith } from "./src/features/old-beaver/voice.ts";
-import { houseOfAiEvents } from "./src/features/shop/events.ts";
+import { kvEvents } from "./src/features/shop/events.ts";
 
-/** HOUSE_OF_AI_FEED (--var): another iCal address for the House of AI events than Luma's (the tests' fixture). */
-interface Env { WORLD: DurableObjectNamespace<World>; GIT_SHA?: string; RESET_TOKEN?: string; HOUSE_OF_AI_FEED?: string; ELEVENLABS_API_KEY?: string }
+/** EVENTS: the Workers KV namespace holding the one copy of the House of AI events (wrangler.jsonc).
+ *  HOUSE_OF_AI_FEED (--var): another iCal address for the House of AI events than Luma's (the tests' fixture). */
+interface Env { WORLD: DurableObjectNamespace<World>; EVENTS: KVNamespace; GIT_SHA?: string; RESET_TOKEN?: string; HOUSE_OF_AI_FEED?: string; ELEVENLABS_API_KEY?: string }
 
 const KEPT = "world"; // the key the world's work is kept under, as the text server.ts keeps in WORLD_FILE
 const NOT_FOUND = () => new Response("not found", { status: 404 });
-// shortcut: the copy of the events is kept per isolate, so Cloudflare may hold a few; move it into World if Luma minds.
-let events: ReturnType<typeof houseOfAiEvents> | undefined;
+/** The House of AI events in KV; made at the first call, which brings the environment. */
+let events: ReturnType<typeof kvEvents> | undefined;
+const eventsOf = (env: Env) => events ??= kvEvents(env.EVENTS, { feed: env.HOUSE_OF_AI_FEED || undefined });
 
 export default {
-  fetch(req, env) {
+  fetch(req, env, ctx) {
     const { pathname, searchParams } = new URL(req.url);
-    if (pathname === EVENTS_PATH) return (events ??= houseOfAiEvents(env.HOUSE_OF_AI_FEED || undefined))();
+    if (pathname === EVENTS_PATH) return eventsOf(env).answer((work) => ctx.waitUntil(work));
     if (pathname !== PATH && pathname !== INFO_PATH && pathname !== RESET_PATH) return NOT_FOUND();
     // One world for everyone, and the tour's beside it: each the same object by its fixed name, placed in western
     // Europe when it is first made.
     return env.WORLD.get(env.WORLD.idFromName(worldOf(searchParams) || "world"), { locationHint: "weur" }).fetch(req);
+  },
+  /** The daily Cron Trigger (wrangler.jsonc): the only regular asker of Luma's feed. */
+  scheduled(_controller, env, ctx) {
+    ctx.waitUntil(eventsOf(env).renew());
   },
 } satisfies ExportedHandler<Env>;
 
