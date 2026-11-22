@@ -59,11 +59,12 @@ src/anim/          how it moves: Motion in, Pose out, pure maths
 src/player/        input, the capsule and its mover, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
-src/features/      dam building, the trading post, the shop, the canoe, its race, multiplayer, controls, HUD, wildlife, the bear, weather, audio, effects, photo mode and tour
+src/features/      dam building, the trading post, the shop, the canoe, its race, multiplayer, controls, HUD, wildlife, the bear, the river kit, weather, audio, effects, photo mode and tour
 server.ts          the game and its multiplayer server on Bun, for a local network
 worker.ts          the same multiplayer on Cloudflare: a Worker and a Durable Object
-assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), bear.glb (from tools/blender/bear.py), logo.png
+assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), bear.glb (from tools/blender/bear.py), kit.glb (from tools/comfyui and tools/blender/kit.py), logo.png
 tools/blender/     the models, built in Blender from code
+tools/comfyui/     animal models from pictures: the ComfyUI workflow and how to run it
 ```
 
 ## Conventions
