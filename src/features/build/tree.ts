@@ -1,8 +1,9 @@
 import { meshes, vertices, instance, material } from "../../world/models.ts";
 // One tree the build feature has taken over from the world: drawn by itself, with the bite growing into the
 // hourglass a beaver leaves, then falling as a Havok body (hinged on the cut at first, so it tips slowly, then
-// free), lying, and at last gone into wood. The stump that stays is the props' gnawed stump (stump_1). A tree grown
-// back on that stump is another view of the same tree (regrown): a sapling scaled up to the full tree, then as before.
+// free; caught short of lying, it slips through what holds it), lying, and at last gone into wood. The stump that
+// stays is the props' gnawed stump (stump_1). A tree grown back on that stump is another view of the same tree
+// (regrown): a sapling scaled up to the full tree, then as before.
 //
 //   const m = measure(world.trees[i]);           sizes in the tree's template and in the world, cached
 //   const view = takeTree(stage, world, i);      hides the world's instance, draws its own copy
@@ -21,11 +22,13 @@ import type { World, WorldTree } from "../../contracts.ts";
 import { HingeConstraint } from "@babylonjs/core/Physics/v2/physicsConstraint.js";
 import { PhysicsActivationControl } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin.js";
 import type { Stage } from "../../engine.ts";
-import { ball, compound, cylinder, HEAVY, place, PhysicsMotionType, regroup, SOLID, type PhysicsBody } from "../../physics.ts";
+import { ball, compound, cylinder, HEAVY, place, PhysicsMotionType, regroup, SLIPPING, SOLID, type PhysicsBody } from "../../physics.ts";
 
 /** Height of the bite's narrowest point above the ground, and half the height of the finished hourglass, m. */
 export const BITE_HEIGHT = 0.5, BITE_HALF = 0.28;
 const STUMP_RADIUS = 0.16, STUMP_TIP = 0.52; // stump_1 as tools/blender/props.py builds it
+/** Rad off upright from which a felled tree lies; short of it, it still stands. */
+const LYING = 1;
 
 export interface Measure {
   scale: number; position: Vector3; turn: Quaternion;
@@ -275,6 +278,7 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
   const waist = () => Vector3.TransformCoordinates(cutPoint, root.computeWorldMatrix(true));
   let holder: TransformNode | undefined, body: PhysicsBody | undefined, hinge: { joint: HingeConstraint; anchor: PhysicsBody } | undefined;
   let spin = 0, since = 0, still = 0, landed = false, resting = false;
+  let tip: Vector3 | undefined, caught = 0, slipped = false; // the axis it tips over about; s held up short of lying
   let stump: TransformNode | undefined, stumpCollider: PhysicsBody | undefined;
   // The world's trunk collider is gone for a tree grown back: it gets one like it once fully grown.
   let trunk: PhysicsBody | undefined, size = regrown ? -1 : 1;
@@ -306,6 +310,13 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
     hinge.joint.dispose();
     physics.remove(hinge.anchor);
     hinge = undefined;
+  };
+  /** A slow start, as a turn about the cut: its middle moves with it. A spin alone (about the middle) the hinge
+   *  cuts to a quarter, and the tree stood still on its stump (measured). */
+  const push = () => {
+    const turn = tip!.scale(0.12), middle = body!.getMassProperties().centerOfMass!.applyRotationQuaternion(holder!.rotationQuaternion!);
+    body!.setAngularVelocity(turn);
+    body!.setLinearVelocity(Vector3.Cross(turn, middle));
   };
   /** From here on it lies where it is. */
   const fix = () => {
@@ -347,17 +358,13 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
       clear();
       addStump();
       updateBite(1, true);
-      const axis = new Vector3(0, 1, 0).cross(direction).normalize();
+      tip = new Vector3(0, 1, 0).cross(direction).normalize();
       // The hinge: from a still point at the cut, in no group, to the body, round the axis of the fall.
       const anchor = physics.fixed(ball(scene, 0.01), 0, 0.5, w);
-      const joint = new HingeConstraint(Vector3.Zero(), Vector3.Zero(), axis, axis, scene);
+      const joint = new HingeConstraint(Vector3.Zero(), Vector3.Zero(), tip, tip, scene);
       anchor.addConstraint(body!, joint);
       hinge = { joint, anchor };
-      // A slow start, as a turn about the cut: its middle moves with it. A spin alone (about the middle) the hinge
-      // cuts to a quarter, and the tree stood still on its stump (measured).
-      const spin = axis.scaleInPlace(0.12), middle = body!.getMassProperties().centerOfMass!.applyRotationQuaternion(holder!.rotationQuaternion!);
-      body!.setAngularVelocity(spin);
-      body!.setLinearVelocity(Vector3.Cross(spin, middle));
+      push();
     },
     /** Once per physics step while it falls: "landed" when the crown hits the ground (once), "rest" when it lies
      *  still (once; it is fixed from then on). */
@@ -370,10 +377,19 @@ export function takeTree(stage: Stage, world: World, index: number, regrown = fa
         unhinge();
         solidStump();
       }
+      const slow = body.getLinearVelocity().length() < 0.15 && now < 0.15;
+      // Held up short of lying (its crown on a lying tree's, its trunk against a rock or another tree): it slips
+      // through what holds it and tips on, down to the ground. Once: after that only the ground is in its way.
+      caught = slow && tilt < LYING && !slipped ? caught + dt : 0;
+      if (caught > 0.6) {
+        slipped = true;
+        regroup(body, SLIPPING);
+        push();
+      }
       let event: "landed" | "rest" | undefined;
-      if (!landed && tilt > 0.9 && spin > 0.3 && now < spin * 0.6) { landed = true; event = "landed"; }
+      if (!landed && tilt > LYING && spin > 0.3 && now < spin * 0.6) { landed = true; event = "landed"; }
       if (!landed) spin = Math.max(spin, now);
-      still = landed && body.getLinearVelocity().length() < 0.15 && now < 0.15 ? still + dt : 0;
+      still = landed && slow ? still + dt : 0;
       if (!event && (still > 0.6 || since > 10)) {
         resting = true;
         if (!landed) landed = true;

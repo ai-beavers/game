@@ -18,6 +18,7 @@ test("every grass tile draws with its own instance buffers, not the weeds' (the 
   buildGrass(stage, () => false, new StandardMaterial("soil", scene));
   const tiles = scene.meshes.filter((mesh) => mesh.name === "grass tile") as Mesh[];
   expect(tiles.length).toBeGreaterThan(1);
+  expect((scene.getMeshByName("flowers") as Mesh).thinInstanceCount).toBeGreaterThan(500);
   const floats = (tile: Mesh, kind: string) => (tile.getVertexBuffer(kind)!.getData() as Float32Array).length;
   for (const tile of tiles) {
     // What the draw binds (the geometry's buffers) must hold as many instances as the draw asks for.

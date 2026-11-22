@@ -173,3 +173,14 @@ test("baking: its own reason, and while it is new the beaver tries it first", ()
   expect(pick([...all, bake], { shown, day: Date.parse("2026-11-21") })).toBe("Baking");
   expect(fresh("Baking", at({ day: Date.parse("2026-11-28") }))).toBe(false);
 });
+
+test("crafting: its own reason, and while it is new the beaver tries it first", () => {
+  const later = at({ day: Date.parse("2026-12-20") });
+  expect(reason("Crafting", later)).toBe("A feather and a shell. I could tie those together.");
+  expect(reason("Crafting", at({ day: Date.parse("2026-11-22") }))).toBe("New! Let me try: Crafting");
+  const craft: Station = ["Make a charm", play, "Crafting"];
+  const shown = { "Dam work": 0, "Pond patrol": 0, "Tail slap": 0, "Sky watch": 0, "Around the clearing": 0, Crafting: 0 };
+  expect(pick([...all, craft], { shown, day: Date.parse("2026-11-21") })).toBe("Crafting");
+  expect(fresh("Crafting", at({ day: Date.parse("2026-11-27") }))).toBe(true);
+  expect(fresh("Crafting", at({ day: Date.parse("2026-11-28") }))).toBe(false);
+});

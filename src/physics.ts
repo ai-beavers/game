@@ -34,13 +34,13 @@ export { PhysicsBody, PhysicsMotionType, PhysicsShape, PhysicsShapeType };
  *  rocks, the lodge, the canoe). LOOSE: light things that roll and get carried (sticks). HEAVY: what rolls and is
  *  too heavy for that (crates, logs, a felled tree while it falls). PLAYER: the beaver's own body. CREATURE: other
  *  bodies that walk (the Bear, other players' beavers): queries and the beaver's movement meet them, nothing else
- *  touches them. */
-export const GROUND = 1, SOLID = 2, LOOSE = 4, HEAVY = 8, PLAYER = 16, CREATURE = 32;
+ *  touches them. SLIPPING: a felled tree caught short of lying, for the rest of its fall: only the ground stops it. */
+export const GROUND = 1, SOLID = 2, LOOSE = 4, HEAVY = 8, PLAYER = 16, CREATURE = 32, SLIPPING = 64;
 const QUERY = 1 << 30; // every query's own group
 /** What a query meets unless it names fewer groups: everything but the beaver itself. */
 export const ALL = GROUND | SOLID | LOOSE | HEAVY | CREATURE;
 const COLLIDES: Record<number, number> = {
-  [GROUND]: ~0, [SOLID]: ~0, [LOOSE]: ~CREATURE, [HEAVY]: ~CREATURE, [PLAYER]: LOOSE | HEAVY | QUERY, [CREATURE]: QUERY,
+  [GROUND]: ~0, [SOLID]: ~0, [LOOSE]: ~CREATURE, [HEAVY]: ~CREATURE, [PLAYER]: LOOSE | HEAVY | QUERY, [CREATURE]: QUERY, [SLIPPING]: GROUND,
 };
 
 const parts = new WeakMap<PhysicsShape, PhysicsShape[]>(); // a compound's shapes
@@ -115,8 +115,9 @@ export function heightfield(scene: Scene, n: number, size: number, heights: Floa
 
 const groups = new WeakMap<PhysicsBody, number>(); // the group each body's shape is in while it is enabled
 export const dynamic = (body: PhysicsBody) => body.getMotionType() === PhysicsMotionType.DYNAMIC;
-/** In the world: false while taken out by enable(body, false) (a stick in someone's paws). */
-export const isEnabled = (body: PhysicsBody) => body.shape!.filterMembershipMask !== 0;
+/** In the world: false while taken out by enable(body, false) (a stick in someone's paws). A compound is asked by
+ *  its first shape: Havok keeps no group for the compound itself, and what it gives back for one is chance. */
+export const isEnabled = (body: PhysicsBody) => (parts.get(body.shape!)?.[0] ?? body.shape!).filterMembershipMask !== 0;
 /** Takes a body out of every contact and query and holds it still (a stick in the paws, its node drawn elsewhere),
  *  or puts it back. */
 export function enable(body: PhysicsBody, on: boolean) {
@@ -141,10 +142,16 @@ export function place(body: PhysicsBody, at: XYZ, turn?: { x: number; y: number;
   body.setLinearVelocity(Vector3.ZeroReadOnly);
   body.setAngularVelocity(Vector3.ZeroReadOnly);
 }
-/** Moves the group a body is in (a felled tree is HEAVY while it falls, SOLID once it lies). */
+/** Moves the group a body is in (a felled tree is HEAVY while it falls, SLIPPING once caught, SOLID once it lies). */
 export function regroup(body: PhysicsBody, group: number) {
   groups.set(body, group);
-  if (isEnabled(body)) setGroup(body.shape!, group);
+  if (!isEnabled(body)) return;
+  setGroup(body.shape!, group);
+  // Havok goes on filtering the contacts a body already has by its old group until its motion type changes
+  // (measured): changed and changed back, it meets what it touches anew. Its speed stays.
+  const type = body.getMotionType();
+  body.setMotionType(type === PhysicsMotionType.ANIMATED ? PhysicsMotionType.STATIC : PhysicsMotionType.ANIMATED);
+  body.setMotionType(type);
 }
 
 let loading: ReturnType<typeof HavokPhysics> | undefined;

@@ -32,9 +32,10 @@ export function createChain({ scene, camera, engine, hud }: Stage) {
       active = next;
       pipeline.prepare();
     },
-    /** 0 by day … 1 at night: the moon and the fireflies glow more, the way points of light do in the dark. */
-    night(dark: number) {
-      pipeline.bloomWeight = 0.13 + 0.4 * dark;
+    /** dark, 0 by day … 1 at night: the moon and the fireflies glow more, the way points of light do in the dark.
+     *  golden, 0 … 1: the low sun's glare spills over what stands in front of it. */
+    glow(dark: number, golden: number) {
+      pipeline.bloomWeight = 0.13 + 0.4 * dark + 0.125 * golden;
     },
     focus(metres: number, strength: number) {
       pipeline.depthOfField.focusDistance = Math.max(0.1, metres) * 1000;

@@ -103,6 +103,10 @@ export interface Day {
   twilight: number;
 }
 
+/** 0 … 1: the golden hour as it shows, the low sun through clear air, full from about 13° down; clouds and fog
+ *  (0 … 1) take it away. */
+export const goldenHour = (day: Day, clouds: number, fog: number) => Math.min(1, day.golden * 1.6) * (1 - clouds) * (1 - fog);
+
 export function dayAt(hourOfDay: number): Day {
   const hour = ((hourOfDay % 24) + 24) % 24;
   const sun = sunAt(hour), moon = moonAt(hour);
