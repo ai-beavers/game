@@ -29,7 +29,7 @@ import { BUILD_TIME } from "../build/index.ts";
 import { reachAt, RISE, HOLD, FALL } from "../lantern/stow.ts";
 import { tradeOf } from "../trade/index.ts";
 import { craft, craftText, goodOf, missing } from "../trade/ledger.ts";
-import { goodModel } from "../trade/post.ts";
+import { GOOD_SIZE, goodModel } from "../trade/post.ts";
 import { createBench } from "./bench.ts";
 import { atBench, BENCH, FACING, STAND } from "./place.ts";
 
@@ -72,7 +72,7 @@ export const create: CreateFeature = (game) => {
         inputs: recipe.map((id, i) => {
           const mesh = goodModel(id, scene);
           mesh.rotation.y = bench.yaw + (i ? 0.6 : -0.4);
-          mesh.scaling.setAll(1.6); // larger than life on the bench, as the goods on the trading post
+          mesh.scaling.setAll(GOOD_SIZE); // larger than life on the bench, as the goods on the trading post
           return { mesh, from, to: bench.spot(i ? 1 : -1) };
         }),
       };
@@ -138,7 +138,7 @@ export const create: CreateFeature = (game) => {
             making.charm = goodModel(CHARM, scene);
             making.charm.position.copyFrom(middle);
             making.charm.rotation.y = bench.yaw;
-            making.charm.scaling.setAll(1.6);
+            making.charm.scaling.setAll(GOOD_SIZE);
           }
         } else if (!making.done) {
           // Lying on the bench till the work is done, then into the paw, then over the shoulder.
@@ -147,7 +147,7 @@ export const create: CreateFeature = (game) => {
           if (out >= 0 && out < TAKE) {
             const k = ease(out / TAKE);
             Vector3.LerpToRef(making.from, pawAt(), k, making.charm.position).y += Math.sin(Math.PI * k) * 0.12;
-            making.charm.scaling.setAll(1.6 - 0.6 * k);
+            making.charm.scaling.setAll(GOOD_SIZE - 0.6 * k);
             making.charm.rotation.y = bench.yaw + (player.facing - bench.yaw) * k;
           } else if (out >= TAKE) { making.charm.position.copyFrom(pawAt()); making.charm.rotation.y = player.facing; }
           if (out - TAKE >= RISE) intoBackpack();

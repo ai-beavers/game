@@ -1,6 +1,6 @@
 // Tests for style.ts: every element has a home on screen, no two homes overlap, and the type reads on a stream.
 import { expect, test } from "bun:test";
-import { fitType, homes, layout, unit } from "./style.ts";
+import { fitType, homes, HOTBAR, layout, unit } from "./style.ts";
 
 const none = { top: 0, right: 0, bottom: 0, left: 0 };
 const screens: [number, number][] = [[640, 360], [1280, 720], [1440, 810], [1920, 1080]];
@@ -43,7 +43,7 @@ test("the hints sit low, under the middle of the picture, over the prompt and th
   expect(l.hints.x + l.hints.w / 2).toBe(640);
   expect(l.prompt.y + l.prompt.h).toBeLessThanOrEqual(l.hotbar.y);
   expect(Math.abs(l.hotbar.x + l.hotbar.w / 2 - 640)).toBeLessThanOrEqual(1); // on whole pixels
-  expect(l.hotbar.w).toBeGreaterThanOrEqual(5 * l.slot);
+  expect(l.hotbar.w).toBeGreaterThanOrEqual(HOTBAR * l.slot);
   expect(l.hotbar.y + l.hotbar.h).toBe(720 - 12); // on the bottom margin
 });
 

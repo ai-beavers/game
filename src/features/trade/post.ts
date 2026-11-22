@@ -24,7 +24,7 @@ import { POST_GOODS as GOODS } from "./ledger.ts";
 import { FRONT, POST, SPOT_GAP } from "./place.ts";
 
 const TOP = POST.top + 0.04; // m: the counter's top surface, plank included
-const GOOD_SIZE = 1.6; // the goods are drawn this much larger than life, so a viewer reads them at the camera's distance
+export const GOOD_SIZE = 1.6; // the goods are drawn this much larger than life, so a viewer reads them at the camera's distance
 const PILE_LENGTH = 0.5; // m: a stick laid on a pile, shortened to fit its spot
 
 export function createPost(stage: Stage, world: World) {
