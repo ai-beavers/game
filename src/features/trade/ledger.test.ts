@@ -1,12 +1,12 @@
 // Tests for the trade feature's ledger: paying fills a pile, the price empties it and adds one good, and the counts
 // survive a save and a load. Run: bun test src/features/trade
 import { describe, expect, test } from "bun:test";
-import { GOODS, goodOf, label, load, newLedger, offerText, pay, POST_GOODS } from "./ledger.ts";
+import { craft, craftText, GOODS, goodOf, label, load, missing, newLedger, offerText, pay, POST_GOODS, type Ledger } from "./ledger.ts";
 import { shelf } from "./hold.ts";
 
 describe("the ledger", () => {
   test("the goods, in order, with their prices in sticks", () => {
-    expect(GOODS.map((g) => [g.id, g.price])).toEqual([["pinecone", 1], ["feather", 2], ["shell", 3], ["loaf", 3]]);
+    expect(GOODS.filter((g) => g.at !== "workbench").map((g) => [g.id, g.price])).toEqual([["pinecone", 1], ["feather", 2], ["shell", 3], ["loaf", 3]]);
     expect(goodOf("shell")?.name).toBe("shell");
     expect(goodOf("hat")).toBeUndefined();
   });
@@ -56,5 +56,52 @@ describe("the loaf, baked at the bakery from the same ledger", () => {
     expect(load('{"version":1,"paid":{"feather":1},"owned":{"shell":2}}')).toEqual({ version: 1, paid: { feather: 1 }, owned: { shell: 2 } });
     expect(load('{"version":1,"paid":{"loaf":7},"owned":{"loaf":"many","pinecone":1}}')).toEqual({ version: 1, paid: { loaf: 2 }, owned: { pinecone: 1 } });
     expect(load('{"version":1,"paid":{"loaf":-1},"owned":{"loaf":2.5}}')).toEqual(newLedger());
+  });
+});
+
+const owning = (owned: Record<string, number>): Ledger => ({ ...newLedger(), owned });
+
+describe("the charm, made at the workbench from a feather and a shell", () => {
+  test("the charm is a good of the workbench, after the loaf, with its recipe", () => {
+    expect(GOODS.map((g) => g.id)).toEqual(["pinecone", "feather", "shell", "loaf", "charm"]);
+    expect(goodOf("charm")).toMatchObject({ at: "workbench", recipe: ["feather", "shell"] });
+    expect(POST_GOODS.map((g) => g.id)).not.toContain("charm");
+  });
+  test("with both goods it can be made; the bench says so", () => {
+    const l = owning({ feather: 1, shell: 2 });
+    expect(missing(l, "charm")).toEqual([]);
+    expect(craftText(l, "charm")).toBe("Make a charm (feather + shell)");
+  });
+  test("a good missing: the bench names only what is missing", () => {
+    expect(missing(newLedger(), "charm")).toEqual(["feather", "shell"]);
+    expect(craftText(newLedger(), "charm")).toBe("Needs a feather and a shell");
+    expect(craftText(owning({ feather: 3 }), "charm")).toBe("Needs a shell");
+    expect(craftText(owning({ shell: 1 }), "charm")).toBe("Needs a feather");
+  });
+  test("making uses up one feather and one shell and adds one charm, as long as there are pairs", () => {
+    const l = owning({ feather: 2, shell: 1, pinecone: 1 });
+    expect(craft(l, "charm")).toEqual({ good: "charm", count: 1 });
+    expect(l.owned).toEqual({ feather: 1, pinecone: 1, charm: 1 });
+    expect(craft(l, "charm")).toBeUndefined(); // no shell left
+    expect(l.owned).toEqual({ feather: 1, pinecone: 1, charm: 1 });
+    l.owned.shell = 1;
+    expect(craft(l, "charm")).toEqual({ good: "charm", count: 2 });
+    expect(l.owned).toEqual({ pinecone: 1, charm: 2 });
+  });
+  test("a refused make changes nothing; only a good with a recipe is made", () => {
+    const l = owning({ shell: 1 });
+    expect(craft(l, "charm")).toBeUndefined();
+    expect(l.owned).toEqual({ shell: 1 });
+    expect(craft(owning({ shell: 1 }), "shell")).toBeUndefined();
+    expect(craft(l, "hat")).toBeUndefined();
+  });
+  test("charms survive a save and a load; an old save simply has none", () => {
+    const l = owning({ charm: 3, feather: 1 });
+    expect(load(JSON.stringify(l))).toEqual(l);
+    expect(load('{"version":1,"paid":{"charm":2},"owned":{"charm":-1,"shell":1}}')).toEqual({ version: 1, paid: {}, owned: { shell: 1 } });
+  });
+  test("the hotbar lists the charm after the loaf", () => {
+    const l = owning({ charm: 1, loaf: 1, pinecone: 2, feather: 1, shell: 1 });
+    expect(shelf(l).map((id) => label(id, l.owned[id]!))).toEqual(["Pinecone ×2", "Feather ×1", "Shell ×1", "Loaf ×1", "Charm ×1"]);
   });
 });

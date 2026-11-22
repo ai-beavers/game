@@ -4,7 +4,7 @@
 // pile reaches the good's price, the pile goes, the beaver takes the good, reaches over its shoulder and puts it in
 // its backpack (the lantern's reach, Motion.reachBack), and the hotbar on the HUD counts it. Goods can be
 // bought again and again; a traded stick comes back when its tree grows back (rules.ts "grow").
-// The hotbar (hotbar.ts, hold.ts): slot 1 is what the beaver carries, 2 … 5 the goods. Keys 1 … 5, the d-pad's left
+// The hotbar (hotbar.ts, hold.ts): slot 1 is what the beaver carries, 2 … 6 the goods. Keys 1 … 6, the d-pad's left
 // and right or a tap on a slot select one: a good comes out of the backpack with the same reach into the left paw (a
 // stick carried is put down first); slot 1 or the same slot again puts it back. E at a stick puts it back first
 // (Player.hold). A good in the paw does nothing else yet, and only this player sees it: nothing of it is sent.
@@ -14,8 +14,9 @@
 // The piles and the goods are the player's own (docs/adr/0003): kept in localStorage ("beaver.trade", the tour's own
 // under "beaver.trade.tour"), never sent. Event goodTraded { good, count } when a good goes into the backpack.
 //
-// The bakery (src/features/bakery) pays into the same ledger: tradeOf(scene) gives it the ledger, save(), the goods
-// still on their way to the backpack (not yet counted on the hotbar) and whether its reach is under way.
+// The bakery (src/features/bakery) pays into the same ledger, and the workbench (src/features/workbench) makes goods
+// in it: tradeOf(scene) gives them the ledger, save(), the goods still on their way to the backpack (not yet counted
+// on the hotbar), whether their reach is under way, and useUp (the paw emptied of a good about to be used up).
 //
 // Debug, for bun shot --eval (window.trade): trade.at("feather") stands at the feather's spot facing it (with no
 // stick in the hand, one is put down right beside it: E picks it up, E again pays) · trade.state the ledger ·
@@ -30,7 +31,7 @@ import type { Actor, Offer } from "../../player/index.ts";
 import { BUILD_TIME, buildOf } from "../build/index.ts";
 import { OWN_LAYER } from "../../player/camera.ts";
 import { busy, reachAt, RISE, HOLD, FALL } from "../lantern/stow.ts";
-import { full, newHold, shelf, SLOTS, stepHold } from "./hold.ts";
+import { full, newHold, shelf, SLOTS, stepHold, useUp } from "./hold.ts";
 import { createHotbar, type SlotView } from "./hotbar.ts";
 import { goodOf, load, offerText, pay, POST_GOODS } from "./ledger.ts";
 import { FACING, spotFor, standAt } from "./place.ts";
@@ -52,6 +53,8 @@ export interface Trade {
   coming: Record<string, number>;
   /** Another feature's reach over the shoulder under way: the hotbar's reach waits. */
   reaching: boolean;
+  /** Goods about to be used up (at the workbench): one of them in the paw or selected empties the paw (slot 1). */
+  useUp(goods: readonly string[]): void;
 }
 /** The trade feature's ledger, once it runs (as buildOf). */
 export const tradeOf = (scene: Scene) => scene.metadata?.trade as Trade | undefined;
@@ -63,12 +66,12 @@ export const create: CreateFeature = (game) => {
   let ledger = load(localStorage.getItem(KEY));
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(ledger)); } catch { /* not kept, still played */ } };
   const post = createPost(stage, world);
-  const shared: Trade = { get ledger() { return ledger; }, save, coming: {}, reaching: false };
+  const hold = newHold(), motion = player.motion;
+  const shared: Trade = { get ledger() { return ledger; }, save, coming: {}, reaching: false, useUp: (goods) => useUp(hold, goods) };
   stage.scene.metadata.trade = shared;
   POST_GOODS.forEach((good, i) => post.fill(i, ledger.paid[good.id] ?? 0));
 
   // ---- the hotbar: a slot selected brings its good into the paw, or puts it back ----------------------------------
-  const hold = newHold(), motion = player.motion;
   player.hold = { get full() { return full(hold); }, free() { hold.want = undefined; } };
   // A good paid for but still on its way to the backpack (a loaf baking) is not on the hotbar yet: no slot selects it.
   const counted = (id: string) => (ledger.owned[id] ?? 0) - (shared.coming[id] ?? 0);

@@ -24,5 +24,6 @@ import { create as sky } from "./sky/index.ts";
 import { create as stare } from "./stare/index.ts";
 import { create as tour } from "./tour/index.ts";
 import { create as trade } from "./trade/index.ts";
+import { create as workbench } from "./workbench/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, shop, canoe, race, flag, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, net, audio, hud, debug, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, workbench, shop, canoe, race, flag, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, net, audio, hud, debug, tour];

@@ -218,6 +218,28 @@ function makeGood(id: string, scene: import("@babylonjs/core/scene.js").Scene): 
     (mesh.material as import("@babylonjs/core/Materials/multiMaterial.js").MultiMaterial).subMaterials = [colour(scene, "loaf", 0xa8662a, 0.15), cutMat, cutMat, cutMat];
     return named(mesh, id);
   }
+  if (id === "charm") {
+    // A river shell and a duck feather tied on a loop of string: the loop stands up, the shell hangs at its foot
+    // facing out, the feather hangs beside it with its blue band, a knot where they are tied.
+    put(MeshBuilder.CreateTorus("string", { diameter: 0.085, thickness: 0.008, tessellation: 18 }, scene), 0, 0.15, 0, Math.PI / 2, 0, 0);
+    put(MeshBuilder.CreateSphere("knot", { diameter: 0.024, segments: 6 }, scene), 0, 0.105, 0.004);
+    const dome = put(MeshBuilder.CreateSphere("charm shell", { diameter: 1, segments: 10, slice: 0.5 }, scene), -0.03, 0.055, 0.012, Math.PI / 2, 0, 0.25);
+    dome.scaling.set(0.11, 0.045, 0.1);
+    for (let k = 0; k < 5; k++) {
+      const a = -0.9 + (k / 4) * 1.8;
+      const rib = put(MeshBuilder.CreateSphere("charm rib", { diameter: 1, segments: 5 }, scene), -0.03 + Math.sin(a + 0.25) * 0.025, 0.055 + Math.cos(a + 0.25) * 0.016, 0.026, 0, 0, a + 0.25);
+      rib.scaling.set(0.008, 0.06, 0.01);
+    }
+    const vane = put(MeshBuilder.CreateSphere("charm vane", { diameter: 1, segments: 8 }, scene), 0.04, 0.05, 0.004, 0, 0, -0.3);
+    vane.scaling.set(0.055, 0.17, 0.012);
+    const band = put(MeshBuilder.CreateSphere("charm band", { diameter: 1, segments: 6 }, scene), 0.035, 0.07, 0.008, 0, 0, -0.3);
+    band.scaling.set(0.05, 0.04, 0.012);
+    const mesh = Mesh.MergeMeshes(parts, true, true, undefined, false, true)!;
+    const string = colour(scene, "charm string", 0x9b6b3c), shell = colour(scene, "shell", 0xe7c3ae, 0.35);
+    (mesh.material as import("@babylonjs/core/Materials/multiMaterial.js").MultiMaterial).subMaterials =
+      [string, string, shell, ...Array(5).fill(shell), colour(scene, "feather", 0xcfc6b2), colour(scene, "feather band", 0x2f5fb3, 0.4)];
+    return named(mesh, id);
+  }
   // A river shell: a low dome with ribs fanning out from its hinge.
   const dome = put(MeshBuilder.CreateSphere("shell", { diameter: 1, segments: 12, slice: 0.5 }, scene), 0, 0, 0);
   dome.scaling.set(0.15, 0.07, 0.12);

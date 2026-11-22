@@ -9,7 +9,7 @@
 //
 // WASD or arrows move (x to the right, y forward, relative to the camera), Shift runs, Space jumps (rises under water),
 // E acts, Q slaps the tail, C held dives (swimming) or sits (on land), Y held crawls, L flashes the lantern
-// (src/features/lantern takes the moment it goes down), 1 … 5 select a hotbar slot (src/features/trade takes the moment
+// (src/features/lantern takes the moment it goes down), 1 … 6 select a hotbar slot (src/features/trade takes the moment
 // one goes down; a gamepad steps through them instead: shift).
 // run is 0 … 1: walking speed at 0, running speed at 1, between them in between (a stick pushed part of the way).
 // A press shorter than a step still counts once: presses are kept until the next read.
@@ -18,7 +18,7 @@
 
 export interface Input {
   move: { x: number; y: number }; run: number; jump: boolean; act: boolean; slap?: boolean; dive?: boolean; crawl?: boolean; flash?: boolean;
-  /** A hotbar slot key held, 1 … 5; 0 or left out: none. */
+  /** A hotbar slot key held, 1 … 6; 0 or left out: none. */
   slot?: number;
   /** The hotbar's selection stepped to the next slot (1) or the one before (-1); 0 or left out: neither. */
   shift?: number;
@@ -59,7 +59,7 @@ export function merge(into: Input, readings: Reading[]): Input {
   return into;
 }
 
-const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyE", "KeyQ", "KeyC", "KeyY", "KeyL", "ShiftLeft", "ShiftRight", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5"]);
+const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyE", "KeyQ", "KeyC", "KeyY", "KeyL", "ShiftLeft", "ShiftRight", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"]);
 
 export function keyboard(target: Window = window) {
   const held = new Set<string>(), pressed = new Set<string>();
@@ -120,7 +120,7 @@ export function keyboard(target: Window = window) {
     into.dive = on("KeyC");
     into.crawl = on("KeyY"); // by position: printed "Z" on a German keyboard
     into.flash = on("KeyL");
-    into.slot = [1, 2, 3, 4, 5].find((n) => on(`Digit${n}`)) ?? 0;
+    into.slot = [1, 2, 3, 4, 5, 6].find((n) => on(`Digit${n}`)) ?? 0;
     pressed.clear();
     return into;
   }

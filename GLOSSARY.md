@@ -47,7 +47,7 @@ The stall in the clearing where the beaver pays sticks for goods. Each good lies
 _Avoid_: shop, store, market
 
 **Good**:
-A thing the beaver gets for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell from the trading post, a loaf from the bakery.
+A thing the beaver gets and keeps in its backpack: for sticks a pinecone, a duck feather, a river shell from the trading post, a loaf from the bakery; from other goods a charm, made at the workbench.
 _Avoid_: item, loot, product
 
 **Bakery**:
@@ -58,8 +58,20 @@ _Avoid_: bakehouse, kitchen, oven (that is only the fire inside it), trading pos
 A loaf of bread baked in the bakery's oven, a good like those of the trading post, kept in the backpack. It is baked, not bought, and the trading post does not hold it.
 _Avoid_: bread item, food, snack
 
+**Workbench**:
+The tree-stump bench in the open beside the trading post, where the beaver makes a new good from goods in its backpack, using them up. It takes no sticks. The bench is the same for everyone; what is made on it is each player's own.
+_Avoid_: crafting table, crafting station, forge, trading post
+
+**Recipe**:
+The goods the workbench needs for one good it makes: a feather and a shell for a charm. The bench says it when the goods are missing.
+_Avoid_: pattern, formula, blueprint
+
+**Charm**:
+A duck feather and a river shell tied on a string at the workbench, a good like the others, kept in the backpack and held in the paw. It is made, not bought or baked.
+_Avoid_: amulet, necklace, trinket, item
+
 **Hotbar**:
-The row of five slots at the bottom of the screen. The first shows what the beaver carries (a stick) or nothing, the others the goods in the backpack with their counts. Selecting a good's slot (keys 1 to 5, the d-pad's left and right, a tap) brings it out of the backpack into the beaver's left paw; selecting the first slot or the same one again puts it back. A good in the paw still counts in the backpack.
+The row of six slots at the bottom of the screen. The first shows what the beaver carries (a stick) or nothing, the others the goods in the backpack with their counts. Selecting a good's slot (keys 1 to 6, the d-pad's left and right, a tap) brings it out of the backpack into the beaver's left paw; selecting the first slot or the same one again puts it back. A good in the paw still counts in the backpack.
 _Avoid_: inventory, toolbar, quickbar
 
 **Shop**:

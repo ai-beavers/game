@@ -1,9 +1,9 @@
-// The hotbar on the HUD: five square slots in a dark bar at the bottom centre (style.ts layout.hotbar). Slot 1 shows
-// what the beaver carries (a stick) or nothing, slots 2 … 5 the goods in the backpack with their counts; the slot
+// The hotbar on the HUD: six square slots in a dark bar at the bottom centre (style.ts layout.hotbar). Slot 1 shows
+// what the beaver carries (a stick) or nothing, slots 2 … 6 the goods in the backpack with their counts; the slot
 // selected is lit orange. A tap or click on a slot selects it (Overlay's native buttons); live, nothing is pressed.
 //
 //   const bar = createHotbar(stage, (n) => select(n));
-//   bar.show([{ icon: "stick" }, { icon: "pinecone", count: 2 }, {}, {}, {}], 2);    each frame; redrawn on a change
+//   bar.show([{ icon: "stick" }, { icon: "pinecone", count: 2 }, {}, {}, {}, {}], 2);    each frame; redrawn on a change
 //
 // The count of slot n is the HUD text "hotbar-count-<n>" ("×2"), for the tour.
 import { Image } from "@babylonjs/gui/2D/controls/image.js";
@@ -30,6 +30,7 @@ const PATHS: Record<string, string> = {
   pinecone: "M12 2v3M12 5c-3.5 0-6 4-6 8.5S9 21 12 21s6-3 6-7.5S15.5 5 12 5zM7 11l5 3 5-3M6.5 15.5 12 19l5.5-3.5M9 7.5l3 2 3-2",
   feather: "M12.67 19a2 2 0 0 0 1.42-.59l6.15-6.17a6 6 0 0 0-8.49-8.49L5.59 9.91A2 2 0 0 0 5 11.33V18a1 1 0 0 0 1 1zM16 8 2 22M17.5 15H9",
   loaf: "M4 17c-1.5-1-2-3-2-5 0-4 4.5-7 10-7s10 3 10 7c0 2-.5 4-2 5zM4 17v2h16v-2M8 8.5l1.5 3M12 7.5v3.5M16 8.5l-1.5 3",
+  charm: "M5 3c3 4 11 4 14 0M12 6v4M9 13.5a3 3 0 0 0 6 0c0-2-1.5-3.5-3-3.5s-3 1.5-3 3.5zM12 17v5M10 14l-4 5M14 14l4 5",
   shell: "M3 15c0-5 4-10 9-10s9 5 9 10c-2 2-5 3-9 3s-7-1-9-3zM12 5v13M8 6.5 7 17M16 6.5l1 10.5M5 9.5l-.5 7M19 9.5l.5 7",
 };
 const iconUrl = (path: string) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
