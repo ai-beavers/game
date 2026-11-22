@@ -87,7 +87,7 @@ The row of six slots at the bottom of the screen. The first shows what the beave
 _Avoid_: inventory, toolbar, quickbar
 
 **Shop**:
-The small disco-like hut in the clearing with the sign HOUSE OF AI in front; inside it is a café where the shopkeeper sells outfits and other creatures work at laptops.
+The small disco-like hut in the clearing with the sign HOUSE OF AI in front; inside it is a café where the shopkeeper sells outfits, lets the beaver pick its class, and other creatures work at laptops.
 _Avoid_: store, House of AI (that is only its sign), disco, trading post (that is the stall where sticks buy goods)
 
 **Calendar board**:
@@ -264,8 +264,12 @@ _Avoid_: XP, coins, money, score (the player card writes "XP" only as the unit a
 How far a player has come, from all the Experience they ever earned; spending Experience at the shop does not lower it. Level 2 takes 20 Experience, each level after 10 more than the one before. The player card shows it.
 _Avoid_: rank, tier
 
+**Class**:
+What a beaver is best at, picked by its player for free at the shop and changed there whenever they like: a Gnawer bites faster, a Swimmer swims faster. A beaver has one class or none, and with none it is as good at everything as any other beaver. The class is the player's own, kept in their saved game; it gives no new abilities and changes nothing in the world's work.
+_Avoid_: role, job, profession, trade (that is the trading post's), specialization, perk
+
 **Player card**:
-The card at the top left of the HUD: the player's name, their level and how much Experience they still need for the next one.
+The card at the top left of the HUD: the player's name, their level and class, and how much Experience they still need for the next one.
 _Avoid_: profile, badge, Experience pill
 
 **Quest tracker**:
@@ -273,7 +277,7 @@ The card under the player card: the build goal at hand, its count and how to do 
 _Avoid_: goals panel, mission log
 
 **Saved game**:
-What a player's browser keeps between visits: their experience, outfits and goods. The trees, the dam, the lodge and the cache are not part of it: they are the world's work, which only the server keeps.
+What a player's browser keeps between visits: their experience, outfits, class and goods. The trees, the dam, the lodge and the cache are not part of it: they are the world's work, which only the server keeps.
 _Avoid_: save file, progress
 
 **World's work**:

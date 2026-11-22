@@ -3,6 +3,8 @@
 // gives their level on the player card (rules.ts levelOf), and spending does not lower it. The Shopkeeper
 // behind the counter sells Outfits for it: walk in, press Use (E / X / the Use button) at the counter, buy one and the
 // beaver wears it at once. Bought Outfits are kept; switching between them, or back to the default look, is free.
+// Under them the Classes, free and changed whenever the player likes: a Gnawer bites faster, a Swimmer swims faster
+// (rules.ts CLASSES). The shop puts the class's effect on game.classEffect and player.swimSpeed; nothing of it is sent.
 //
 //   import { create as shop } from "./features/shop/index.ts";     after build in FEATURES (it shares the Use key)
 //
@@ -28,7 +30,7 @@ import { EVENTS_PATH } from "../net/protocol.ts";
 import { calendarBoard } from "./calendar.ts";
 import { readEvents, type HouseEvent } from "./feed.ts";
 import { shopHud } from "./panel.ts";
-import { buy, earn, load, outfit, wear, type OutfitId, type ShopState } from "./rules.ts";
+import { buy, choose, classEffect, earn, load, outfit, wear, type ClassId, type OutfitId, type ShopState } from "./rules.ts";
 import { RADIUS, SHOP, SIGN } from "./place.ts";
 
 export { SHOP };
@@ -63,7 +65,11 @@ export const create: CreateFeature = async (game) => {
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* not kept, still played */ } };
   const dress = () => { const o = outfit(state.wearing); beaver.look = { shirt: [...o.shirt], hat: [...o.hat] }; };
   dress();
+  // The Class: only this browser's own beaver bites (the build feature reads game.classEffect) and swims differently.
+  const train = () => { const e = classEffect(state); game.classEffect = e; player.swimSpeed = e.swimSpeed; };
+  train();
   const hud = shopHud(stage, {
+    choose(id: ClassId | null) { if (choose(state, id)) { save(); train(); hud.show(state); } },
     buy(id: OutfitId) { if (buy(state, id)) { save(); dress(); hud.show(state); } },
     wear(id: OutfitId) { if (wear(state, id)) { save(); dress(); hud.show(state); } },
     close: () => hud.close(),
@@ -108,7 +114,7 @@ export const create: CreateFeature = async (game) => {
         player.camera.yaw = face + Math.PI;
       },
       give(n: number) { earn(state, n); save(); hud.show(state); return state.experience; },
-      reset() { state = load(null); save(); dress(); hud.show(state); return state; },
+      reset() { state = load(null); save(); dress(); train(); hud.show(state); return state; },
       /** Where the doorway is, outside, and the counter, inside, in the world (for the tour). */
       door: (out = 1.2) => shop.toWorld(0, 0, RADIUS + out),
       counter: () => shop.toWorld(0, 0, COUNTER.z + 0.55),

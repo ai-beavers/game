@@ -1,5 +1,6 @@
-// The Shop's HUD: the player card over the goals (name, level and the Experience into it, from all Experience ever
-// earned), and the Shopkeeper's panel of Outfits with the Experience there is to spend.
+// The Shop's HUD: the player card over the goals (name, level and class, and the Experience into the level, from all
+// Experience ever earned), and the Shopkeeper's panel of Outfits with the Experience there is to spend, and under them
+// a row of the Classes to choose from for free.
 //
 //   const hud = shopHud(stage, actions, () => name);   hud.show(state)   hud.open(state) · hud.close() · hud.isOpen · hud.update()
 //
@@ -11,19 +12,19 @@ import { SHIRT_CREAM, type RGB } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { box, GOLD, hudLayout, measure, onViewport, Overlay, PANEL } from "../hud/overlay.ts";
 import { BROWN, GLOW, INK, PAPER, QUIET, TRACK } from "../hud/style.ts";
-import { levelOf, OUTFITS, type Outfit, type OutfitId, type ShopState } from "./rules.ts";
+import { beaverClass, CLASSES, levelOf, NO_CLASS, OUTFITS, type ClassId, type Outfit, type OutfitId, type ShopState } from "./rules.ts";
 
 const PRINT = Color3.FromHexString(SHIRT_CREAM); // which the Outfit's colour tints
 const swatch = (c: RGB, base = Color3.White()) => new Color3(c[0] * base.r, c[1] * base.g, c[2] * base.b).toHexString();
 export const experienceText = (n: number) => `✦ ${n} Experience`;
 
-export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(id: OutfitId): void; close(): void }, name: () => string) {
+export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(id: OutfitId): void; choose(id: ClassId | null): void; close(): void }, name: () => string) {
   const readout = new Overlay(stage, "player-card", false, 4);
   const panel = new Overlay(stage, "shop-panel", true, 18);
   let card: ReturnType<typeof drawCard> | undefined, state: ShopState | undefined, open = false, flash = 0;
   const hudShown = () => !!stage.hud.getControlByName("beaver-hud")?.isVisible && !document.body.classList.contains("photo");
 
-  // The player card: the avatar (a paw in an orange ring), the name with the level beside it, the bar and the
+  // The player card: the avatar (a paw in an orange ring), the name with the level (and the class) beside it, the bar and the
   // Experience into the level under it. Named for the tour: "player-name", "player-level", "player-xp".
   function drawCard() {
     readout.clear();
@@ -51,10 +52,10 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
     return {
       back, xp,
       set(s: ShopState, who: string) {
-        const l = levelOf(s.earned), say = `${who}|${l.level}|${l.into}`;
+        const l = levelOf(s.earned), kind = beaverClass(s.class)?.name, say = `${who}|${l.level}|${l.into}|${kind}`;
         if (say === said) return;
         said = say;
-        name.text = who; level.text = `LV ${l.level}`; xp.text = `${l.into} / ${l.need} XP`;
+        name.text = who; level.text = `LV ${l.level}${kind ? ` · ${kind}` : ""}`; xp.text = `${l.into} / ${l.need} XP`;
         // The badge right after the name, the name cut short where both would not fit.
         const badgeW = Math.ceil(measure(level.text, badgeSize, "900")) + Math.round(badgeSize * 1.1);
         const nameW = Math.min(Math.ceil(measure(who, nameSize, "800")) + 2, inner - badgeW - gap);
@@ -73,8 +74,8 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
     panel.clear();
     if (!state) return;
     const s = state, w = stage.canvas.clientWidth, h = stage.canvas.clientHeight;
-    const width = Math.min(w - 20, 440), row = Math.min(48, Math.max(30, (h - 40) / (OUTFITS.length + 3.4)));
-    const height = row * (OUTFITS.length + 3) + 16, x = (w - width) / 2, y = Math.max(8, (h - height) / 2), inset = width < 340 ? 12 : 20;
+    const width = Math.min(w - 20, 440), row = Math.min(48, Math.max(30, (h - 40) / (OUTFITS.length + 5.6)));
+    const height = row * (OUTFITS.length + 5.2) + 16, x = (w - width) / 2, y = Math.max(8, (h - height) / 2), inset = width < 340 ? 12 : 20;
     const left = x + inset, inner = width - 2 * inset, size = Math.max(12, Math.min(16, row * 0.38));
     panel.rect("shop-card", box(x, y, width, height));
     const title = panel.text("shop-title", "The Shopkeeper", box(left, y + 6, inner * 0.6, row), Math.min(24, row * 0.6, inner / 13));
@@ -87,8 +88,25 @@ export function shopHud(stage: Stage, actions: { buy(id: OutfitId): void; wear(i
       rowFor(o, box(left, cy, inner, row - 6), size);
       cy += row;
     }
+    // The Classes, side by side: no class first, each with its line of what it does; the current one marked.
+    panel.text("shop-class-line", "Or choose a class, for free. Change it whenever you like.", box(left, cy, inner, row * 0.8), Math.max(11, size - 2)).color = QUIET;
+    cy += row * 0.85;
+    const choices = [{ id: NO_CLASS, name: "No class", line: "As every beaver" }, ...CLASSES], gapX = 8;
+    const bw = (inner - gapX * (choices.length - 1)) / choices.length, bh = row * 1.25;
+    choices.forEach((c, i) => {
+      const current = s.class === c.id, r = box(left + i * (bw + gapX), cy, bw, bh - 6);
+      const b = panel.button(`shop-class-${c.id ?? "none"}`, current ? `✓ ${c.name}` : c.name, r, () => actions.choose(c.id), false);
+      const back = b.panel;
+      panel.move(b.caption, box(r.x, r.y + 2, r.w, r.h * 0.58));
+      b.caption.fontSize = size; b.caption.fontWeight = "800";
+      const note = panel.text(`shop-class-${c.id ?? "none"}-line`, c.line, box(r.x, r.y + r.h * 0.55, r.w, r.h * 0.4), Math.max(10, size - 4), "center", false);
+      note.color = QUIET;
+      b.element.setAttribute("aria-label", `${current ? "Current:" : "Choose"} ${c.name}: ${c.line}`);
+      if (current) { b.element.disabled = true; back.background = GLOW; back.color = GOLD; note.color = PAPER; }
+    });
+    cy += bh;
     panel.button("shop-close", "Close", box(left + inner - 110, cy + 2, 110, row - 8), actions.close);
-    panel.dom.setAttribute("aria-label", "The Shopkeeper: Outfits");
+    panel.dom.setAttribute("aria-label", "The Shopkeeper: Outfits and Classes");
     const again = !focus ? undefined : [...panel.dom.querySelectorAll<HTMLButtonElement>("button")].find((b) => !b.disabled && b.getAttribute("aria-label")?.split(" ")[1] === focus);
     (again ?? [...panel.dom.querySelectorAll<HTMLButtonElement>("button")].find((b) => !b.disabled))?.focus({ preventScroll: true });
   };

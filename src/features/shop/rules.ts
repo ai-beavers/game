@@ -1,15 +1,19 @@
 // The Shop's rules as plain logic, apart from rendering, so they can be tested alone: how much Experience the player
-// has, which Outfits they own and which one they wear, and the named changes that alone change that.
+// has, which Outfits they own and which one they wear, their beaver's Class, and the named changes that alone change that.
 //
 //   const state = load(localStorage.getItem(KEY));    any stored text, broken or missing: a valid state
 //   earn(state, 1)                                    one Experience for a stick built in
 //   buy(state, "moss")                                true: paid and worn; false: owned already, or too dear
 //   wear(state, "classic")                            true: now worn; false: not owned
 //   levelOf(state.earned)                             { level: 2, into: 5, need: 30 }: the player card's LV and bar
+//   choose(state, "gnawer")                           true: the beaver's class now (free, any time); false: no such class
+//   classEffect(state)                                { biteTime: 0.4, swimSpeed: 0.5 }: what the class makes better
 //
 // The state is plain JSON, kept in localStorage beside the build feature's saved game.
 
 import { DEFAULT_LOOK, type RGB } from "../../contracts.ts";
+import { SWIM_SPEED } from "../../player/state.ts";
+import { BITE_TIME } from "../build/rules.ts";
 
 export type OutfitId = "classic" | "moss" | "sunset" | "disco";
 /** An Outfit: a matching shirt colour and hat colour, linear RGB 0 … 1, and its price in Experience. */
@@ -26,8 +30,26 @@ export const OUTFITS: readonly Outfit[] = [
 ];
 export const outfit = (id: OutfitId) => OUTFITS.find((o) => o.id === id)!;
 
-/** experience: what there is to spend; earned: all Experience ever earned, which spending does not lower (the level). */
-export interface ShopState { experience: number; earned: number; owned: OutfitId[]; wearing: OutfitId }
+export type ClassId = "gnawer" | "swimmer";
+/** What a Class changes in how the player's own beaver plays: seconds per bite into a tree, swimming speed in m/s. */
+export interface ClassEffect { biteTime: number; swimSpeed: number }
+/** A Class: what a beaver is best at, picked for free at the shop. It adds no ability and changes nothing in the
+ *  world's work (a tree takes as many bites as ever): only how long each of the player's own bites takes, or how fast
+ *  their own beaver swims. */
+export interface BeaverClass extends ClassEffect { id: ClassId; name: string; line: string }
+
+/** A beaver with no class plays as every beaver does (build's BITE_TIME, the player's SWIM_SPEED). */
+export const PLAIN: ClassEffect = { biteTime: BITE_TIME, swimSpeed: SWIM_SPEED };
+export const NO_CLASS = null;
+export const CLASSES: readonly BeaverClass[] = [
+  { id: "gnawer", name: "Gnawer", line: "Bites faster", ...PLAIN, biteTime: 0.4 },
+  { id: "swimmer", name: "Swimmer", line: "Swims faster", ...PLAIN, swimSpeed: 0.75 },
+];
+export const beaverClass = (id: ClassId | null) => CLASSES.find((c) => c.id === id);
+
+/** experience: what there is to spend; earned: all Experience ever earned, which spending does not lower (the level);
+ *  class: the beaver's Class, or null for none. */
+export interface ShopState { experience: number; earned: number; owned: OutfitId[]; wearing: OutfitId; class: ClassId | null }
 
 /** Experience from one level to the next: 20 from level 1 to 2, then 10 more for each level after (30, 40, …). */
 export const toNext = (level: number) => 10 + 10 * level;
@@ -51,7 +73,8 @@ export function load(stored: string | null | undefined): ShopState {
   const earned = Math.max(experience, count(raw.earned));
   const owned = OUTFITS.map((o) => o.id).filter((id) => id === DEFAULT || (Array.isArray(raw.owned) && raw.owned.includes(id)));
   const wearing = known(raw.wearing) && owned.includes(raw.wearing) ? raw.wearing : DEFAULT;
-  return { experience, earned, owned, wearing };
+  const chosen = beaverClass(raw.class as ClassId)?.id ?? NO_CLASS; // missing, unknown or rubbish: no class
+  return { experience, earned, owned, wearing, class: chosen };
 }
 
 /** n Experience earned (one per stick built in): to spend, and towards the level. */
@@ -74,4 +97,17 @@ export function wear(s: ShopState, id: OutfitId): boolean {
   if (!s.owned.includes(id)) return false;
   s.wearing = id;
   return true;
+}
+
+/** Makes the beaver a Gnawer, a Swimmer, or (null) no class: free, at any time. False: no such class, nothing changes. */
+export function choose(s: ShopState, id: ClassId | null): boolean {
+  if (id !== NO_CLASS && !beaverClass(id)) return false;
+  s.class = id;
+  return true;
+}
+
+/** The bite time and swim speed of the state's class; today's values with no class. */
+export function classEffect(s: ShopState): ClassEffect {
+  const c = beaverClass(s.class) ?? PLAIN;
+  return { biteTime: c.biteTime, swimSpeed: c.swimSpeed };
 }

@@ -38,6 +38,9 @@ export interface Game {
   /** The player's lantern, once the lantern feature runs (it puts itself here): out of the backpack, and switched
    *  off by a flash. */
   lantern?: { readonly out: boolean; readonly off: boolean };
+  /** What the player's Class makes better, once the shop feature runs (it puts itself here): seconds per bite of the
+   *  player's own gnawing (src/features/build) and the swimming speed, m/s. Missing: as every beaver. */
+  classEffect?: { readonly biteTime: number; readonly swimSpeed: number };
 }
 
 export interface Feature {
