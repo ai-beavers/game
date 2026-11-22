@@ -6,7 +6,7 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader.js";
@@ -91,19 +91,6 @@ function makeHat(scene: Scene, head: TransformNode) {
   return { hat, colourFelt };
 }
 
-/** A node on the head bone between the middles of the eyes (meshes on the head bone): where the beaver sees from. */
-function between(scene: Scene, head: TransformNode, eyes: TransformNode[]) {
-  const middle = new Vector3();
-  for (const eye of eyes) {
-    const local = Matrix.Compose(eye.scaling, eye.rotationQuaternion ?? Quaternion.FromEulerVector(eye.rotation), eye.position);
-    middle.addInPlace(Vector3.TransformCoordinates(eye instanceof Mesh ? eye.getBoundingInfo().boundingBox.center : Vector3.Zero(), local));
-  }
-  const node = new TransformNode("eyes", scene);
-  node.parent = head;
-  node.position.copyFrom(middle.scaleInPlace(1 / eyes.length));
-  return node;
-}
-
 export const loadBeaver: LoadBeaver = async (scene) => {
   const [asset, print] = await Promise.all([ImportMeshAsync(beaverGlb, scene, { pluginExtension: ".glb" }), shirtTexture(scene)]);
   for (const group of asset.animationGroups) { group.stop(); group.dispose(); }
@@ -117,12 +104,18 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   const calm = new Color3(0.2, 0.074, 0.03), red = new Color3(0.48, 0.035, 0.018);
   const shirtMat = asset.meshes.find(m => m.name === "shirt")!.material as PBRMaterial;
   shirtMat.albedoTexture = print;
-  for (const part of asset.meshes) part.receiveShadows = true;
+  // Each part takes shadows and so throws them (src/light.ts), but the small dark ones: an eye, a claw or a whisker
+  // shows neither, and each would be one more draw in the shadow map for every beaver.
+  for (const part of asset.meshes) part.receiveShadows = !/^(eye|glint|nose|nostril|whisker|brow|claw)$/.test(part.material?.name ?? "");
   const { hat, colourFelt } = makeHat(scene, nodes.get("head")!);
   const printed = shirtMat.albedoColor.clone();
   const copy = (l: Look): Look => ({ shirt: [...l.shirt], hat: [...l.hat] });
   let look = copy(DEFAULT_LOOK);
-  const eyes = between(scene, nodes.get("head")!, [nodes.get("eye_L")!, nodes.get("eye_R")!]);
+  // Where the beaver sees from: the file's mark between its eyes, turned as the head bone is.
+  const eyes = nodes.get("eyes")!;
+  eyes.rotationQuaternion = Quaternion.Identity();
+  // The small parts (face, hands, feet, claws) are skinned, one mesh per material: seen wherever the body is.
+  for (const part of asset.meshes) if (part.name.startsWith("details")) part.setBoundingInfo(body.getBoundingInfo());
   const bones = BONES.map(name => {
     const node = nodes.get(name);
     if (!node) throw new Error(`Missing beaver bone: ${name}`);
