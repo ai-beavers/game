@@ -55,7 +55,7 @@ export function createDome(scene: Scene) {
         sky = mix(sky, vec3(.78,.27,.07), low * exp(-h * 3.5) * pow(side, 2.5) * .8 * calm); // a warm band under the low sun
         sky = mix(sky, dot(sky, vec3(.33)) * vec3(.72,.82,1.3), low * band * (1. - side) * .8); // cool opposite it
         float sunCos = max(0., dot(d,sun));
-        vec3 glow = warm * (pow(sunCos, 9.) * (.06 + .16 * low) + pow(sunCos, 120.) * .25) * sunUp * calm;
+        vec3 glow = warm * (pow(sunCos, 9.) * (.06 + .16 * low) + pow(sunCos, 3.) * vec3(.36, .3, .14) * low + pow(sunCos, 120.) * .25) * sunUp * calm;
         sky += glow;
         sky += mix(vec3(1.,.93,.8), vec3(1.,.42,.14), low) * smoothstep(.99968,.99988,sunCos) * 2. * sunUp;
         float moonCos = max(0., dot(d,moon)); // a bright disc (it blooms) in a wide cool halo

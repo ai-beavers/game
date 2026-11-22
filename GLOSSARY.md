@@ -10,6 +10,18 @@ A browser game in which a player steers a beaver through a small world and build
 The round meadow the whole game takes place in, closed by a bank that rises into thicket.
 _Avoid_: map, level, arena
 
+**Path**:
+The strip of trodden earth through the clearing's grass from the spawn to the building site, also drawn on the map. It only shows the way; the beaver walks as fast beside it.
+_Avoid_: road, trail (Mrs. Beaver's clues are a trail), track
+
+**Meadow flowers**:
+The daisies and buttercups that grow in drifts in the clearing's grass, small, white and yellow. They cannot be picked, and none grow where Mrs. Beaver's flower may lie. Mrs. Beaver's flower is not one of them.
+_Avoid_: flower (alone, that is hers)
+
+**Golden hour**:
+The time a low sun shines through clear air, morning and evening: warm light, blue shadows, and a haze that glows towards the sun.
+_Avoid_: sunset, dusk (the lantern's hour)
+
 **Pond**:
 The water in the clearing. Its level rises with the dam.
 _Avoid_: lake, river
@@ -47,8 +59,16 @@ The stall in the clearing where the beaver pays sticks for goods. Each good lies
 _Avoid_: shop, store, market
 
 **Good**:
-A thing the beaver gets at the trading post for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell.
+A thing the beaver gets for sticks and keeps in its backpack: a pinecone, a duck feather, a river shell from the trading post, a loaf from the bakery.
 _Avoid_: item, loot, product
+
+**Bakery**:
+The small hut in the clearing with a stone oven, where the beaver feeds sticks into the fire to bake a loaf. The hut is the same for everyone; the fire and what bakes in it are each player's own. Nobody works there.
+_Avoid_: bakehouse, kitchen, oven (that is only the fire inside it), trading post, shop
+
+**Loaf**:
+A loaf of bread baked in the bakery's oven, a good like those of the trading post, kept in the backpack. It is baked, not bought, and the trading post does not hold it.
+_Avoid_: bread item, food, snack
 
 **Hotbar**:
 The row of five slots at the bottom of the screen. The first shows what the beaver carries (a stick) or nothing, the others the goods in the backpack with their counts. Selecting a good's slot (keys 1 to 5, the d-pad's left and right, a tap) brings it out of the backpack into the beaver's left paw; selecting the first slot or the same one again puts it back. A good in the paw still counts in the backpack.
@@ -105,6 +125,14 @@ _Avoid_: bush, decoy, hideout
 **Step**:
 One line of a quest, ticked when the player has done it.
 _Avoid_: objective, stage, task
+
+**Campfire**:
+The small fire that always burns beside the spot where Mrs. Beaver waits, at the building site.
+_Avoid_: bonfire, fireplace, fire pit
+
+**Reading**:
+The player sitting at the campfire with Mrs. Beaver once she is home, the two of them taking turns reading a short story aloud, one line each. Standing up stops it, and the next time they sit it goes on where it stopped. Like Mrs. Beaver herself, it is the player's alone.
+_Avoid_: story time, storytelling, family (the two of them are the player and Mrs. Beaver)
 
 **Outfit**:
 A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.

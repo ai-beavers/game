@@ -13,6 +13,7 @@
 //   fxOf(game.stage.scene)?.ring(place, size)              jumping in; 0.2: a fish), a ring on the water (size: metres)
 //   fxOf(game.stage.scene)?.fire(place, strength)          flames and smoke rising from a place, called each frame
 //                                                          while something burns (strength 1: a hand-sized fire)
+//   fxOf(game.stage.scene)?.smoke(place, strength)         smoke alone rising from a place (a chimney), each frame
 //
 // All of it is one pool of particles (sim.ts) drawn in one call (particles.ts). Fewer particles at lower
 // settings.quality; nothing moves while stage.paused. The pond's level is read each time (it rises behind the dam);
@@ -56,7 +57,9 @@ export interface Fx {
   /** Flames and smoke from a place for this frame: about `strength` flames a frame at high quality (fractions count
    *  over frames), a third as much smoke. Call it every frame while something burns; the flames rise and turn from
    *  yellow to orange, the smoke grows grey and drifts with the sky's wind. */
-  fire(place: Vector3, strength?: number): void;
+  fire(place: Vector3, strength?: number, smoke?: number): void;
+  /** Smoke alone from a place for this frame (a chimney): about `strength` puffs a frame at high quality. */
+  smoke(place: Vector3, strength?: number): void;
 }
 /** The way the sky's wind blows over the ground (the grass sways along x): smoke drifts and a flag waves that way. */
 export const WIND = { x: 1, z: 0 } as const;
@@ -212,9 +215,9 @@ export const create: CreateFeature = (game) => {
   }
   // ---- fire: tongues of flame licking up, smoke rising over them --------------------------------------------------
   let flames = 0, smokes = 0;
-  function fire(place: Vector3, strength = 1) {
+  function fire(place: Vector3, strength = 1, smoke = 1 / 3) {
     flames += strength * budget.rate;
-    smokes += strength * budget.rate / 3;
+    smokes += strength * budget.rate * smoke;
     for (; flames >= 1; flames--) {
       const s = random(0.6, 1.3); // no two alike: small licks among big tongues
       make({
@@ -224,10 +227,14 @@ export const create: CreateFeature = (game) => {
         r: FLAME_HOT.r, g: FLAME_HOT.g, b: FLAME_HOT.b, a: 0.9,
       });
     }
+    rise(place, 0.3);
+  }
+  /** The smoke owed so far, rising from `above` m over a place. */
+  function rise(place: Vector3, above: number) {
     for (; smokes >= 1; smokes--) {
       const shade = random(0.8, 1.2);
       make({
-        kind: KIND.smoke, x: place.x + random(-0.05, 0.05), y: place.y + 0.3, z: place.z + random(-0.05, 0.05),
+        kind: KIND.smoke, x: place.x + random(-0.05, 0.05), y: place.y + above, z: place.z + random(-0.05, 0.05),
         vx: random(-0.05, 0.05), vy: random(0.45, 0.7), vz: random(-0.05, 0.05), gravity: -0.01, drag: 0.4,
         life: random(2.6, 3.6), fadeIn: 0.6, fadeOut: 1.8, size: random(0.15, 0.22), grow: random(0.8, 1.1), spin: random(-0.4, 0.4),
         r: SMOKE.r * shade, g: SMOKE.g * shade, b: SMOKE.b * shade, a: 0.4,
@@ -249,6 +256,7 @@ export const create: CreateFeature = (game) => {
     splash,
     ring: (place, size = 1) => ring(place.x, place.z, size * 0.1, size, 0.8 + size * 0.6, 0.45),
     fire,
+    smoke(place, strength = 1) { smokes += strength * budget.rate; rise(place, 0); },
   };
   stage.scene.metadata.fx = fx;
 

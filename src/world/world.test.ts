@@ -7,8 +7,9 @@ import { headless } from "../physics.testkit.ts";
 import { createMover } from "../player/mover.ts";
 import { placeAll, SPAWN } from "./place.ts";
 import { dayAt } from "../features/sky/clock.ts";
-import { BASIN, FIRST_RIM, groundAt, groundColliders, heightAt, HILL, POND, pondRatio, RIM, SHELF, SHORE_SLOPE, SITE, SIZE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
+import { BASIN, FIRST_RIM, groundAt, groundColliders, heightAt, HILL, pathAt, POND, pondRatio, RIM, SHELF, SHORE_SLOPE, SITE, SIZE, slopeAt, sunsetGap, WATER_LEVEL } from "./terrain.ts";
 import { SHOP } from "../features/shop/place.ts";
+import { FLOWER, HOME, TRACKS } from "../features/mrs-beaver/rules.ts";
 import { POST } from "../features/trade/place.ts";
 
 describe("heightAt", () => {
@@ -90,6 +91,16 @@ describe("heightAt", () => {
       for (let s = 1; s < 70; s += 0.5) expect(heightAt(sun.x * s, sun.z * s)).toBeLessThan(from + sun.y * s);
     }
   });
+});
+
+test("the path leads from the spawn to the building site, and nothing stands or lies on it", () => {
+  expect(pathAt(SPAWN.x, SPAWN.z)).toBe(1);
+  expect(pathAt(SITE.x, SITE.z - SITE.radius)).toBeGreaterThan(0.8);
+  for (const [x, z] of [[POND.x, POND.z], [POST.x, POST.z], [SHOP.x, SHOP.z], [10, -10], [-15, -5], [HILL.x, HILL.z]]) expect(pathAt(x!, z!)).toBe(0);
+  // Mrs. Beaver's waiting spot and her clues (the dropped flower, the tracks) stay in the grass.
+  for (const { x, z } of [HOME, ...FLOWER, ...TRACKS]) expect(pathAt(x, z)).toBe(0);
+  const { tree, stump, log, rock, crate } = placeAll();
+  for (const { x, z } of [...tree, ...stump, ...log, ...rock, ...crate]) expect(pathAt(x, z)).toBeLessThan(0.3);
 });
 
 describe("placement", () => {
