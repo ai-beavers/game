@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DAM, profile } from "../build/rules.ts";
+import { crestHeight, DAM, profile } from "../build/rules.ts";
 import { MOST, next, offered, spot } from "./rules.ts";
 
 test("the offer stands with empty paws once the dam's mud shows, below the cap", () => {
@@ -42,4 +42,5 @@ test("a dropping rises with the crest as sticks are added", () => {
   expect(spot(0, 5).y).toBeGreaterThan(0);
   expect(spot(0, 30).y).toBeGreaterThan(spot(0, 15).y);
   expect(spot(0, 15).y).toBeGreaterThan(spot(0, 5).y);
+  for (const placed of [5, 12, 20, 30]) expect(spot(0, placed).y).toBeGreaterThanOrEqual(crestHeight(placed)); // never sunk in the crest
 });

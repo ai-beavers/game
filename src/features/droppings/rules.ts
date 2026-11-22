@@ -4,7 +4,7 @@
 //   offered(placed, carrying, count)        whether "Leave a dropping" stands (the dam's stick count, a stick in the paw)
 //   count = next(count, "left" | "dawn" | "emptied")
 //   spot(n, placed)                         where the n-th lands, in the dam's frame (src/features/build/dam.ts)
-import { DAM, moundHeight, mudHeight } from "../build/rules.ts";
+import { crestHeight, DAM, moundHeight, mudHeight } from "../build/rules.ts";
 import { seeded } from "../../world/noise.ts";
 
 /** The most droppings on the dam at once. */
@@ -27,9 +27,10 @@ const PLACES = (() => {
 })();
 
 /** Where the n-th dropping on the dam lies (n from 0), in the dam's frame: x across (+x the water side), z along,
- *  y the mud's height above the ground there with this many sticks placed, so it rises with the crest. */
+ *  y the height above the ground of the dam's top there with this many sticks placed (the mud's profile, or the
+ *  crest's sticks where they stand higher: every spot is on the crest), so it rises with the crest. */
 export function spot(n: number, placed: number) {
   const p = PLACES[n % PLACES.length]!, crest = DAM.top / DAM.base, half = (DAM.length / 2) * crest;
   const z = p.t * half, x = -p.u * DAM.base * crest * Math.sqrt(1 - p.t * p.t);
-  return { x, z, y: mudHeight(x, z, placed) };
+  return { x, z, y: Math.max(mudHeight(x, z, placed), crestHeight(placed)) };
 }
