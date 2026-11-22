@@ -20,7 +20,8 @@
 // again and starts in the server's. Without a server the game is played alone in a fresh world that ends with the page.
 //
 // With ?tour the page plays in the tour's own world (protocol.ts TOUR_WORLD), which the server keeps beside the
-// players': there the tour may start the world afresh (window.net.reset()).
+// players': there the tour may start the world afresh (window.net.reset()). window.net.drawn(id) tells the tour where a
+// Remote is drawn and which way it faces.
 //
 // The day is the server's too: on every welcome the sky follows the hour it sends (game.sky.follow), and when the
 // connection drops it goes on alone. A page opened with ?hour, ?clock or ?speed keeps its own day, for pictures; so does the
@@ -303,6 +304,14 @@ export const create: CreateFeature = (game) => {
     things, remotes, history, shared, get me() { return me; }, get host() { return host; }, get connected() { return connected; }, ui,
     /** The tour's world only: starts it afresh for everyone in it (the server tells every page to load again). False: not connected. */
     reset() { send({ t: "reset" }); return connected; },
+    /** For the tour: where a Remote is drawn on this screen and which way it faces (radians, as Player.facing), and how
+     *  far (radians) it is turned from the local beaver; undefined while it is not drawn (not in, or no state yet). */
+    drawn(id: number) {
+      const r = remotes.get(id);
+      if (!r?.node.isEnabled()) return undefined;
+      const at = r.node.position, facing = r.node.rotation.y, towards = Math.atan2(player.feet.x - at.x, player.feet.z - at.z);
+      return { x: at.x, y: at.y, z: at.z, facing, faces: Math.abs(Math.atan2(Math.sin(towards - facing), Math.cos(towards - facing))) };
+    },
   } });
 
   return {
