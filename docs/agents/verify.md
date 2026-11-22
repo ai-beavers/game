@@ -43,6 +43,7 @@ Other agents run game servers and browsers on the same machine and share one GPU
 
 - Use only the ports your task names. Stop only your own server: `lsof -ti tcp:<your port> | xargs kill`.
 - Measure frame time, draw calls or load time with nothing else of yours running, on the production build. Report before and after from the same view.
+- Measure a phone over `https://` only. On a plain `http://` page Safari on an iPhone (iOS 27, measured 2026-11-22) runs JavaScript without its compiler: a loop that takes 20 ms takes 450 ms, a physics step 22 times as long, and the game showed 11 pictures a second where it shows 58 over `https://`. A quick tunnel (`cloudflared tunnel --url http://localhost:<your port>`) gives a server on this machine an `https://` address; it is public while it runs, so ask before opening one and close it after. WebGPU, too, exists only on `https://` pages and on `localhost`.
 
 ## Stations
 
