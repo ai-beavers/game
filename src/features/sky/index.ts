@@ -80,8 +80,12 @@ export const create: CreateFeature = game => {
     sun.intensity = day.intensity / SUN_INTENSITY * 1.6 * (1 - clouds * 0.77) * (1 - fog * 0.35) * (1 + 0.37 * golden);
     sky.intensity = (1.15 - day.night * 0.75) * (1 - clouds * 0.23);
     Color3.LerpToRef(WHITE, MOONLIT, day.night, sky.diffuse); // a cool floor: at night nothing sinks into black
-    grade.exposure = day.exposure / EXPOSURE * (1 + 0.05 * golden); // the eye opens up as it gets dark
-    // and sees less colour, more blue, under the moon; the highlights keep theirs, so warm points stay warm.
+    // The eye opens up as it gets dark. In steps of half a percent, too small to see: on every change Babylon marks
+    // each material dirty on each mesh and checks them all again (6 ms a frame, measured, M4 Max; it changed on three
+    // frames of four, now on one of a hundred).
+    const exposure = day.exposure / EXPOSURE * (1 + 0.05 * golden);
+    if (Math.abs(exposure - grade.exposure) > 0.005 * grade.exposure) grade.exposure = exposure;
+    // It sees less colour, more blue, under the moon; the highlights keep theirs, so warm points stay warm.
     curves.shadowsSaturation = curves.midtonesSaturation = -30 * day.night;
     curves.shadowsDensity = 100 * day.night + 22 * golden;
     curves.highlightsDensity = 34 * golden;
