@@ -123,7 +123,8 @@ export const dam = (kit: Kit): Station[] => {
         s.setHour(DAWN.from + 0.5);
         await until(washed, 1, `at dawn (${s.hour.toFixed(1)} h) the droppings were not washed off`);
         expect(droppings.count === 0, `washed off at dawn, ${droppings.count} droppings still lie there`);
-        expect(offers(), `the dam washed clean, E would "${player.offer()?.text}", not "${droppings.text}"`);
+        // The last one's tail may not slap again yet (it offers none until then), so wait for the offer.
+        await until(offers, 3, `the dam washed clean, E would "${player.offer()?.text}", not "${droppings.text}"`);
       } finally {
         s.setHour(hour); s.running = running;
       }
