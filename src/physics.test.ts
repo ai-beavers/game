@@ -37,3 +37,11 @@ test("a heavy thing held up by a solid one slips through it once it is slipping,
   for (let i = 0; i < 120; i++) physics.step(1 / 60);
   expect(y()).toBeCloseTo(0.8, 1); // through the shelf, on the ground
 });
+
+test("a static collider is solid where it was made, and is not put there again before each step", async () => {
+  const { scene, physics } = await headless();
+  const wall = physics.fixed(box(scene, 1, 1, 1), SOLID, 0.5, { x: 3, y: 1, z: -2 });
+  expect(wall.disablePreStep).toBe(true); // 203 of the world's 229 bodies: put in place each step they were most of its time
+  for (let i = 0; i < 5; i++) physics.step(1 / 60);
+  expect(physics.ray({ x: 3, y: 5, z: -2 }, { x: 0, y: -1, z: 0 }, 10, ALL)?.distance).toBeCloseTo(3, 2); // its top at y = 2
+});

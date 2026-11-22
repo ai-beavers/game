@@ -18,7 +18,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { World } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { box } from "../../physics.ts";
-import { bounds, instance, material } from "../../world/models.ts";
+import { bounds, instance, material, mergeStatic } from "../../world/models.ts";
 import { seeded } from "../../world/noise.ts";
 import { POST_GOODS as GOODS } from "./ledger.ts";
 import { FRONT, POST, SPOT_GAP } from "./place.ts";
@@ -33,7 +33,9 @@ export function createPost(stage: Stage, world: World) {
   const root = new TransformNode("trading post", scene);
   root.position.set(POST.x, ground, POST.z);
   root.rotation.y = Math.atan2(FRONT.x, FRONT.z); // local +z to the front, +x along the counter
+  const still: Mesh[] = []; // the stall, the mats and the prices: never changed once built, merged below
   const part = <T extends Mesh>(mesh: T, x: number, y: number, z: number, parent: TransformNode = root) => {
+    still.push(mesh);
     mesh.parent = parent;
     mesh.position.set(x, y, z);
     mesh.receiveShadows = true; // and so throws them (light.ts)
@@ -94,6 +96,8 @@ export function createPost(stage: Stage, world: World) {
     model.scaling.setAll(GOOD_SIZE);
     return model;
   });
+  // One mesh per material. The goods stay apart (post.copy clones them to carry off), as do the piles' sticks.
+  mergeStatic(still, root);
 
   const piles: TransformNode[][] = GOODS.map(() => []);
   const random = seeded(5);

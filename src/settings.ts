@@ -29,7 +29,10 @@ export function createSettings() {
   let stored: Partial<Settings> = {};
   try { stored = JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {}; } catch { /* a broken or blocked store: defaults */ }
   const quality = new URLSearchParams(location.search).get("quality"), forced = QUALITIES.find((q) => q === quality);
-  const values: Settings = { ...DEFAULTS, ...stored, ...(forced && { quality: forced }) }, listeners = new Set<(values: Settings) => void>();
+  // A touch screen starts at medium: a phone draws the pond's mirror and twice the pixels each way at 12 pictures a
+  // second (measured, iPhone). What the player chose stays.
+  const touch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+  const values: Settings = { ...DEFAULTS, ...(touch && { quality: "medium" as const }), ...stored, ...(forced && { quality: forced }) }, listeners = new Set<(values: Settings) => void>();
   return {
     values,
     set(change: Partial<Settings>) {

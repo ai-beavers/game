@@ -5,9 +5,10 @@
 //   const files = await build()   path → bytes (and their compressed forms), for server.ts
 //
 // One thing the plain `bun build ./index.html` gets wrong for us: Babylon's materials import their WGSL (WebGPU)
-// shaders as well as the GLSL ones; without code splitting Bun inlines both. The game runs only on the WebGL Engine
-// (src/engine.ts), so the WGSL half (550 KB) is left out.
-// Should the game ever use the WebGPU engine, drop that plugin. (Havok's wasm is a file of its own: src/physics.ts.)
+// shaders as well as the GLSL ones; without code splitting Bun inlines both. The game runs on the WebGL Engine
+// (src/engine.ts), so the WGSL half (550 KB) and the WebGPU engine (src/webgpu.ts) are left out of its bundle.
+// The trial on WebGPU (`engine=webgpu` in the address) gets a whole second bundle with both, which the page loads
+// instead of the first; nobody else fetches it. (Havok's wasm is a file of its own: src/physics.ts.)
 // Code splitting itself was tried and dropped: ~190 chunks, which the shader stores then fetch one by one.
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -21,8 +22,14 @@ const noWgsl: BunPlugin = {
   setup(build) {
     build.onResolve({ filter: /[\\/]ShadersWGSL[\\/]/ }, ({ path }) => ({ path, namespace: "no-wgsl" }));
     build.onLoad({ filter: /.*/, namespace: "no-wgsl" }, () => ({ loader: "js", contents: "export {};" }));
+    // Never called: with the switch the page runs the WebGPU bundle (see build()).
+    build.onResolve({ filter: /^\.\/webgpu\.ts$/ }, ({ path }) => ({ path, namespace: "no-webgpu" }));
+    build.onLoad({ filter: /.*/, namespace: "no-webgpu" }, () => ({ loader: "js", contents: "export const createWebGPU = async () => undefined;" }));
   },
 };
+
+/** The page's one script tag, as Bun writes it. */
+const SCRIPT = /<script type="module" crossorigin src="(\.\/chunk-[\w-]+\.js)"><\/script>/;
 
 const COMPRESS = /\.(js|html|css|wasm|glb|json|svg)$/; // png/jpg are compressed already
 
@@ -31,17 +38,25 @@ export interface Built { type: string; raw: Uint8Array; br?: Uint8Array; gz?: Ui
 /** Bundles index.html; every output by its address ("/index.html", "/chunk-….js", …), compressed with brotli of the
  *  given quality: 11 is 8-10% smaller than 5 but takes ~30 s for all files, 5 takes well under one. */
 export async function build(quality = 11) {
-  const result = await Bun.build({ entrypoints: [join(root, "index.html")], minify: true, plugins: [noWgsl] });
-  if (!result.success) throw new AggregateError(result.logs, "build failed");
+  const [result, webgpu] = await Promise.all([[noWgsl], []].map((plugins) =>
+    Bun.build({ entrypoints: [join(root, "index.html")], minify: true, plugins })));
+  if (!result!.success) throw new AggregateError(result!.logs, "build failed");
+  if (!webgpu!.success) throw new AggregateError(webgpu!.logs, "WebGPU build failed");
+  // The WebGPU bundle's code; its models and wasm are the same files under the same names.
+  const gpuCode = webgpu!.outputs.find((o) => o.kind === "entry-point" && o.path.endsWith(".js"))!;
+  const outputs = [...result!.outputs, gpuCode];
   // index.html's loading screen fetches these itself, to show their bytes arriving.
-  const big = result.outputs.filter((o) => /\.(glb|wasm)$/.test(o.path)).map((o) => [`./${o.path.replace(/^.*\//, "")}`, o.size]);
-  return new Map(await Promise.all(result.outputs.map(async (output): Promise<[string, Built]> => {
+  const big = result!.outputs.filter((o) => /\.(glb|wasm)$/.test(o.path)).map((o) => [`./${o.path.replace(/^.*\//, "")}`, o.size]);
+  return new Map(await Promise.all(outputs.map(async (output): Promise<[string, Built]> => {
     let raw = new Uint8Array(await output.arrayBuffer());
     const path = output.path.replace(/^\.?\/?/, "/");
     if (path === "/index.html") {
       const page = new TextDecoder().decode(raw);
       if (!page.includes("[/* files */]")) throw new Error("index.html lost its loading list (tools/build.ts)");
-      raw = new TextEncoder().encode(page.replace("[/* files */]", JSON.stringify(big)));
+      if (!SCRIPT.test(page)) throw new Error("index.html lost its script tag (tools/build.ts)");
+      const gpu = `./${gpuCode.path.replace(/^.*\//, "")}`;
+      raw = new TextEncoder().encode(page.replace("[/* files */]", JSON.stringify(big)).replace(SCRIPT, (_, gl: string) =>
+        `<script type="module">import(new URLSearchParams(location.search).get("engine") === "webgpu" ? "${gpu}" : "${gl}");</script>`));
     }
     return [path, { type: output.type, raw, ...COMPRESS.test(path) && { gz: Bun.gzipSync(raw, { level: 9 }), br: await brotli(raw, quality) } }];
   })));

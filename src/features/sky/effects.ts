@@ -115,6 +115,9 @@ export function makeMist(scene: Scene) {
 }
 
 export function makeFireflies(scene: Scene) {
+  // shortcut: WebGPU draws points one pixel wide and has no gl_PointCoord, so the trial on it (src/webgpu.ts) has no
+  // fireflies; should the game move to WebGPU, draw each as a quad that faces the camera.
+  if (scene.getEngine().isWebGPU) return () => {};
   const mesh = new Mesh("fireflies", scene);
   const seeds = Float32Array.from({ length: FLIES * 4 }, () => Math.random());
   mesh.setVerticesData("position", new Float32Array(FLIES * 3), false, 3);

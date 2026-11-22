@@ -117,10 +117,8 @@ export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, 
   const frame = MeshBuilder.CreateBox("calendar-frame", { width: WIDTH + 0.1 * S, height: HEIGHT + 0.1 * S, depth: 0.08 * S }, scene);
   frame.position.y = LIFT + HEIGHT / 2;
   parts.push(paint(frame, new Color3(0.32, 0.2, 0.11)));
-  const frameMat = new StandardMaterial("shop-calendar-wood", scene);
-  frameMat.specularColor.setAll(0.05);
   const wooden = Mesh.MergeMeshes(parts, true)!;
-  wooden.name = "shop-calendar-wood"; wooden.material = frameMat; wooden.parent = node;
+  wooden.name = "shop-calendar-wood"; wooden.material = shop.wood; wooden.parent = node;
   wooden.isPickable = false; wooden.receiveShadows = true;
 
   const face = MeshBuilder.CreatePlane("shop-calendar-face", { width: WIDTH, height: HEIGHT }, scene);
@@ -145,6 +143,8 @@ export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, 
   draw(texture, shown);
   const today = (w: CalendarWeek) => w.days.find((d) => d.today)!.key;
   return {
+    /** The posts and frame, which never change once built; the face stays apart, its texture is redrawn. */
+    still: [wooden],
     get week() { return shown; },
     /** The House of AI events it was given (what week() placed on it). */
     get events() { return events; },

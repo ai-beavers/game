@@ -32,8 +32,9 @@ export const create: CreateFeature = (game) => {
   game.lantern = { get out() { return stow.drawn; }, get off() { return stow.off; } };
   // Worn by the player's own beaver: out of the first-person view's picture, the light shines on.
   for (const mesh of [glass, ...glass.getChildMeshes(), pack]) mesh.layerMask = OWN_LAYER;
+  // On no node: on the glass it counted as switched off whenever the glass was hidden, and every lit material
+  // compiled its shader anew in the frame the lantern came out (a quarter of a second standing still, M4 Max).
   const light = new PointLight("lantern-light", Vector3.Zero(), scene);
-  light.parent = glass;
   light.diffuse.copyFrom(WARM);
   light.specular.copyFrom(WARM).scaleInPlace(0.3);
   light.range = LANTERN_REACH;
@@ -59,6 +60,7 @@ export const create: CreateFeature = (game) => {
       glassMat.emissiveColor.copyFrom(WARM).scaleInPlace(GLOW * on);
       light.intensity = shown ? LIGHT * on : 0;
       daylight.lantern.at.copyFrom(glass.getAbsolutePosition());
+      light.position.copyFrom(daylight.lantern.at);
       WARM.scaleToRef(shown && lit ? SHADERS * on : 0, daylight.lantern.glow);
     },
   };
