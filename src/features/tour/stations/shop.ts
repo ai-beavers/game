@@ -57,6 +57,12 @@ export const shopping = (kit: Kit): Station[] => {
     await until(() => !panel()?.open, 2, "Escape did not close the shop panel");
     expect(!kit.stage.paused, "Escape on the shop panel opened the pause menu as well");
   };
+  /** Out of the shop the way it came in, through the doorway: straight from the counter it walks into the wall. */
+  const leave = async (shop: ShopDebug) => {
+    const inside = shop.door(-1.5), out = shop.door(2.5);
+    await walkTo(inside.x, inside.z, { near: 0.5, limit: 20 });
+    await walkTo(out.x, out.z, { near: 0.6, limit: 20 });
+  };
   /** Presses the class's button in the open panel and sees it marked current, on the player card too, for free. */
   const pickClass = async (shop: ShopDebug, name: string) => {
     const had = experience(), choice = button(`Choose ${name}`);
@@ -121,6 +127,7 @@ export const shopping = (kit: Kit): Station[] => {
         await toCounter(shop);
         await pickClass(shop, "Swimmer");
         await closePanel();
+        await leave(shop);
 
         // Into the pond from its west shore and straight across, east: timed once it swims at full speed.
         const z = pond.z - clear(), west = pond.x - pond.radius - 1.2, east = pond.x + pond.radius + 2;
@@ -146,6 +153,7 @@ export const shopping = (kit: Kit): Station[] => {
         await toCounter(shop);
         await pickClass(shop, "Gnawer");
         await closePanel();
+        await leave(shop);
         const b = needBuild(), tree = standingTrees(b).find((i) => (standing(b.state.trees[i])?.bites ?? 0) === 0) ?? skip("no unbitten tree left");
         const bites: number[] = [], gnawed = clock();
         const off = game.events.on("gnaw", (e) => { if (e.tree === tree) bites.push(gnawed.t); });
@@ -160,6 +168,7 @@ export const shopping = (kit: Kit): Station[] => {
         await pickClass(shop, "No class");
         expect(player.swimSpeed === SWIM_SPEED && game.classEffect?.biteTime === BITE_TIME, `with no class it swims at ${player.swimSpeed} m/s and bites in ${game.classEffect?.biteTime} s, not ${SWIM_SPEED} and ${BITE_TIME}`);
         await closePanel();
+        if (live) await leave(shop);
       } finally {
         if (shop.state.class !== null) shop.reset();
       }
