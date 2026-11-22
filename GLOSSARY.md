@@ -10,6 +10,18 @@ A browser game in which a player steers a beaver through a small world and build
 The round meadow the whole game takes place in, closed by a bank that rises into thicket.
 _Avoid_: map, level, arena
 
+**Path**:
+The strip of trodden earth through the clearing's grass from the spawn to the building site, also drawn on the map. It only shows the way; the beaver walks as fast beside it.
+_Avoid_: road, trail (Mrs. Beaver's clues are a trail), track
+
+**Meadow flowers**:
+The daisies and buttercups that grow in drifts in the clearing's grass, small, white and yellow. They cannot be picked, and none grow where Mrs. Beaver's flower may lie. Mrs. Beaver's flower is not one of them.
+_Avoid_: flower (alone, that is hers)
+
+**Golden hour**:
+The time a low sun shines through clear air, morning and evening: warm light, blue shadows, and a haze that glows towards the sun.
+_Avoid_: sunset, dusk (the lantern's hour)
+
 **Pond**:
 The water in the clearing. Its level rises with the dam.
 _Avoid_: lake, river
