@@ -37,7 +37,7 @@ import {
 } from "./rules.ts";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { fxOf } from "../fx/index.ts";
-import { createDam } from "./dam.ts";
+import { createDam, type Dam } from "./dam.ts";
 import { goalsPanel } from "./panel.ts";
 import { BITE_HEIGHT, measure, takeTree, type TreeView } from "./tree.ts";
 import { isEnabled, place } from "../../physics.ts";
@@ -60,6 +60,8 @@ export interface BuildHandle {
    *  "trade" change. Its mesh stays where it is, for the caller to move and keep. False: it could not be traded; it has
    *  left the world all the same. */
   trade(stick: Stick): boolean;
+  /** The dam at the building site, for things that lie on it (src/features/droppings). */
+  readonly dam: Dam;
 }
 export const buildOf = (scene: Scene) => scene.metadata?.build as BuildHandle | undefined;
 
@@ -347,6 +349,7 @@ export const create: CreateFeature = (game) => {
   // ---- for the trade feature ----------------------------------------------------------------------------------------
   const handle: BuildHandle = {
     get state() { return state; },
+    dam,
     trade(stick) {
       const id = names.get(stick);
       if (world.sticks.includes(stick)) removeLoose(stick);

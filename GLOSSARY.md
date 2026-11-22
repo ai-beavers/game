@@ -150,6 +150,10 @@ _Avoid_: banner, pennant, standard
 The three things built from sticks, in this order: the dam at the building site, the lodge in the pond, the cache on the pond's bed beside it.
 _Avoid_: base, house, storage
 
+**Dropping**:
+A small brown pile the beaver leaves on the dam's mud with empty paws, squatting with its back to the dam and patting it flat with its tail. It builds nothing and earns nothing. A few at most lie there at once, and the next dawn washes them off. Each player has their own, and no one else sees them.
+_Avoid_: poo, dung, scat, manure
+
 ### Playing
 
 **Player**:

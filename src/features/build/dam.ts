@@ -11,6 +11,8 @@ import { instance, material } from "../../world/models.ts";
 //   dam.freeze(mesh)            draws a stick mesh (already fitted to its slot) as part of the dam or lodge
 //   dam.shape(placed)           mud and collider for this many sticks
 //   dam.frame                   the dam's own frame: origin on the ground, x across (towards the water), z along
+//   dam.at(x, z) · dam.top(at)  a point of the frame in the world · the height of the dam's top there (its mud or a
+//                               stick on it), or undefined off the dam
 //   dam.lodge(grow)             the lodge in the pond, grow 0 … 1 (rising out of the water)
 //   dam.hint(i, time)           a glowing stick where slot i is, so the player sees where the next one goes; -1 hides it
 //                               (over the cache its beam reaches up out of the water, seen from the surface)
@@ -18,6 +20,7 @@ import { Vector3, Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { Ray } from "@babylonjs/core/Culling/ray.js";
 import type { World } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { hull as hullOf, place, SOLID, type PhysicsBody } from "../../physics.ts";
@@ -159,8 +162,18 @@ export function createDam(stage: Stage, world: World) {
     haze.alpha = 0.3 + 0.2 * breath;
   };
 
+  const down = new Vector3(0, -1, 0);
+  /** The height of the dam's top at a point of the world: the mud, or a laid stick on it, whichever is higher. */
+  const top = (at: Vector3) => {
+    const from = new Vector3(at.x, world.heightAt(at.x, at.z) + 1, at.z);
+    const hit = scene.pickWithRay(new Ray(from, down, 1.2), (mesh) => mesh.isEnabled() && mesh.isDescendantOf(group));
+    return hit?.hit && hit.pickedPoint ? hit.pickedPoint.y : undefined;
+  };
+
   return {
     frame: { origin, turn, across },
+    at: toWorld,
+    top,
     slot,
     fit,
     freeze,

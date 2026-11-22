@@ -8,6 +8,7 @@ import { create as canoe } from "./canoe/index.ts";
 import { create as build } from "./build/index.ts";
 import { create as controls } from "./controls/index.ts";
 import { create as debug } from "./debug/index.ts";
+import { create as droppings } from "./droppings/index.ts";
 import { create as flag } from "./flag/index.ts";
 import { create as fx } from "./fx/index.ts";
 import { create as hud } from "./hud/index.ts";
@@ -25,4 +26,4 @@ import { create as stare } from "./stare/index.ts";
 import { create as tour } from "./tour/index.ts";
 import { create as trade } from "./trade/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, shop, canoe, race, flag, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, net, audio, hud, debug, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, shop, canoe, race, flag, droppings, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, net, audio, hud, debug, tour];
