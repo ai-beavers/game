@@ -106,35 +106,36 @@ function paint(mesh: Mesh, c: Color3) {
 // the opening. One mesh with its colours in the vertices, like the hat; the shell takes the look's hat colour, the fin
 // and the teeth keep their own. In the head bone's space (measured from the coat: the crown 0.19 m up, the ears 0.14 m
 // out to each side, the back of the head 0.11 m behind, the eyes at y 0.15, z 0.085), with room for the fur.
-const HOOD_GREY = new Color3(0.3, 0.34, 0.38), FIN_GREY = new Color3(0.22, 0.25, 0.29), TOOTH = new Color3(0.93, 0.91, 0.86);
+const FIN_GREY = new Color3(0.22, 0.25, 0.29), TOOTH = new Color3(0.93, 0.91, 0.86);
 const HOOD_AT = new Vector3(0, 0.065, -0.02), HOOD_SIZE = new Vector3(0.17, 0.15, 0.17); // centre and radii of the shell, m
 const HOOD_KEEP = 0.6; // of the shell's depth, from the back: the rest is the face's opening
 const HOOD_TIP = 0.5; // rad the opening is turned down from straight ahead: over the brow, behind the chin
 // The fin's side, [m ahead, m up] from where it stands on the crown: a curved leading edge up to a tip swept back over
 // the back of the head, and a hooked trailing edge down from it. Extruded FIN_THICK across.
 const FIN_SIDE: [number, number][] = [[0.075, -0.02], [0.06, 0.04], [0.03, 0.1], [-0.01, 0.15], [-0.075, 0.19], [-0.06, 0.13], [-0.05, 0.08], [-0.055, 0.03], [-0.07, -0.02]];
-const FIN_THICK = 0.03;
+const FIN_THICK = 0.03; // m
 const TEETH = 18;
+const TOOTH_SIZE = 0.026; // m, each tooth's length and nearly its width
 
 function makeHood(scene: Scene, head: TransformNode) {
   // The shell from a unit sphere cut across: its kept back turned to face behind and up, then stretched to the head.
   const shell = CreateSphere("hood shell", { diameter: 2, segments: 16, slice: HOOD_KEEP, sideOrientation: Mesh.DOUBLESIDE }, scene);
   const shape = Matrix.RotationX(-Math.PI / 2 + HOOD_TIP).multiply(Matrix.Scaling(HOOD_SIZE.x, HOOD_SIZE.y, HOOD_SIZE.z)).multiply(Matrix.Translation(HOOD_AT.x, HOOD_AT.y, HOOD_AT.z));
   shell.bakeTransformIntoVertices(shape);
-  paint(shell, HOOD_GREY);
+  paint(shell, Color3.White()); // until a look gives it its colour: the Shark's grey is owned by the shop's rules
   // The fin, standing on the shell's crown.
   const fin = ExtrudeShape("hood fin", {
     shape: FIN_SIDE.map(([ahead, up]) => new Vector3(ahead, up, 0)),
     path: [new Vector3(0, 0, -FIN_THICK / 2), new Vector3(0, 0, FIN_THICK / 2)], cap: Mesh.CAP_ALL, closeShape: true,
   }, scene);
-  fin.bakeTransformIntoVertices(Matrix.RotationY(Math.PI / 2).multiply(Matrix.Translation(0, HOOD_AT.y + HOOD_SIZE.y * 0.97, HOOD_AT.z)));
+  fin.bakeTransformIntoVertices(Matrix.RotationY(Math.PI / 2).multiply(Matrix.Translation(0, HOOD_AT.y + HOOD_SIZE.y * 0.97, HOOD_AT.z))); // a little into the crown, so no gap shows
   paint(fin, FIN_GREY);
   // The teeth round the rim of the opening, each a small cone pointing in towards the face.
   const ring = 2 * HOOD_KEEP - 1, across = Math.sqrt(1 - ring * ring), mid = Vector3.TransformCoordinates(new Vector3(0, -ring, 0), shape);
   const teeth = Array.from({ length: TEETH }, (_, i) => {
     const a = (i / TEETH) * Math.PI * 2;
     const rim = Vector3.TransformCoordinates(new Vector3(Math.cos(a) * across, -ring, Math.sin(a) * across), shape);
-    const inward = mid.subtract(rim).normalize(), size = 0.026;
+    const inward = mid.subtract(rim).normalize(), size = TOOTH_SIZE;
     const tooth = CreateCylinder("hood tooth", { height: size, diameterTop: 0, diameterBottom: size * 0.7, tessellation: 5 }, scene);
     const turn = Quaternion.Identity();
     Quaternion.FromUnitVectorsToRef(Vector3.Up(), inward, turn);
