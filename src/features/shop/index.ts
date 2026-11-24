@@ -65,7 +65,7 @@ export const create: CreateFeature = async (game) => {
   };
   let state: ShopState = load(localStorage.getItem(KEY));
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* not kept, still played */ } };
-  const dress = () => { const o = outfit(state.wearing); beaver.look = { shirt: [...o.shirt], hat: [...o.hat] }; };
+  const dress = () => { const o = outfit(state.wearing); beaver.look = { shirt: [...o.shirt], hat: [...o.hat], hood: o.hood }; };
   dress();
   // The Class: only this browser's own beaver bites (the build feature reads game.classEffect) and swims differently.
   const train = () => { const e = classEffect(state); game.classEffect = e; player.swimSpeed = e.swimSpeed; };

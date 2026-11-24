@@ -35,10 +35,11 @@ export const BACKPACK = { y: -0.03, z: -0.17, height: 0.2 };
 
 export type RGB = [number, number, number];
 /** How the beaver is dressed. shirt: linear RGB the shirt's print is tinted by ([1, 1, 1]: as printed, cream);
- *  hat: the felt's colour, linear RGB (the band keeps its own). */
-export interface Look { shirt: RGB; hat: RGB }
+ *  hat: the felt's colour, linear RGB (the band keeps its own), or the hood's grey when it wears one;
+ *  hood: a shark's hood in the hat's place (a fin on top, teeth round the face) instead of the felt hat. Left out: a hat. */
+export interface Look { shirt: RGB; hat: RGB; hood?: boolean }
 /** The look every beaver has unless told otherwise. */
-export const DEFAULT_LOOK: Look = { shirt: [1, 1, 1], hat: [0.075, 0.062, 0.058] };
+export const DEFAULT_LOOK: Look = { shirt: [1, 1, 1], hat: [0.075, 0.062, 0.058], hood: false };
 /** The shirt's cream as printed, which the look's shirt colour tints: warm, to sit with the chestnut coat. */
 export const SHIRT_CREAM = "#f1e8d6";
 
@@ -59,7 +60,8 @@ export interface Beaver {
   anger: number;
   /** Wears its T-shirt; false: fur all over. */
   shirt: boolean;
-  /** Wears its small felt hat (on the head bone, so it follows every pose); false: bare-headed. */
+  /** Wears its headwear (on the head bone, so it follows every pose): the small felt hat, or the hood when the look
+   *  says so; false: bare-headed. */
   hat: boolean;
   /** The colours of its shirt and hat, as one look (an Outfit, src/features/shop). Read: a copy of what it wears. */
   look: Look;

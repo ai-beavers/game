@@ -147,7 +147,7 @@ The player sitting at the campfire with Mrs. Beaver once she is home, the two of
 _Avoid_: story time, storytelling, family (the two of them are the player and Mrs. Beaver)
 
 **Outfit**:
-A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes.
+A matching look for the beaver's shirt and hat, bought once at the shop with experience and then worn whenever the player likes. It changes only how the beaver looks, never what it can do. The Shark outfit wears a hood in the hat's place: grey, a fin on top, a row of teeth round the face.
 _Avoid_: skin, costume, clothes
 
 **Canoe**:
