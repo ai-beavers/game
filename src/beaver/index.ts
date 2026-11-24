@@ -6,7 +6,7 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader.js";
@@ -14,6 +14,8 @@ import "@babylonjs/loaders/glTF/2.0/Extensions/KHR_materials_specular.js";
 import "@babylonjs/loaders/glTF/2.0/Extensions/EXT_texture_webp.js"; // the textures of both glb files (tools/blender)
 import "@babylonjs/loaders/glTF/2.0/Extensions/KHR_mesh_quantization.js"; // their normals, uvs, weights as integers
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.js";
+import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder.js";
+import { ExtrudeShape } from "@babylonjs/core/Meshes/Builders/shapeBuilder.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { createCoat } from "./fur.ts";
 import beaverGlb from "../../assets/beaver.glb" with { type: "file" };
@@ -91,6 +93,80 @@ function makeHat(scene: Scene, head: TransformNode) {
   return { hat, colourFelt };
 }
 
+/** Gives every vertex of a part one colour, so parts merged into one mesh keep theirs. */
+function paint(mesh: Mesh, c: Color3) {
+  const n = mesh.getTotalVertices(), colours = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) colours.set([c.r, c.g, c.b, 1], i * 4);
+  mesh.setVerticesData(VertexBuffer.ColorKind, colours);
+  return mesh;
+}
+
+// The Shark's hood, worn in the hat's place: a rounded shell over the top and back of the head down to the ears, open
+// in front for the eyes, muzzle and whiskers, a dorsal fin standing up from its top and a ring of small teeth round
+// the opening. One mesh with its colours in the vertices, like the hat; the shell takes the look's hat colour, the fin
+// and the teeth keep their own. In the head bone's space (measured from the coat: the crown 0.19 m up, the ears 0.14 m
+// out to each side, the back of the head 0.11 m behind, the eyes at y 0.15, z 0.085), with room for the fur.
+const FIN_GREY = new Color3(0.22, 0.25, 0.29), TOOTH = new Color3(0.93, 0.91, 0.86);
+const HOOD_AT = new Vector3(0, 0.065, -0.02), HOOD_SIZE = new Vector3(0.17, 0.15, 0.17); // centre and radii of the shell, m
+const HOOD_KEEP = 0.6; // of the shell's depth, from the back: the rest is the face's opening
+const HOOD_TIP = 0.5; // rad the opening is turned down from straight ahead: over the brow, behind the chin
+// The fin's side, [m ahead, m up] from where it stands on the crown: a curved leading edge up to a tip swept back over
+// the back of the head, and a hooked trailing edge down from it. Extruded FIN_THICK across.
+const FIN_SIDE: [number, number][] = [[0.075, -0.02], [0.06, 0.04], [0.03, 0.1], [-0.01, 0.15], [-0.075, 0.19], [-0.06, 0.13], [-0.05, 0.08], [-0.055, 0.03], [-0.07, -0.02]];
+const FIN_THICK = 0.03; // m
+const TEETH = 18;
+const TOOTH_SIZE = 0.026; // m, each tooth's length and nearly its width
+
+function makeHood(scene: Scene, head: TransformNode) {
+  // The shell from a unit sphere cut across: its kept back turned to face behind and up, then stretched to the head.
+  const shell = CreateSphere("hood shell", { diameter: 2, segments: 16, slice: HOOD_KEEP, sideOrientation: Mesh.DOUBLESIDE }, scene);
+  const shape = Matrix.RotationX(-Math.PI / 2 + HOOD_TIP).multiply(Matrix.Scaling(HOOD_SIZE.x, HOOD_SIZE.y, HOOD_SIZE.z)).multiply(Matrix.Translation(HOOD_AT.x, HOOD_AT.y, HOOD_AT.z));
+  shell.bakeTransformIntoVertices(shape);
+  paint(shell, Color3.White()); // until a look gives it its colour: the Shark's grey is owned by the shop's rules
+  // The fin, standing on the shell's crown.
+  const fin = ExtrudeShape("hood fin", {
+    shape: FIN_SIDE.map(([ahead, up]) => new Vector3(ahead, up, 0)),
+    path: [new Vector3(0, 0, -FIN_THICK / 2), new Vector3(0, 0, FIN_THICK / 2)], cap: Mesh.CAP_ALL, closeShape: true,
+  }, scene);
+  fin.bakeTransformIntoVertices(Matrix.RotationY(Math.PI / 2).multiply(Matrix.Translation(0, HOOD_AT.y + HOOD_SIZE.y * 0.97, HOOD_AT.z))); // a little into the crown, so no gap shows
+  paint(fin, FIN_GREY);
+  // The teeth round the rim of the opening, each a small cone pointing in towards the face.
+  const ring = 2 * HOOD_KEEP - 1, across = Math.sqrt(1 - ring * ring), mid = Vector3.TransformCoordinates(new Vector3(0, -ring, 0), shape);
+  const teeth = Array.from({ length: TEETH }, (_, i) => {
+    const a = (i / TEETH) * Math.PI * 2;
+    const rim = Vector3.TransformCoordinates(new Vector3(Math.cos(a) * across, -ring, Math.sin(a) * across), shape);
+    const inward = mid.subtract(rim).normalize(), size = TOOTH_SIZE;
+    const tooth = CreateCylinder("hood tooth", { height: size, diameterTop: 0, diameterBottom: size * 0.7, tessellation: 5 }, scene);
+    const turn = Quaternion.Identity();
+    Quaternion.FromUnitVectorsToRef(Vector3.Up(), inward, turn);
+    const at = rim.add(inward.scale(size * 0.4));
+    tooth.bakeTransformIntoVertices(Matrix.Compose(Vector3.One(), turn, at));
+    return paint(tooth, TOOTH);
+  });
+  const shellVertices = shell.getTotalVertices();
+  const hood = Mesh.MergeMeshes([shell, fin, ...teeth], true)!;
+  hood.name = "hood";
+  const cloth = new PBRMaterial("hood cloth", scene);
+  cloth.albedoColor = Color3.White(); // times the vertex colours
+  cloth.metallic = 0;
+  cloth.roughness = 0.85;
+  cloth.backFaceCulling = false;
+  hood.material = cloth;
+  hood.parent = head;
+  hood.isPickable = false;
+  hood.receiveShadows = true; // and so it throws them, as every part of the beaver does (src/light.ts)
+  hood.onDisposeObservable.addOnce(() => cloth.dispose());
+  // The shell's vertices come first in the merged mesh: those take the look's colour.
+  const colours = Float32Array.from(hood.getVerticesData(VertexBuffer.ColorKind)!);
+  hood.setVerticesData(VertexBuffer.ColorKind, colours, true); // updatable from here on
+  const colourShell = (c: RGB) => {
+    for (let i = 0; i < shellVertices; i++) colours.set(c, i * 4);
+    hood.updateVerticesData(VertexBuffer.ColorKind, colours);
+  };
+  hood.setEnabled(false); // every beaver starts in its hat
+  return { hood, colourShell };
+}
+
 export const loadBeaver: LoadBeaver = async (scene) => {
   const [asset, print] = await Promise.all([ImportMeshAsync(beaverGlb, scene, { pluginExtension: ".glb" }), shirtTexture(scene)]);
   for (const group of asset.animationGroups) { group.stop(); group.dispose(); }
@@ -108,9 +184,12 @@ export const loadBeaver: LoadBeaver = async (scene) => {
   // shows neither, and each would be one more draw in the shadow map for every beaver.
   for (const part of asset.meshes) part.receiveShadows = !/^(eye|glint|nose|nostril|whisker|brow|claw)$/.test(part.material?.name ?? "");
   const { hat, colourFelt } = makeHat(scene, nodes.get("head")!);
+  const { hood, colourShell } = makeHood(scene, nodes.get("head")!);
   const printed = shirtMat.albedoColor.clone();
-  const copy = (l: Look): Look => ({ shirt: [...l.shirt], hat: [...l.hat] });
-  let look = copy(DEFAULT_LOOK);
+  const copy = (l: Look): Look => ({ shirt: [...l.shirt], hat: [...l.hat], hood: !!l.hood });
+  let look = copy(DEFAULT_LOOK), headwear = true;
+  // The headwear switch (beaver.hat) and the look together: the hood or the felt hat, never both; neither with it off.
+  const wearHeadwear = () => { hat.setEnabled(headwear && !look.hood); hood.setEnabled(headwear && !!look.hood); };
   // Where the beaver sees from: the file's mark between its eyes, turned as the head bone is.
   const eyes = nodes.get("eyes")!;
   eyes.rotationQuaternion = Quaternion.Identity();
@@ -149,13 +228,15 @@ export const loadBeaver: LoadBeaver = async (scene) => {
     },
     get shirt() { return shirt.isEnabled(false); },
     set shirt(on) { shirt.setEnabled(on); fur.coat.dressed = on; },
-    get hat() { return hat.isEnabled(false); },
-    set hat(on) { hat.setEnabled(on); },
+    get hat() { return headwear; },
+    set hat(on) { headwear = on; wearHeadwear(); },
     get look() { return copy(look); },
     set look(next) {
       look = copy(next);
       shirtMat.albedoColor.set(printed.r * look.shirt[0], printed.g * look.shirt[1], printed.b * look.shirt[2]);
-      colourFelt(look.hat);
+      if (look.hood) colourShell(look.hat);
+      else colourFelt(look.hat);
+      wearHeadwear();
     },
     get coat(): RGB { return [calm.r, calm.g, calm.b]; },
     set coat(c) {

@@ -17,18 +17,21 @@ import { DEFAULT_LOOK, type RGB } from "../../contracts.ts";
 import { SWIM_SPEED } from "../../player/state.ts";
 import { BITE_TIME } from "../build/rules.ts";
 
-export type OutfitId = "classic" | "moss" | "sunset" | "disco";
-/** An Outfit: a matching shirt colour and hat colour, linear RGB 0 … 1, and its price in Experience. */
-export interface Outfit { id: OutfitId; name: string; price: number; shirt: RGB; hat: RGB }
+export type OutfitId = "classic" | "moss" | "sunset" | "disco" | "shark";
+/** An Outfit: a matching shirt colour and hat colour, linear RGB 0 … 1, and its price in Experience. hood: it wears a
+ *  shark's hood in the hat's place (hat is then the hood's grey); every other Outfit wears the felt hat. An Outfit only
+ *  changes how the beaver looks, never what it can do. */
+export interface Outfit { id: OutfitId; name: string; price: number; shirt: RGB; hat: RGB; hood: boolean }
 
 /** The look every beaver has before it buys anything: free, always owned. Its colours are the beaver's own
  *  (DEFAULT_LOOK: the cream shirt as printed, the charcoal felt hat). */
 export const DEFAULT: OutfitId = "classic";
 export const OUTFITS: readonly Outfit[] = [
-  { id: "classic", name: "Classic", price: 0, ...DEFAULT_LOOK },
-  { id: "moss", name: "Moss", price: 10, shirt: [0.3, 0.55, 0.26], hat: [0.12, 0.26, 0.1] },
-  { id: "sunset", name: "Sunset", price: 25, shirt: [1, 0.42, 0.12], hat: [0.5, 0.1, 0.06] },
-  { id: "disco", name: "Disco", price: 50, shirt: [0.85, 0.2, 0.75], hat: [0.95, 0.68, 0.12] },
+  { id: "classic", name: "Classic", price: 0, shirt: DEFAULT_LOOK.shirt, hat: DEFAULT_LOOK.hat, hood: false },
+  { id: "moss", name: "Moss", price: 10, shirt: [0.3, 0.55, 0.26], hat: [0.12, 0.26, 0.1], hood: false },
+  { id: "sunset", name: "Sunset", price: 25, shirt: [1, 0.42, 0.12], hat: [0.5, 0.1, 0.06], hood: false },
+  { id: "disco", name: "Disco", price: 50, shirt: [0.85, 0.2, 0.75], hat: [0.95, 0.68, 0.12], hood: false },
+  { id: "shark", name: "Shark", price: 75, shirt: [0.2, 0.25, 0.3], hat: [0.3, 0.34, 0.38], hood: true }, // slate shirt, grey hood
 ];
 export const outfit = (id: OutfitId) => OUTFITS.find((o) => o.id === id)!;
 

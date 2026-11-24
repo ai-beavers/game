@@ -95,8 +95,9 @@ test("levels: 20 Experience to level 2, then 10 more for each level after", () =
   expect(levelOf(1000).level).toBe(13); // a long season of building: 20 + 30 + … + 130 = 900
 });
 
-test("the catalogue: the default for free and three Outfits for 10, 25 and 50", () => {
-  expect(OUTFITS.map((o) => o.price)).toEqual([0, 10, 25, 50]);
+test("the catalogue: the default for free and four Outfits for 10, 25, 50 and 75", () => {
+  expect(OUTFITS.map((o) => o.price)).toEqual([0, 10, 25, 50, 75]);
+  expect(OUTFITS.at(-1)!.name).toBe("Shark");
   expect(price(DEFAULT)).toBe(0);
 });
 
@@ -155,4 +156,41 @@ test("the class comes back from the saved game; a missing, unknown or broken one
   expect(load("{broken").class).toBe(NO_CLASS);
   // a save from before classes: everything kept, no class
   expect(load('{"experience":5,"earned":40,"owned":["moss"],"wearing":"moss"}')).toEqual({ experience: 5, earned: 40, owned: ["classic", "moss"], wearing: "moss", class: NO_CLASS });
+});
+
+// ---- the Shark ----------------------------------------------------------------------------------------------------
+
+test("the Shark cannot be bought with 74 Experience", () => {
+  const s = load(null);
+  earn(s, 74);
+  expect(buy(s, "shark")).toBe(false);
+  expect(s).toEqual({ experience: 74, earned: 74, owned: ["classic"], wearing: "classic", class: NO_CLASS });
+});
+
+test("with 75 Experience the Shark is bought and worn at once, the level unchanged", () => {
+  const s = load(null);
+  earn(s, 75);
+  const level = levelOf(s.earned);
+  expect(buy(s, "shark")).toBe(true);
+  expect(s).toEqual({ experience: 0, earned: 75, owned: ["classic", "shark"], wearing: "shark", class: NO_CLASS });
+  expect(levelOf(s.earned)).toEqual(level);
+});
+
+test("the Shark is taken off and worn again for free, the class kept", () => {
+  const s = load(null);
+  earn(s, 80);
+  choose(s, "swimmer");
+  buy(s, "shark");
+  expect(wear(s, "classic")).toBe(true);
+  expect(wear(s, "shark")).toBe(true);
+  expect(s).toEqual({ experience: 5, earned: 80, owned: ["classic", "shark"], wearing: "shark", class: "swimmer" });
+  expect(classEffect(s)).toEqual({ biteTime: 0.6, swimSpeed: 0.75 });
+});
+
+test("a saved game that owns and wears the Shark loads with it owned and worn", () => {
+  expect(load('{"experience":2,"earned":77,"owned":["shark"],"wearing":"shark"}')).toEqual({ experience: 2, earned: 77, owned: ["classic", "shark"], wearing: "shark", class: NO_CLASS });
+});
+
+test("the Shark, and only the Shark, wears a hood in the hat's place", () => {
+  expect(OUTFITS.filter((o) => o.hood).map((o) => o.id)).toEqual(["shark"]);
 });

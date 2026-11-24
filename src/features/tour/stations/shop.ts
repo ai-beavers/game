@@ -1,5 +1,6 @@
 // The Shop: walk to it, in through the doorway, Use at the counter, buy the cheapest Outfit there is and wear it,
-// then put the default look back on. Played through input as a person would; only the Experience to pay with is
+// then put the default look back on. The Shark, the dearest: bought the same way, its hood in place of the felt hat,
+// its fin standing up over the head, and taken off again for the hat. Played through input as a person would; only the Experience to pay with is
 // given to the tour's own saved game (building enough sticks first is too slow for the fast tour).
 // Pick a class: at the same counter, Swimmer, then a swim across the pond timed; Gnawer, then a tree gnawed down with
 // its bites timed and counted; then back to no class.
@@ -7,6 +8,7 @@
 // events the tour gives it (as a test it plays without the network; live, the real ones), and find it solid over its
 // whole width.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { Look } from "../../../contracts.ts";
 import { BITE_TIME, bitesToFell, live as standing } from "../../build/rules.ts";
 import { measure } from "../../build/tree.ts";
@@ -31,7 +33,7 @@ interface ShopDebug {
   };
 }
 
-const same = (a: Look, b: Look) => [...a.shirt, ...a.hat].every((v, i) => Math.abs(v - [...b.shirt, ...b.hat][i]!) < 1e-3);
+const same = (a: Look, b: Look) => !!a.hood === !!b.hood && [...a.shirt, ...a.hat].every((v, i) => Math.abs(v - [...b.shirt, ...b.hat][i]!) < 1e-3);
 
 export const shopping = (kit: Kit): Station[] => {
   const { beaver, player, world, game, want, live, frame, wait, until, walkTo, reach, tap, key, expect, hudText, pond, clear, needBuild, standingTrees, fell } = kit;
@@ -103,13 +105,13 @@ export const shopping = (kit: Kit): Station[] => {
       expect(shop.state.owned.includes(pick.id) && shop.state.wearing === pick.id, `${pick.name} is not owned and worn after buying it`);
       expect(!!button(`Wearing ${pick.name}`), `the panel does not say ${pick.name} is worn`);
       const look = beaver.look;
-      expect(same(look, { shirt: pick.shirt, hat: pick.hat }) && !same(look, lookBefore), `the beaver's shirt and hat did not change to ${pick.name}'s colours`);
+      expect(same(look, pick) && !same(look, lookBefore), `the beaver's shirt and hat did not change to ${pick.name}'s colours`);
       if (live) await wait(3);
 
       // Back to the default look, for free.
       const classic = OUTFITS.find((o) => o.id === DEFAULT)!;
       button(`Wear ${classic.name}`)?.click();
-      await until(() => same(beaver.look, { shirt: classic.shirt, hat: classic.hat }), 2, "Wear on the default look did not bring its colours back");
+      await until(() => same(beaver.look, classic), 2, "Wear on the default look did not bring its colours back");
       expect(experience() === had - pick.price, "wearing the default look cost Experience");
       expect(shop.state.wearing === DEFAULT && !!button(`Wearing ${classic.name}`), "the default is not worn after choosing it");
       expect(!!button(`Wear ${pick.name}`), `${pick.name} is not kept to wear again after taking it off`);
@@ -118,6 +120,53 @@ export const shopping = (kit: Kit): Station[] => {
         const out = shop.door(2.5);
         await walkTo(out.x, out.z, { near: 0.6, limit: 20 });
       }
+    }, "Shopping"],
+    ["Wear the shark suit", async () => {
+      const shop = (window as { shop?: ShopDebug }).shop ?? skip("no shop feature");
+      const shark = OUTFITS.find((o) => o.id === "shark") ?? skip("no Shark outfit"), classic = OUTFITS.find((o) => o.id === DEFAULT)!;
+      if (shop.state.owned.includes(shark.id) || shop.state.wearing !== DEFAULT) shop.reset(); // bought in an earlier round: the wardrobe anew
+      if (shop.state.experience < shark.price) shop.give(shark.price - shop.state.experience);
+      const had = shop.state.experience;
+      const head = beaver.root.getDescendants(false, (n) => n.name === "head")[0] ?? skip("the beaver has no head bone");
+      const part = (name: string) => beaver.root.getChildMeshes(false).find((m) => m.name === name && m.parent === head);
+      const hood = part("hood"), felt = part("hat");
+      expect(!!hood && !!felt, `the beaver's head has ${hood ? "" : "no hood"}${!hood && !felt ? " and " : ""}${felt ? "" : "no felt hat"}`);
+      const shown = (m: AbstractMesh) => m.isEnabled() && m.isVisible;
+      expect(shown(felt!) && !shown(hood!), "before the Shark the beaver does not wear its felt hat alone");
+
+      await toCounter(shop);
+      const buy = button(`Buy ${shark.name}`);
+      expect(!!buy && !buy.disabled, `no button to buy ${shark.name} for ${had} Experience (or it is greyed out)`);
+      buy!.click();
+      await until(() => experience() === had - shark.price, 2, `bought the Shark: Experience went from ${had} to ${experience()}, not down by ${shark.price}`);
+      expect(!!button(`Wearing ${shark.name}`), "the panel does not say the Shark is worn");
+      expect(same(beaver.look, shark) && !!beaver.look.hood, "the beaver's look is not the Shark's: hood, slate shirt and grey hood");
+      expect(shown(hood!) && !shown(felt!), `wearing the Shark the hood is ${shown(hood!) ? "shown" : "hidden"} and the felt hat ${shown(felt!) ? "shown" : "hidden"}`);
+      // The hood's highest point, its fin, stands above every bit of the beaver's own head.
+      const highest = (m: AbstractMesh, skinned: boolean) => {
+        const data = m.getPositionData(skinned, skinned), world = m.computeWorldMatrix(true), at = new Vector3();
+        let top = -Infinity;
+        for (let i = 0; data && i < data.length; i += 3) top = Math.max(top, Vector3.TransformCoordinatesFromFloatsToRef(data[i]!, data[i + 1]!, data[i + 2]!, world, at).y);
+        return top;
+      };
+      const crown = Math.max(...beaver.root.getChildMeshes(false).filter((m) => !!m.skeleton).map((m) => highest(m, true)));
+      const fin = highest(hood!, false);
+      expect(fin > crown + 0.1, `the hood's highest point is ${(fin - crown).toFixed(3)} m above the top of the beaver's head, not its fin standing up`);
+      if (live) { // the panel closed a while, for the stream to see the shark, then open again at the counter
+        await closePanel();
+        await wait(5);
+        await reach("use", () => shop.counter());
+        await tap("act");
+        await until(() => !!panel()?.open, 2, "pressed Use at the counter again, no shop panel opened");
+      }
+
+      // Classic again, for free: the felt hat back, the hood off.
+      button(`Wear ${classic.name}`)?.click();
+      await until(() => same(beaver.look, classic), 2, "Wear Classic did not bring the default look back");
+      expect(!beaver.look.hood && shown(felt!) && !shown(hood!), `wearing Classic the hood is ${shown(hood!) ? "shown" : "hidden"} and the felt hat ${shown(felt!) ? "shown" : "hidden"}`);
+      expect(experience() === had - shark.price, `wearing Classic changed the Experience to ${experience()}`);
+      expect(!!button(`Wear ${shark.name}`), "the Shark is not kept to wear again after taking it off");
+      await closePanel();
     }, "Shopping"],
     ["Pick a class", async () => {
       const shop = (window as { shop?: ShopDebug }).shop ?? skip("no shop feature");
