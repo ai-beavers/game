@@ -1,6 +1,8 @@
 import { holdInHand, holdInView } from "./grip.ts";
 // Who steers the beaver: keyboard input, a kinematic capsule (mover.ts), carrying sticks, swimming and diving, sitting
-// and crawling, riding (sitting in a canoe someone else draws, src/features/canoe), the tail slap, stamina for running (stamina.ts), the follow camera, and the Motion report the animator draws from.
+// and crawling, riding (sitting in a canoe someone else draws, src/features/canoe, or standing on a Hoverboard,
+// src/features/hoverboard), the tail slap, stamina for running (stamina.ts), the follow camera, and the Motion report
+// the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
 //   beaver.root.parent = player.node;
@@ -36,6 +38,7 @@ const CLIMB_OUT = 0.4, CLIMB_IN = 2 * RADIUS;
 const LIFT_EASE = 18; // 1/s: how fast the picture follows a step up
 const SWIM_ACCEL = 2;
 const RIDE_ACCEL = 1.6, RIDE_BRAKE = 1.1; // m/s²: a canoe gets going slowly and glides on
+const BOARD_ACCEL = 3, BOARD_BRAKE = 5; // m/s²: a Hoverboard gets going in about a second and stops in under one
 // Jumping: up to JUMP_HEIGHT while Space is held; letting go early cuts the rise.
 const GRAVITY = 18, CUT = 3.5; // m/s², and how much harder it pulls once Space is let go on the way up
 export const JUMP_HEIGHT = 0.6;
@@ -102,10 +105,13 @@ export interface PlayerControls extends Player {
   handOver(): Stick | undefined;
   /** What a press of the context key would do right now, in words for the screen; undefined: nothing. */
   offer(): Offer | undefined;
-  /** Sits the beaver in a ride where it is (src/features/canoe: a canoe): from the next step on it does not walk, swim,
-   *  jump, dive, crawl, slap nor pick up; the move keys steer it at RIDE_SPEED with the feet held at `seat` m above the
-   *  live water level, only where the water is at least `depth` m deep at the feet and, `bow` m ahead, `draft` m deep:
-   *  it stops at the shore. undefined: the ride is over, it stands where it is (teleport it out). teleport ends it too. */
+  /** Puts the beaver on a ride where it is: from the next step on it does not walk, swim, jump, dive, crawl, run, slap
+   *  nor pick up, and only the ride's own offer is made (Player.offer). On the water (src/features/canoe: a canoe) it
+   *  sits and the move keys steer it at RIDE_SPEED with the feet held at `seat` m above the live water level, only where
+   *  the water is at least `depth` m deep at the feet and, `bow` m ahead, `draft` m deep: it stops at the shore. On land
+   *  (src/features/hoverboard: the Hoverboard) it stands and glides at `speed` with its feet `hover` m above the ground,
+   *  under gravity, up steps and slopes as on foot, and stops where the way ahead is wet. undefined: the ride is over, it
+   *  stands where it is (teleport it out). teleport ends it too, and so does a toss off the land (toss()). */
   ride(ride: Ride | undefined): void;
   readonly riding: boolean;
   /** How many times the player has touched any control: a step with a key, button, stick or finger held, a key
@@ -127,9 +133,13 @@ export interface PlayerControls extends Player {
   slap(): void;
 }
 
+/** A ride (Player.ride): on the water or on the land. */
+export type Ride = WaterRide | LandRide;
 /** How a ride sits on the water, m: the feet above the level, the least water under them, how far ahead the bow is
  *  and how deep it goes. */
-export interface Ride { seat: number; depth: number; bow: number; draft: number }
+export interface WaterRide { on: "water"; seat: number; depth: number; bow: number; draft: number }
+/** A ride over the land: the feet `hover` m above the ground, at most `speed` m/s. */
+export interface LandRide { on: "land"; hover: number; speed: number }
 
 /** What the context key would do: pick up, drop, gnaw (a standing tree), split (gnaw a lying tree into wood), build,
  *  trade (pay the stick at the trading post), use (talk to someone: the Shopkeeper, src/features/shop). */
@@ -158,6 +168,9 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   const body = physics.body(holder, PhysicsMotionType.ANIMATED, capsule(scene, HALF, RADIUS), PLAYER);
   const shape = capsule(scene, HALF, RADIUS), point = ball(scene, 0.005); // what the queries sweep and place
   const mover = createMover(physics, shape, { gap: OFFSET, slope: SLOPE, mass: 12 });
+  // On a land ride the capsule keeps `hover` more from everything: the ground holds it up that far (made per hover).
+  const hovering = new Map<number, ReturnType<typeof createMover>>();
+  const moverFor = (r: LandRide) => hovering.get(r.hover) ?? hovering.set(r.hover, createMover(physics, shape, { gap: OFFSET + r.hover, slope: SLOPE, mass: 12 })).get(r.hover)!;
   // Solid to the bow of a ride and to the camera: everything but the beaver and the loose things.
   const SOLIDS = GROUND | SOLID | HEAVY | CREATURE;
 
@@ -207,7 +220,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   /** Whether a ride may be at x, z facing (dx, dz) (unit): deep enough at the seat, the bow in the water and clear.
    *  At the bow anything solid stops it: the lodge, the dam or a rock, not only the beaver's body behind it (else
    *  the bow would go a metre into the lodge). */
-  const floats = (r: Ride, x: number, z: number, dx: number, dz: number, level: number) =>
+  const floats = (r: WaterRide, x: number, z: number, dx: number, dz: number, level: number) =>
     depthAt(x, z, level) > r.depth && depthAt(x + dx * r.bow, z + dz * r.bow, level, SOLIDS) > r.draft;
 
   // Whether the ground a step ahead along the facing lies under the water (a walk asked for by turnTo stops there).
@@ -309,6 +322,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     facingBefore = facing;
     keys.read(input);
     if (ride) Object.assign(input, rideKeys(input));
+    const water = ride?.on === "water" ? ride : undefined, land = ride?.on === "land" ? ride : undefined;
     const tossed = push.lengthSquared() > 0;
     if (tossed) input.act = false; // thrown, it lets go of what it was at: a gnaw or a build ends by itself
     // Under water: no tail slap (it is the alarm on the surface); pickup and drop work, and the actor offers only what
@@ -351,12 +365,12 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     const moving = desired.lengthSquared() > 0.01, wants = !busy && moving;
     if (sitFor > 0) sitFor = moving || busy || input.jump || !grounded || afloat || ride ? 0 : Math.max(0, sitFor - dt);
     // On land the dive key sits and Y crawls, while held (sitting the beaver does not move: moving gets it up).
-    const { low, slow } = stepLow(!!input.dive || sitFor > 0, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: !!ride });
-    // Running on land takes stamina (stamina.ts); tired, it walks. Swimming, crawling and the canoe ask no run of it.
+    const { low, slow } = stepLow(!!input.dive || sitFor > 0, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: ride?.on });
+    // Running on land takes stamina (stamina.ts); tired, it walks. Swimming, crawling, the canoe and the Hoverboard ask no run of it.
     const asked = wants && !afloat && !ride && !slow ? input.run : 0;
     const run = stepStamina(stamina, dt, asked, { onLand: grounded && !afloat && !ride, gnawing: act.action === "gnaw" });
-    const top = ride ? RIDE_SPEED : afloat ? swimSpeed : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * run;
-    const [accel, brake] = ride ? [RIDE_ACCEL, RIDE_BRAKE] : afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
+    const top = water ? RIDE_SPEED : land ? land.speed : afloat ? swimSpeed : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * run;
+    const [accel, brake] = water ? [RIDE_ACCEL, RIDE_BRAKE] : land ? [BOARD_ACCEL, BOARD_BRAKE] : afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
     const going = speed; // m/s before steering brakes it: a walk asked for by turnTo keeps it
     steering.facing = facing; steering.speed = speed;
     steer(steering, wants ? Math.atan2(desired.x, desired.z) : busy ? aim : sitFor > 0 ? sitFace : undefined, wants ? desired.length() : 0, top, accel, brake, dt);
@@ -368,6 +382,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       turned = facing - was;
       if (turnTo.speed) speed = wetAhead() ? 0 : Math.min(turnTo.speed, going + ACCEL * dt);
     }
+    if (land && speed > 0 && wetAhead()) speed = 0; // the Hoverboard never goes over the water: it stops at the shore
     if (low === "sit" && !ride) speed = 0; // sitting, it does not slide on: it stops where it sat down
     if (leaping && foe) {
       const was = facing;
@@ -385,13 +400,14 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // In the water with the ground under the middle of the body deep enough to float: the capsule's rim caught on the
     // lip of the basin's wall holds the feet up, but there is nothing to stand on, so it floats.
     const overDeep = level !== undefined && depth > HOLD_DEPTH - 0.1 && depthAt(feet.x, feet.z, level) > FLOAT_DEPTH;
-    if (ride) { afloat = false; vy = 0; } // held at the seat, below
+    if (water) { afloat = false; vy = 0; } // held at the seat, below
+    else if (land) afloat = false; // over the land: it stops before the water
     else if (!afloat && (depth > FLOAT_DEPTH || overDeep)) { afloat = true; vy = Math.max(vy, -DIVE_SPEED); } // the water stops a fall: off the basin's drop-off it would sink a metre
     else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02 && !overDeep) afloat = false;
     if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
     if (leaps) { vy = LEAP_SPEED; grounded = false; }
     const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && (act.action !== "build" || under) && slap.progress === 0, afloat, under);
-    if (ride) { /* no gravity: the canoe holds it */ }
+    if (water) { /* no gravity: the canoe holds it */ }
     else if (afloat) {
       // m/s: diving, down (or up with Space) but never up out of it; else up towards floating depth, calmly from deep
       const goal = diving ? Math.min(input.jump ? DIVE_SPEED : -DIVE_SPEED, (depth - DIVE_TOP) * 4) : Math.min(RISE, (depth - HOLD_DEPTH) * 4);
@@ -404,8 +420,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     }
 
     // Move the capsule through the world.
-    const wish = { x: (Math.sin(facing) * speed + push.x) * dt, y: ride && level !== undefined ? level + ride.seat - feet.y : vy * dt, z: (Math.cos(facing) * speed + push.z) * dt };
-    const { moved, grounded: standing, out } = mover.move(centre, wish, afloat || vy > 0 || ride ? 0 : 0.2, ALL, dt);
+    const wish = { x: (Math.sin(facing) * speed + push.x) * dt, y: water && level !== undefined ? level + water.seat - feet.y : vy * dt, z: (Math.cos(facing) * speed + push.z) * dt };
+    const { moved, grounded: standing, out } = (land ? moverFor(land) : mover).move(centre, wish, afloat || vy > 0 || water ? 0 : 0.2, ALL, dt);
     // Diving down onto the sloping bed, the controller slides the push down along it: no further sideways than wished,
     // or it would glide down to the deepest point by itself.
     // (Not what pushed it off the bank to keep the gap: without that it would stick to a bank the basin narrows by.)
@@ -414,20 +430,28 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     // The round bottom of the capsule slides up the edge of a step too high to take, a little each step: such a
     // creep (steeper than SLOPE, smaller than an autostep) counts as a wall.
     if (grounded && wish.y <= 0 && moved.y > 0 && moved.y < 0.05 && moved.y > Math.tan(SLOPE) * Math.hypot(moved.x, moved.z)) moved.x = moved.y = moved.z = 0;
+    // Over the land it floats: the mover keeps its gap only from what it runs into, so on rising ground the capsule would
+    // sink until it touched. Held `hover` m up over what is under it, as a cast down from that high finds it (after the
+    // creep above: that lift is no creep up a wall).
+    if (land && standing && vy <= 0) {
+      const at = { x: centre.x + moved.x, y: centre.y + moved.y + land.hover, z: centre.z + moved.z };
+      const under = cast(at, down, 2 * land.hover + OFFSET);
+      if (under) moved.y += Math.max(0, land.hover + OFFSET - (under.distance - land.hover));
+    }
     // A ride stops where the water gets too shallow for it: the shore, the dam's mud. It goes on along its facing.
     // Turned on the spot at the shore, the bow over the shallows: it may only go where the water gets deeper.
-    if (ride && level !== undefined && !floats(ride, feet.x + moved.x, feet.z + moved.z, Math.sin(facing), Math.cos(facing), level)
-      && (floats(ride, feet.x, feet.z, Math.sin(facing), Math.cos(facing), level) || depthAt(feet.x + moved.x, feet.z + moved.z, level) <= depthAt(feet.x, feet.z, level))) { moved.x = moved.z = 0; speed = 0; }
+    if (water && level !== undefined && !floats(water, feet.x + moved.x, feet.z + moved.z, Math.sin(facing), Math.cos(facing), level)
+      && (floats(water, feet.x, feet.z, Math.sin(facing), Math.cos(facing), level) || depthAt(feet.x + moved.x, feet.z + moved.z, level) <= depthAt(feet.x, feet.z, level))) { moved.x = moved.z = 0; speed = 0; }
     // Blocked while walking on the ground: maybe a step to go up.
     let stepped = 0, inX = 0, inZ = 0; // m: lifted by a step or a climb, and carried in by a climb
-    const blocked = !ride && Math.hypot(moved.x, moved.z) < 0.5 * Math.hypot(wish.x, wish.z);
+    const blocked = !water && Math.hypot(moved.x, moved.z) < 0.5 * Math.hypot(wish.x, wish.z);
     if (blocked && grounded && wish.y <= 0) {
       const height = stepUp(wish.x, wish.z);
       if (height > 0) { moved.x = wish.x; moved.y = height; moved.z = wish.z; lift.y -= height; before.y += height; stepped = height; }
     }
     // Blocked in the water (swimming, or on foot as deep as it swims: caught on the lip of the basin's wall): maybe the
     // shore to climb out onto, on foot from here on.
-    if (blocked && !stepped && !diving && level !== undefined && (afloat || level - feet.y > HOLD_DEPTH)) {
+    if (blocked && !stepped && !diving && !land && level !== undefined && (afloat || level - feet.y > HOLD_DEPTH)) {
       const climb = climbOut(wish.x, wish.z);
       if (climb) {
         // Up and in, the middle of the body over the land: the picture follows both ways, as it does a step up.
@@ -441,7 +465,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     centre.addInPlace(moved);
     body.setTargetTransform(centre, still);
     feet.set(centre.x, centre.y - HEIGHT / 2 - OFFSET, centre.z);
-    grounded = ride ? true : standing; // the canoe holds it up
+    grounded = water ? true : standing; // the canoe holds it up
     if (grounded || afloat) push.setAll(0); // a toss ends where it comes down
     if (vy > 0 && moved.y < wish.y * 0.5) vy = 0; // bumped the head
     velocity.set((moved.x - inX) / dt, 0, (moved.z - inZ) / dt); // a climb's way in is not a dash
@@ -450,7 +474,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
 
     trackMotion(motion, dt, {
       moved: Math.hypot(moved.x - inX, moved.z - inZ), vertical: (moved.y - stepped) / dt, // a step up is not a leap
-      turning: (facing - facingBefore - turned) / dt, grounded, afloat, act, slap: slap.progress, diving, low, ride: !!ride,
+      turning: (facing - facingBefore - turned) / dt, grounded, afloat, act, slap: slap.progress, diving, low, ride: !!water, glide: !!land,
     });
   };
 
@@ -482,7 +506,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     get carrying() { return carried?.stick; },
     drop() { if (carried) { release(); act.carrying = false; } },
     toss(x, z, up) {
-      if (ride) return;
+      if (ride?.on === "water") return;
+      ride = undefined; // knocked off the land ride (the Hoverboard stays where it was)
       push.set(x, 0, z);
       vy = up; speed = 0; grounded = false;
     },
@@ -534,6 +559,13 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
       ride = value;
       speed = vy = 0;
       if (value) { afloat = false; under = false; }
+      if (value?.on === "land") { // up onto it: the feet `hover` m over the ground, as its own mover keeps them
+        const ground = physics.ray({ x: feet.x, y: feet.y + 0.5, z: feet.z }, down, 1, SOLIDS);
+        const lift = ground ? Math.max(0, feet.y + 0.5 - ground.distance + value.hover - feet.y) : 0;
+        centre.y += lift; feet.y += lift; before.y += lift;
+        place(body, centre, still);
+        body.setTargetTransform(centre, still);
+      }
     },
     get riding() { return !!ride; },
     get touched() { return keys.touched + camera.touched; },

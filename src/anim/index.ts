@@ -16,12 +16,14 @@
 //   swim     level in the water, hind legs paddle, tail steers; pitched nose down sinking, up rising (motion.vertical)
 //   dive     under the surface (the player's own motion.diving): long and streamlined, the tail driving in strokes
 //   slap     the tail up and struck down (action "none" with a progress), over all of the above but the carry
+//   glide    on the Hoverboard (motion.glide): standing upright, the feet still whatever the speed, the arms out to
+//            balance, the upper body leaning into a turn; the lantern's left paw and the outfit as they are
 //   carry    the right arm holds the stick in front of the chest, over all of the above
 //   reach    the left paw over the shoulder to the backpack (motion.reachBack), over all of the above, left arm only
 //   stare    the head turned to look along motion.stare's aim, raised and cocked, over all of the above, head only
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
 import { BACKPACK, WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
-import type { SwimMotion } from "../player/state.ts";
+import { BOARD_SPEED, type SwimMotion } from "../player/state.ts";
 import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
 import { foot, gait, type FootPlan, type Gait } from "./gait.ts";
@@ -94,6 +96,8 @@ const mixArm = (a: ArmParams, b: ArmParams, t: number) => a.map((x, i) => lerp(x
 const WALK_ARM: ArmParams = [0.55, 0.45, 0, 0.15, 0.55, 0, 0];
 const RAGE_ARM: ArmParams = [0.12, 0.14, 0.12, -0.55, 0.25, 0, 1];
 const STAND_ARM: ArmParams = [0.5, 0, 0, 0.1, 0.3, 0, 0];
+/** Gliding on the Hoverboard: out from the sides to balance, the elbows a little bent. */
+const GLIDE_ARM: ArmParams = [0.15, 0.15, 0, 0.35, 0.3, 0, 0];
 
 // Turning on the spot the feet step round: the stride runs on as if the feet walked PIVOT m per radian turned, and a
 // planted foot turns back against the body as it moves under it, so it stands still on the ground.
@@ -175,6 +179,14 @@ function ground(body: Body, d: Ground, g: Gait): Record<Side, Plant> {
     body.blend(poses.blend(next, blendIn), d.flex, ARMS);
   }
   return feet;
+}
+
+/** Standing on the Hoverboard: the arms out to balance, the upper body leaning into a turn as at the board's speed. */
+function glide(body: Body, turning: number) {
+  const [roll, lead] = intoTurn(BOARD_SPEED, turning); // it stands, so ground() leans as standing: at the board's speed
+  body.turns.spine = mul(axisAngle(Y, 0.6 * roll), mul(axisAngle(Z, 0.4 * lead), body.turns.spine));
+  body.turns.chest = mul(axisAngle(Y, 0.4 * roll), mul(axisAngle(Z, 0.6 * lead), body.turns.chest));
+  for (const [sign, lr] of SIDES) arm(body, sign, lr, ...GLIDE_ARM);
 }
 
 /** In the air: no crouch before, the body follows its vertical speed. Rising it stretches, arms up; falling the
@@ -416,14 +428,15 @@ export const createAnimator: CreateAnimator = (): Animator => {
   const offsets = [0, 0.5, 0.5, 1]; // in strides behind the left hind foot: right hind foot, left and right front paw
   let speed = 0, anger = 0, first = true, wasGrounded = true;
   const turning$ = new Ease(-Infinity, Infinity); // eased, not damped: a damped rate jumps in its first frame
-  const sit$ = new Ease(), crawl$ = new Ease(), bound$ = new Ease(), air$ = new Ease(), leap$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease(), paddle$ = new Ease();
+  const sit$ = new Ease(), crawl$ = new Ease(), bound$ = new Ease(), air$ = new Ease(), leap$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease(), paddle$ = new Ease(), glide$ = new Ease();
   const pitch$ = new Ease(-Infinity, Infinity);
   let shown: Action = "none", progress = 0, vertical = 0;
   return {
     pose(m: SwimMotion, dt: number) {
       dt = clamp(dt, 0, 0.1);
       const set = (from: number, to: number, seconds: number) => (first ? to : damp(from, to, seconds, dt));
-      speed = set(speed, m.speed, 0.08);
+      // gliding it stands on the board however fast it goes: the feet keep no pace (others' beavers too: glide travels)
+      speed = set(speed, m.glide ? 0 : m.speed, 0.08);
       anger = set(anger, clamp(m.anger), 0.3);
       const ease = (weight: Ease, target: number, seconds: number) => (first ? (weight.value = target) : weight.to(target, seconds, dt));
       const turning = ease(turning$, m.turning, 0.25);
@@ -438,7 +451,7 @@ export const createAnimator: CreateAnimator = (): Animator => {
       if (!m.grounded) vertical = m.vertical; // after touchdown the air pose fades out as it was, not as at the top
       const acting = ease(acting$, m.action !== "none" ? 1 : 0, 0.25);
       const sitting = ease(sit$, m.low === "sit" ? 1 : 0, 0.45), crawling = ease(crawl$, m.low === "crawl" ? 1 : 0, 0.35);
-      const pivot = m.grounded ? m.turning : 0, stepping = speed + abs(pivot) * PIVOT;
+      const pivot = m.grounded && !m.glide ? m.turning : 0, stepping = speed + abs(pivot) * PIVOT;
       const g = gait(Math.min(stepping, max(speed, WALK_SPEED)), anger); // pivoting it walks, quicker, never runs
       // running it drops onto all fours and bounds; not with a stick in the paw, low, or afloat (others' beavers too)
       const bounding = ease(bound$, m.low || m.carrying ? 0 : g.run * (1 - clamp(m.swimming)), 0.4);
@@ -496,6 +509,8 @@ export const createAnimator: CreateAnimator = (): Animator => {
       body.reset();
       const standOn = ground(body, { speed, pivot, feet, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
       if (sitting > 0.001) { sit(layer.copy(body), m.time); body.blend(layer, sitting); }
+      const gliding = ease(glide$, m.glide ? 1 : 0, 0.3);
+      if (gliding > 0.001) { glide(layer.copy(body), turning); body.blend(layer, gliding); }
       const fours = max(crawling, bounding);
       if (fours > 0.001) {
         const fourOn = allFours(layer.copy(body), feet, [pawL!, pawR!], g, turning, bounding / (crawling + bounding), ...intoTurn(speed, turning));
