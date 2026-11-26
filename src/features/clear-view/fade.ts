@@ -18,6 +18,10 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import { inside, KEEP_OUT, sight, volume, type Volume, type XYZ } from "./volumes.ts";
 
 const RANGE = 14, REFRESH = 0.5; // m round the beaver, s
+/** Whether a mesh is leaves: a tree's crown, a bush, a reed (the "leaves" material). */
+export const isLeaves = (mesh: AbstractMesh) => mesh.material?.name === "leaves";
+/** What a leaf mesh's see-through stand-in is called after it: its name and this. */
+export const STAND_IN = " faded";
 
 function volumeOf(mesh: AbstractMesh, local: { min: Vector3; max: Vector3 }, world: Matrix): Volume | undefined {
   const h = local.max.subtract(local.min).scaleInPlace(0.5);
@@ -25,10 +29,10 @@ function volumeOf(mesh: AbstractMesh, local: { min: Vector3; max: Vector3 }, wor
   const sizes = axes.map((a) => a.length()).sort((a, b) => a - b);
   if (sizes[0]! < 0.02 || sizes[1]! < 0.08) return; // a stick, a stem: hides no beaver
   return volume(Vector3.TransformCoordinates(local.min.add(local.max).scaleInPlace(0.5), world), axes as [Vector3, Vector3, Vector3],
-    mesh.material?.name === "leaves" && !mesh.name.startsWith("reed"), mesh); // crowns and bushes round; reeds a box the camera may stand in
+    isLeaves(mesh) && !mesh.name.startsWith("reed"), mesh); // crowns and bushes round; reeds a box the camera may stand in
 }
 /** Leaves that may hide the beaver: not the player's own (a hat, a load). */
-const hides = (mesh: AbstractMesh, mine: TransformNode) => mesh.material?.name === "leaves" && !mesh.isDescendantOf(mine);
+const hides = (mesh: AbstractMesh, mine: TransformNode) => isLeaves(mesh) && !mesh.isDescendantOf(mine);
 
 /** The volume of one plain leaf mesh as it stands now (a crown, bush or reed), tagged with it. */
 export function leafVolume(mesh: AbstractMesh) {
@@ -128,13 +132,13 @@ export function fader(scene: Scene) {
 
 function proxyOf(scene: Scene, mesh: AbstractMesh) {
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh as Mesh;
-  const proxy = source.clone(mesh.name + " faded", null, true, false);
+  const proxy = source.clone(mesh.name + STAND_IN, null, true, false);
   proxy.parent = null;
   proxy.rotationQuaternion = new Quaternion();
   proxy.setEnabled(true);
   proxy.isVisible = true;
   if (source.material instanceof ShaderMaterial) { // leaves: their texture on a plain material that can be see-through
-    const leaves = new StandardMaterial(mesh.name + " faded", scene);
+    const leaves = new StandardMaterial(mesh.name + STAND_IN, scene);
     leaves.diffuseTexture = source.material.getActiveTextures()[0] ?? null;
     if (leaves.diffuseTexture) leaves.diffuseTexture.hasAlpha = true;
     leaves.useAlphaFromDiffuseTexture = true;

@@ -1,16 +1,19 @@
 // The Clear view (src/features/clear-view): walking under a clearing tree with the crown between the camera and the
 // beaver, the crown is drawn see-through and the camera keeps its distance; walked clear, the crown comes back whole;
 // a trunk in between still brings the camera in.
+//
+// The feature's geometry (leafVolume, volumes.ts) only plans where to stand and look; the station then plays like a
+// player (walks, turns the camera) and checks the picture: what the last frame drew, and the camera's shown distance.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { GROUND, HEAVY, SOLID } from "../../../physics.ts";
-import { leafVolume } from "../../clear-view/fade.ts";
+import { LOOK_HEIGHT } from "../../../player/camera.ts";
+import { isLeaves, leafVolume, STAND_IN } from "../../clear-view/fade.ts";
 import { bodyPoints, enter, inside, type Volume } from "../../clear-view/volumes.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
-const LOOK_HEIGHT = 0.7; // m above the feet the camera looks from (src/player/camera.ts)
 const SOLIDS = GROUND | SOLID | HEAVY;
 
 export const clearView = (kit: Kit): Station[] => {
@@ -18,15 +21,15 @@ export const clearView = (kit: Kit): Station[] => {
   const scene = stage.scene;
   const dir = (yaw: number, pitch: number) => new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
   /** The leaves of a standing tree's crown: plain meshes or instances above its foot. */
-  const crownOf = (place: Vector3) => scene.meshes.filter((m) => m.material?.name === "leaves" && m.isEnabled() && m.isVisible
-    && !(m instanceof Mesh && m.thinInstanceCount) && !m.name.endsWith(" faded") && (() => {
+  const crownOf = (place: Vector3) => scene.meshes.filter((m) => isLeaves(m) && m.isEnabled() && m.isVisible
+    && !(m instanceof Mesh && m.thinInstanceCount) && !m.name.endsWith(STAND_IN) && (() => {
       const c = m.getBoundingInfo().boundingBox.centerWorld;
       return Math.hypot(c.x - place.x, c.z - place.z) < 2.5 && c.y > place.y + 1.5;
     })());
   /** The see-through stand-in the Clear view draws in place of a leaf mesh, if any. */
   const standIn = (mesh: AbstractMesh) => {
     const at = mesh.getAbsolutePosition();
-    return scene.meshes.find((m) => m.name === mesh.name + " faded" && Vector3.Distance(m.position, at) < 0.05);
+    return scene.meshes.find((m) => m.name === mesh.name + STAND_IN && Vector3.Distance(m.position, at) < 0.05);
   };
   const active = () => { const a = scene.getActiveMeshes(); return a.data.slice(0, a.length); };
   /** Whether the last picture drew the crown below full visibility (itself, or its stand-in). */

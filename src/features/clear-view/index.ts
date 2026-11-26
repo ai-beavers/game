@@ -8,6 +8,12 @@
 //
 // fade.ts finds the leaves near the beaver, decides what to fade (watch) and fades it (fader); volumes.ts is the
 // geometry. The game runs without it.
+//
+// Cost, per frame: a containment test of the camera against each leaf volume within 14 m of the feet (tens). Every
+// 0.5 s a pass over scene.meshes for those volumes; every 0.25 s a sight test of the beaver's body points against
+// them, with a physics ray per point. A see-through stand-in (a clone and a plain material) only while a mesh is faded,
+// a handful at a time. The same at every settings.quality, low too: it decides whether the player sees their beaver,
+// which no quality may take away, and its cost is small beside a frame's drawing.
 import type { CreateFeature } from "../../game.ts";
 import { GROUND, HEAVY, SOLID } from "../../physics.ts";
 import { fader, occluders, watch } from "./fade.ts";
@@ -16,7 +22,8 @@ import { bodyPoints, enter, inside, KEEP_OUT, type Volume, type XYZ } from "./vo
 export const create: CreateFeature = (game) => {
   const { stage, player } = game;
   // Taken now, before the first picture: the backdrop's thin instances are all there (fade.ts: occluders).
-  const fade = fader(stage.scene), near = occluders(stage.scene, player.node, fade.has), look = watch();
+  const fade = fader(stage.scene), near = occluders(stage.scene, player.node, fade.has);
+  let look = watch();
   let volumes: Volume[] = [];
   // The bank's bushes and far trees are thin instances, which cannot be faded one at a time: the camera keeps out of
   // those (they stand behind the bank, so this rarely moves it). Every other leaf it may stand in; that one fades.
@@ -38,7 +45,9 @@ export const create: CreateFeature = (game) => {
       if (stage.paused) return;
       volumes = near(player.feet, dt);
       // Through the beaver's eyes nothing new fades; what is faded eases back.
+      // Back behind it, the beaver must be hidden 0.5 s anew before anything fades.
       if (player.camera.view === "third-person") fade.want(look(dt, stage.camera.position, bodyPoints(player.feet), volumes, solid));
+      else look = watch();
       fade.update(dt);
     },
   };
