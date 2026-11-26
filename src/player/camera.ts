@@ -23,7 +23,7 @@
 //   camera.zoom(scale)                distance times scale, kept in 2 … 8 m (eased in the picture)
 //   camera.touched                    rises with every turn, zoom and press on the picture by the player
 //   camera.invertY = true             mouse drag up and down turned round (settings.invertY; the controls feature sets it)
-//   camera.room                       how far it may stand along a way, for things without a collider (the live tour's).
+//   camera.room                       how far it may stand along a way, for things without a collider (the Clear view's: the bank's backdrop leaves).
 //   camera.view                       "third-person" or "first-person"; V switches it, except while paused (a menu,
 //                                     photo mode).
 //   camera.eyes                       where the beaver sees from (Beaver.eyes), for the first-person view.

@@ -24,18 +24,17 @@
 //
 // Where the stations live: src/features/tour/stations/, one file per feature or activity, each a function that takes
 // the Kit (kit.ts: walkTo, reach, until, expect, after, the dam work, ...) and returns its Station[] (live.ts). This
-// file holds the round loop, the live clear view and the label (live: the beaver's reason for what it does, live.ts), and STATIONS below puts the files together in order. A
+// file holds the round loop and the label (live: the beaver's reason for what it does, live.ts), and STATIONS below puts the files together in order. A
 // station for a feature that has a file goes into that file, where it belongs in the order; a new feature adds one
 // file and one entry in STATIONS. Live, a station with an activity joins that activity; one without is its own.
 import { Overlay, onViewport, box, hudLayout } from "../hud/overlay.ts";
 import { fitType } from "../hud/style.ts";
 import type { CreateFeature } from "../../game.ts";
-import { bodyPoints, enter, inside, KEEP_OUT, liveDirector, reason, sight, type Moment, type Volume, type XYZ } from "./live.ts";
-import { fader, occluders } from "./clearview.ts";
-import { GROUND, HEAVY, SOLID } from "../../physics.ts";
+import { liveDirector, reason, type Moment } from "./live.ts";
 import { CACHE, LODGE, SLOTS, STICKS } from "../build/rules.ts";
 import { createKit, Skip } from "./kit.ts";
 import { movement } from "./stations/movement.ts";
+import { clearView } from "./stations/clear-view.ts";
 import { dam } from "./stations/dam.ts";
 import { pondPatrol } from "./stations/pond.ts";
 import { anger } from "./stations/anger.ts";
@@ -66,11 +65,10 @@ import { bear } from "./stations/bear.ts";
 import { riverKit } from "./stations/river-kit.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, runOnAllFours, dam, levels, trading, hotbar, baking, crafting, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, racing, flag, mrsBeaver, reading, mushrooms, oldBeaver, meeting, bear, riverKit, stare, skyWatch, hud, controls, views, firstSteps];
+const STATIONS = [movement, clearView, runOnAllFours, dam, levels, trading, hotbar, baking, crafting, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, racing, flag, mrsBeaver, reading, mushrooms, oldBeaver, meeting, bear, riverKit, stare, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)
-const HIDDEN = 0.5; // s the beaver is hidden live before what hides it fades (a trunk passing by is no reason)
 const DUCKS_BACK = 120; // s after animals were startled until the ducks count as back on the pond
 
 export const create: CreateFeature = (game) => {
@@ -94,24 +92,8 @@ export const create: CreateFeature = (game) => {
     return station;
   }) : undefined;
   const live = kit.live, shown: Record<string, number> = {};
-  // Live, the camera is the player's own (src/player/camera.ts), behind the beaver as someone playing holds it. What can
-  // hide the beaver without a collider the camera sees (clearview.ts), taken before the first picture: the camera
-  // stays out of the crowns and bushes among them, and what hides the beaver for longer than HIDDEN s is faded.
-  const near = live ? occluders(stage.scene, player.node) : undefined, fade = fader(stage.scene);
-  let volumes: Volume[] = [], looked = 0, hidden = 0;
-  /** How far (0 … 1) the camera gets from `from` towards `to` before a crown or bush (with room to spare). */
-  const room = (from: XYZ, to: XYZ) => {
-    let t = Infinity;
-    for (const v of volumes) if (v.round && !inside(v, from)) t = Math.min(t, enter(v, from, to, KEEP_OUT));
-    return Math.min(1, t);
-  };
-  if (live) player.camera.room = (from, direction, distance) => Math.max(0.05, room(from, from.add(direction.scale(distance))) * distance);
-  // The ground, trunks, rocks, fallen trees, crates and logs in between (not the beaver, nor sticks).
-  const solid = (from: XYZ, to: XYZ) => {
-    const d = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
-    const dir = { x: (to.x - from.x) / d, y: (to.y - from.y) / d, z: (to.z - from.z) / d };
-    return d > 0.15 && !!stage.physics.ray(from, dir, d - 0.1, GROUND | SOLID | HEAVY);
-  };
+  // Live, the camera is the player's own (src/player/camera.ts), behind the beaver as someone playing holds it, with
+  // the player's own Clear view (src/features/clear-view) for the leaves in the way.
 
   // ---- on screen: where the tour is; live, a caption big enough for a 1080p stream, top centre, clear of the
   // corners and the bottom third where stream overlays (webcam, chat, alerts) usually sit ----
@@ -239,17 +221,6 @@ export const create: CreateFeature = (game) => {
       if (stage.paused && !document.body.classList.contains("photo")) return;
       if (!stage.paused) tour.clock = clock += dt;
       if (live && tour.activity === "Dam work") label.text = caption();
-      if (live && !stage.paused) {
-        // Live: four times a second the tour looks whether the beaver is seen; what hides it for longer than HIDDEN s fades.
-        volumes = near!(player.feet, dt);
-        if ((looked += dt) >= 0.25) {
-          const now = sight(stage.camera.position, bodyPoints(player.feet), volumes, solid);
-          hidden = now.seen ? 0 : hidden + looked;
-          if (hidden >= HIDDEN) fade.want(now.by);
-          looked = 0;
-        }
-        fade.update(dt);
-      }
       if (want.to && !stage.paused) {
         // The camera swings round behind the beaver while it goes somewhere, so the way ahead is in the picture.
         const behind = player.facing + Math.PI, turn = Math.atan2(Math.sin(behind - player.camera.yaw), Math.cos(behind - player.camera.yaw));

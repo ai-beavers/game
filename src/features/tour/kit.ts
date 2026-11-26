@@ -232,7 +232,7 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     want.act = true;
     try {
       // The Bite while it deepens, shallow and then deep: drawn, outwards, its rims over the bark's clip, the bark
-      // around it whole and opaque (also with the live camera's clear view fading what is in the way).
+      // around it whole and opaque (also with the Clear view fading the leaves in the way).
       for (const [depth, name] of BITES) {
         await until(() => falls() || (build()?.views.get(i)?.biteReport().depth ?? 0) >= depth, 15, `gnawed tree ${i} for 15 s, its Bite never got ${name}`);
         expect(!falls(), `tree ${i} fell before its Bite was seen ${name}`);

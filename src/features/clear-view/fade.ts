@@ -1,10 +1,11 @@
-// What can hide the beaver from the live camera, or swallow the camera, though the camera's cast does not see it:
-// crowns, bushes, reeds, crates, logs, rocks, the lodge; each mesh (or thin instance) as a turned box, leaves as the
-// ellipsoid in it (live.ts: Volume). And the fade for when the beaver is hidden: what is in the way goes
-// see-through, eased, for as long as it is in the way, and comes back after.
+// The Clear view (GLOSSARY.md): the leaves that hide the beaver from the player's camera, or that the camera stands in,
+// go see-through, eased, for as long as they are in the way, and come back after. Leaves only: tree crowns, bushes and
+// reeds (the "leaves" material), each mesh (or thin instance) as a turned box, crowns and bushes as the ellipsoid in it
+// (volumes.ts). Trunks, rocks, crates, logs, the lodge have colliders: the camera's cast brings it in for those.
 //
 //   const near = occluders(scene, player.node);   at the start, before the first picture: the thin instances are all there
 //   near(feet, dt)                                the volumes within RANGE m of the feet, looked at anew every REFRESH s
+//   const look = watch(); look(dt, eye, points, volumes, solid)   what to fade now
 //   const fade = fader(scene); fade.want(volumes); fade.update(dt)
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -14,10 +15,8 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.j
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { volume, type Volume } from "./live.ts";
+import { inside, KEEP_OUT, sight, volume, type Volume, type XYZ } from "./volumes.ts";
 
-// Materials of things that hide (props.glb's, src/world); not the ground, water, grass, sky, animals or effects.
-const HIDES = new Set(["leaves", "wood", "end_grain", "stone", "plain", "bark", "birch_bark"]);
 const RANGE = 14, REFRESH = 0.5; // m round the beaver, s
 
 function volumeOf(mesh: AbstractMesh, local: { min: Vector3; max: Vector3 }, world: Matrix): Volume | undefined {
@@ -28,14 +27,17 @@ function volumeOf(mesh: AbstractMesh, local: { min: Vector3; max: Vector3 }, wor
   return volume(Vector3.TransformCoordinates(local.min.add(local.max).scaleInPlace(0.5), world), axes as [Vector3, Vector3, Vector3],
     mesh.material?.name === "leaves" && !mesh.name.startsWith("reed"), mesh); // crowns and bushes round; reeds a box the camera may stand in
 }
-/** A trunk, never faded: a tree's wood, also the bark a tree view clips above and below its Bite (src/features/build/
- *  tree.ts names those "cut " + the part's name) and the Bite's fresh wood. */
-export const isTrunk = (name: string) => /^(cut )?tree_\d+_wood/.test(name) || name === "gnawed wood";
-const hides = (mesh: AbstractMesh, mine: TransformNode) => (HIDES.has(mesh.material?.name ?? "") || mesh.name === "lodge mound")
-  && !isTrunk(mesh.name) // trunks have colliders (the camera's cast, and sight's solid)
-  && !mesh.isDescendantOf(mine);
+/** Leaves that may hide the beaver: not the player's own (a hat, a load). */
+const hides = (mesh: AbstractMesh, mine: TransformNode) => mesh.material?.name === "leaves" && !mesh.isDescendantOf(mine);
 
-export function occluders(scene: Scene, mine: TransformNode) {
+/** The volume of one plain leaf mesh as it stands now (a crown, bush or reed), tagged with it. */
+export function leafVolume(mesh: AbstractMesh) {
+  const box = mesh.getBoundingInfo().boundingBox;
+  return volumeOf(mesh, { min: box.minimum, max: box.maximum }, mesh.computeWorldMatrix());
+}
+
+/** faded: whether the fader hides a mesh now (its stand-in drawn instead), so it stays among the volumes. */
+export function occluders(scene: Scene, mine: TransformNode, faded: (mesh: AbstractMesh) => boolean = () => false) {
   // Bushes, reeds and far trees are thin instances that never move (src/world: scatterBackdrop); taken once, whole,
   // before the backdrop is first culled to the picture.
   const still: Volume[] = [];
@@ -56,11 +58,29 @@ export function occluders(scene: Scene, mine: TransformNode) {
     age = 0;
     near = still.filter((v) => reach(v, feet));
     for (const mesh of scene.meshes) {
-      if ((mesh instanceof Mesh && mesh.thinInstanceCount) || !mesh.isEnabled() || !mesh.isVisible || !mesh.getTotalVertices() || !hides(mesh, mine)) continue;
-      const box = mesh.getBoundingInfo().boundingBox, v = volumeOf(mesh, { min: box.minimum, max: box.maximum }, mesh.computeWorldMatrix());
+      if ((mesh instanceof Mesh && mesh.thinInstanceCount) || !mesh.isEnabled() || (!mesh.isVisible && !faded(mesh)) || !mesh.getTotalVertices() || !hides(mesh, mine)) continue;
+      const v = leafVolume(mesh);
       if (v && reach(v, feet)) near.push(v);
     }
     return near;
+  };
+}
+
+const HIDDEN = 0.5, LOOK = 0.25; // s the beaver is hidden before what hides it fades (a crown brushing past is no reason); s between looks
+
+/** Looks whether the beaver is seen, LOOK s apart: hidden for HIDDEN s, the leaves in the way are to fade; the leaves
+ *  the camera stands in at once, every frame. Returns the volumes to fade now (fader.want). solid: whether a collider
+ *  is in between (sight). */
+export function watch() {
+  let looked = 0, hidden = 0;
+  return (dt: number, eye: XYZ, points: XYZ[], volumes: Volume[], solid?: (from: XYZ, to: XYZ) => boolean): Volume[] => {
+    const wanted = volumes.filter((v) => inside(v, eye, v.round ? KEEP_OUT : 0));
+    if ((looked += dt) < LOOK) return wanted;
+    const now = sight(eye, points, volumes, solid);
+    hidden = now.seen ? 0 : hidden + looked;
+    looked = 0;
+    if (hidden >= HIDDEN) for (const v of now.by) if (!wanted.includes(v)) wanted.push(v);
+    return wanted;
   };
 }
 
@@ -72,6 +92,8 @@ export function fader(scene: Scene) {
   const faded = new Map<AbstractMesh, { level: number; until: number; proxy?: Mesh }>();
   let clock = 0;
   return {
+    /** Whether the mesh is faded now, or easing back. */
+    has: (mesh: AbstractMesh) => faded.has(mesh),
     want(volumes: Iterable<Volume>) {
       for (const v of volumes) {
         const mesh = v.tag as AbstractMesh | undefined;
