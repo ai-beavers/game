@@ -69,7 +69,7 @@ export interface Kit {
   wait(seconds: number): Promise<void>;
   /** Until done() is true; throws why (or what why() writes then) after limit s. */
   until(done: () => boolean, limit: number, why: string | (() => string)): Promise<void>;
-  /** Stands until the beaver has caught its breath (its stamina full), as a player does before a run it means to make. */
+  /** Stands until the beaver's stamina is full again, as a player does before a run it means to make. */
   rest(): Promise<void>;
   /** Holds a key the tour's input has for hold s. */
   tap(key: "act" | "jump" | "slap", hold?: number): Promise<void>;

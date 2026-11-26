@@ -30,7 +30,7 @@ export const runOnAllFours = (kit: Kit): Station[] => {
   return [
     ["Run on all fours", async () => {
       if (player.afloat) await walkTo(world.spawn.x, world.spawn.z, { arrived: () => !player.afloat, limit: 40 });
-      await rest(); // a run it means to make, out of breath from the last one or not
+      await rest(); // a run it means to make, on a full stamina whether the last one used it up or not
       expect(!player.afloat && player.motion.grounded, "wanted to start on land, still afloat or in the air");
       const head = above("head"), paw = above("hand_L");
       let low = Infinity, pawLow = Infinity, done = false;
@@ -119,7 +119,7 @@ export const runOnAllFours = (kit: Kit): Station[] => {
         expect(rose > resting * (1 + GNAW_RATE) / 2, `gnawing ${took.toFixed(2)} s brought back ${rose.toFixed(3)} of its stamina, resting would ${resting.toFixed(3)}`);
         if (live) await wait(1.5); // a moment more to be seen
       } finally { want.act = false; }
-      // Caught its breath: the bar goes again.
+      // Its stamina full again: the bar goes.
       await rest();
       await until(() => !barShown(), 4, "stamina full again, its bar is still shown");
     }, "Around the clearing"],

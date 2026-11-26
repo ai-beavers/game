@@ -1,6 +1,6 @@
 // The stamina bar (GLOSSARY.md): a thin bar just above the hotbar (style.ts layout.stamina) with how much running the
 // player's beaver has left (player.stamina, src/player/stamina.ts). Hidden while stamina is full; it fades in as soon
-// as it drops and out again once it is full. Tired (player.tired) it turns a dull bark colour and its edge breathes
+// as it drops and out again once it is full. Tired (player.tired) it turns a dull bark colour and its edge pulses
 // slowly, so it is clear why the beaver walks. It has no name and no number: it never reads as the Bear's Health bar.
 //
 // Babylon GUI on stage.hud through Overlay; not interactive. Its native counterpart tells screen readers the stamina
@@ -12,7 +12,8 @@ import { PANEL, STAMINA, TIRED, TRACK, type Box } from "../hud/style.ts";
 
 const FULL = 0.999; // stamina at which the bar counts as full
 const IN = 6, OUT = 1.5; // 1/s: how fast it fades in, and out once full
-const BREATHE = 1.6; // s for one slow pulse of the edge while tired
+const PULSE = 1.6; // s for one slow pulse of the edge while tired
+const EDGE = [1, 3, 5].map((i) => parseInt(TIRED.slice(i, i + 2), 16)).join(","); // TIRED as r,g,b, for the pulsing edge
 
 export const create: CreateFeature = ({ stage, player }) => {
   const overlay = new Overlay(stage, "stamina-bar", false, 3);
@@ -50,7 +51,7 @@ export const create: CreateFeature = ({ stage, player }) => {
         if (!tired) back.color = "transparent";
       }
       time = tired ? time + dt : 0;
-      if (tired) back.color = `rgba(176,154,128,${(0.45 + 0.45 * Math.sin(time * 2 * Math.PI / BREATHE)).toFixed(2)})`;
+      if (tired) back.color = `rgba(${EDGE},${(0.45 + 0.45 * Math.sin(time * 2 * Math.PI / PULSE)).toFixed(2)})`;
       overlay.group.alpha = alpha;
       const tenths = Math.round(level * 10);
       if (tenths !== said) { said = tenths; overlay.dom.setAttribute("aria-label", `stamina ${tenths * 10}%${player.tired ? ", tired" : ""}`); }
