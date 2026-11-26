@@ -68,7 +68,9 @@ const MOTION: [keyof Motion, number, number][] = [
 /** How many fields a page from before the Hoverboard sends: all but "glide", which it never sends (no glide). */
 const BEFORE_GLIDE = MOTION.length - 1;
 
-const LOW_AT = MOTION.findIndex(([key]) => key === "low"), OFF_AT = MOTION.findIndex(([key]) => key === "lanternOff"), GLIDE_AT = MOTION.findIndex(([key]) => key === "glide");
+/** Where the lantern's switch (Motion.lanternOff) sits in a packed Motion. */
+export const OFF_AT = MOTION.findIndex(([key]) => key === "lanternOff");
+const LOW_AT = MOTION.findIndex(([key]) => key === "low"), GLIDE_AT = MOTION.findIndex(([key]) => key === "glide");
 
 export function packMotion(m: Motion): number[] {
   return MOTION.map(([key]) => {

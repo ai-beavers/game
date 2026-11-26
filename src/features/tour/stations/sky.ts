@@ -2,7 +2,7 @@
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { deerHours, type Deer } from "../../life/brain.ts";
-import { packMotion } from "../../net/protocol.ts";
+import { OFF_AT, packMotion } from "../../net/protocol.ts";
 import { dayAt } from "../../sky/clock.ts";
 import { hourAt } from "../../sky/day.ts";
 import { skip, type Kit } from "../kit.ts";
@@ -122,7 +122,7 @@ export const skyWatch = (kit: Kit): Station[] => {
       const light = () => scene.getLightByName("lantern-light") ?? skip("no lantern light");
       const glass = () => (scene.getMaterialByName("lantern-glass") as StandardMaterial | null)?.emissiveColor ?? skip("no lantern glass");
       const glows = () => glass().r > 0.05, shines = () => light().intensity > 0;
-      const sent = () => packMotion(player.motion).at(-1); // the lantern's switch, last in what the others get
+      const sent = () => packMotion(player.motion)[OFF_AT]; // the lantern's switch, in what the others get
       const hour = s.hour, running = s.running;
       try {
         if (!live) { s.running = false; s.setWeather("fair"); s.setHour(23); }
