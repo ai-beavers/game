@@ -12,7 +12,8 @@
 // and boardOff { outcome: "step" | "knocked" }.
 //
 // Debug, for bun shot --eval (window.hoverboard): hoverboard.place (its middle and heading now) · hoverboard.home
-// (where it lies after a reload) · hoverboard.riding · hoverboard.at() (stands beside it, empty-pawed).
+// (where it lies after a reload) · hoverboard.hover (m its top floats over the ground) · hoverboard.riding ·
+// hoverboard.at() (stands beside it, empty-pawed).
 import { Quaternion } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -31,6 +32,12 @@ const ON: Offer = { action: "use", text: "Step on" }, OFF: Offer = { action: "us
 /** m: the solid box over the board while it lies there, to its top. Higher than the beaver steps up (0.15 m), so it
  *  walks round it, not onto it. */
 const SOLID_TOP = 0.3;
+/** m the feet are set down over the ground stepping on (the ride lifts them to HOVER) and stepping off: clear of it. */
+const SET_DOWN = 0.02, STEP_DOWN = 0.05;
+/** m over the ground the beaver's capsule is tried for room beside the board stepping off: about its middle. */
+const ROOM = 0.35;
+/** The board's bob lying there: m up and down, rad/s. */
+const BOB = 0.012, BOB_RATE = 2.1;
 
 export const create: CreateFeature = (game) => {
   const { stage, world, player, events } = game;
@@ -69,7 +76,7 @@ export const create: CreateFeature = (game) => {
   const stepOn = () => {
     enable(body, false);
     const ground = world.heightAt(left.x, left.z);
-    player.teleport(left.x, ground + 0.02, left.z, left.heading);
+    player.teleport(left.x, ground + SET_DOWN, left.z, left.heading);
     player.ride({ on: "land", hover: HOVER, speed: BOARD_SPEED });
     riding = true;
     events.emit("boardOn", { place: player.feet.clone() });
@@ -86,10 +93,10 @@ export const create: CreateFeature = (game) => {
     follow();
     // The side the player looks to: the camera's way (its yaw looks from +z round to -z, see camera.gaze).
     const look = player.camera.yaw + Math.PI;
-    const clear = (x: number, z: number) => !stage.physics.overlaps(body.shape!, Quaternion.Identity(), { x, y: world.heightAt(x, z) + 0.35, z }, SOLID);
+    const clear = (x: number, z: number) => !stage.physics.overlaps(body.shape!, Quaternion.Identity(), { x, y: world.heightAt(x, z) + ROOM, z }, SOLID);
     const out = stepOff(left, look, world.heightAt, level(), clear);
     player.ride(undefined);
-    player.teleport(out.x, world.heightAt(out.x, out.z) + 0.05, out.z, player.facing);
+    player.teleport(out.x, world.heightAt(out.x, out.z) + STEP_DOWN, out.z, player.facing);
     leave();
     events.emit("boardOff", { place: player.feet.clone(), outcome: "step" });
   };
@@ -99,6 +106,8 @@ export const create: CreateFeature = (game) => {
       get place() { return { ...left }; },
       /** Where it lies after a reload. */
       home,
+      /** m its top floats over the ground, and the rider's feet with it. */
+      hover: HOVER,
       get riding() { return riding; },
       /** Stands beside it, on its left, facing along it, with empty paws. */
       at() {
@@ -127,7 +136,7 @@ export const create: CreateFeature = (game) => {
     },
     update(dt) {
       time += stage.paused ? 0 : dt;
-      if (!riding) { board.position.y = world.heightAt(left.x, left.z) + HOVER + 0.012 * Math.sin(time * 2.1); return; } // bobbing a little
+      if (!riding) { board.position.y = world.heightAt(left.x, left.z) + HOVER + BOB * Math.sin(time * BOB_RATE); return; } // bobbing a little
       // Under the beaver, at the picture's place between two steps: the plank's top at its feet.
       const node = player.node;
       board.position.set(node.position.x, node.position.y, node.position.z);

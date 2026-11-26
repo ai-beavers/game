@@ -3,17 +3,18 @@
 // straight at the pond it stops at the shore on dry ground. E steps it off beside the board, which stays there.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { RUN_SPEED } from "../../../contracts.ts";
+import { PATH } from "../../../world/terrain.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 /** What the hoverboard feature puts on window for tools (src/features/hoverboard/index.ts); only the part the tour needs. */
-interface BoardDebug { place: { x: number; z: number; heading: number }; home: { x: number; z: number }; riding: boolean }
+interface BoardDebug { place: { x: number; z: number; heading: number }; home: { x: number; z: number }; hover: number; riding: boolean }
 
-/** m the feet float over the ground on it (src/features/hoverboard/place.ts HOVER), and how far off that they may be:
- *  the ground's colliders are finer than heightAt. */
-const HOVER = 0.1, OFF = 0.07;
-/** The worn path, m: its south end, and a way up it towards the building site (src/world/terrain.ts PATH). */
-const SOUTH = new Vector3(-1.4, 0, -7), NORTH = new Vector3(-1.3, 0, 1.5);
+/** m the feet may be off the hover height over the ground: the ground's colliders are finer than heightAt. */
+const OFF = 0.07;
+/** m of the path to glide along, at least: up it to the building site, then back down to its south end. */
+const ALONG = 12;
+const [SOUTH, NORTH] = [PATH[0], PATH[3]].map(([x, z]) => new Vector3(x, 0, z)) as [Vector3, Vector3];
 
 export const hoverboarding = (kit: Kit): Station[] => {
   const { player, world, want, frame, until, tap, expect, after, last, pond, walkTo, reach } = kit;
@@ -33,10 +34,10 @@ export const hoverboarding = (kit: Kit): Station[] => {
       await until(on, 2, "pressed E at the hoverboard, the beaver never stepped on");
       expect(player.riding && board.riding, "stepped onto the hoverboard, but the player does not ride");
       expect(player.offer()?.text === "Step off", `on the hoverboard E would "${player.offer()?.text}", not "Step off"`);
-      // 3. Along the path, south end first, then north up it; 4. straight at the pond, until it stops at the shore.
+      // 3. Along the path, up it to the building site, then back down to its south end; 4. straight at the pond, until it stops at the shore.
       const wet = after("enterWater"), knocked = after("boardOff");
-      let low = "", top = 0, hover = [Infinity, -Infinity], glided = 0, t = 0, still = 0;
-      const legs: [Vector3 | undefined, string][] = [[SOUTH, "path"], [NORTH, "path"], [pond ? new Vector3(pond.x, 0, pond.z) : undefined, "pond"]];
+      let low = "", top = 0, hover = [Infinity, -Infinity], along = 0, t = 0, still = 0;
+      const legs: [Vector3 | undefined, string][] = [[NORTH, "path"], [SOUTH, "path"], [pond ? new Vector3(pond.x, 0, pond.z) : undefined, "pond"]];
       try {
         for (const [to, leg] of legs) {
           if (!to) break;
@@ -47,7 +48,7 @@ export const hoverboarding = (kit: Kit): Station[] => {
             expect(t < 40, `glided for 40 s, still at ${player.feet.x.toFixed(1)}, ${player.feet.z.toFixed(1)}`);
             expect(player.riding && !knocked(), "fell off the hoverboard on the way");
             const step = Math.hypot(player.feet.x - was.x, player.feet.z - was.z);
-            glided += step;
+            if (leg === "path") along += step;
             if (dt > 0) top = Math.max(top, step / dt);
             const over = player.feet.y - world.heightAt(player.feet.x, player.feet.z);
             if (over < hover[0]!) low = `${player.feet.x.toFixed(2)}, ${player.feet.z.toFixed(2)} at ${t.toFixed(2)} s on the ${leg}, ${player.motion.grounded ? "on" : "off"} the ground`;
@@ -59,9 +60,9 @@ export const hoverboarding = (kit: Kit): Station[] => {
           if (leg === "path") expect(!wet(), "went into the water gliding along the path");
         }
       } finally { want.to = undefined; }
-      expect(glided > 10, `glided ${glided.toFixed(1)} m, not along the path`);
+      expect(along > ALONG, `glided ${along.toFixed(1)} m along the path, not about 15`);
       expect(top > RUN_SPEED, `glided at ${top.toFixed(2)} m/s at most, no faster than running (${RUN_SPEED} m/s)`);
-      expect(hover[0]! > HOVER - OFF && hover[1]! < HOVER + OFF, `the feet were ${hover[0]!.toFixed(2)} … ${hover[1]!.toFixed(2)} m over the ground (lowest at ${low}), not about ${HOVER}`);
+      expect(hover[0]! > board.hover - OFF && hover[1]! < board.hover + OFF, `the feet were ${hover[0]!.toFixed(2)} … ${hover[1]!.toFixed(2)} m over the ground (lowest at ${low}), not about ${board.hover}`);
       if (pond) {
         const level = player.waterLevel ?? -Infinity, ahead = { x: player.feet.x + Math.sin(player.facing), z: player.feet.z + Math.cos(player.facing) };
         expect(!wet() && !player.afloat, "glided into the pond: the hoverboard went over the water");

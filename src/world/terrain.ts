@@ -115,7 +115,7 @@ export const slopeAt = (x: number, z: number) => clearing.slopeAt(x, z);
 
 /** The worn path, as a line on the plan, m: from behind the spawn (place.ts SPAWN) to the building site, east of Mrs.
  *  Beaver's waiting spot and the crates; world.test.ts holds it to those places. */
-const PATH = [[-1.4, -6.5], [-1.5, -3], [-1.3, 1.2], [-0.7, 3.4]] as const;
+export const PATH = [[-1.4, -6.5], [-1.5, -3], [-1.3, 1.2], [-0.7, 3.4]] as const;
 /** 1 on the path's trodden middle (about 1.1 m wide), 0 in the meadow beside it; the edge wanders. */
 export function pathAt(x: number, z: number) {
   const px = x + noise(x * 0.35 + 50, z * 0.35) * 0.4, pz = z + noise(x * 0.35, z * 0.35 + 90) * 0.4;

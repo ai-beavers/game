@@ -23,7 +23,7 @@
 //   stare    the head turned to look along motion.stare's aim, raised and cocked, over all of the above, head only
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
 import { BACKPACK, WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
-import type { SwimMotion } from "../player/state.ts";
+import { BOARD_SPEED, type SwimMotion } from "../player/state.ts";
 import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
 import { foot, gait, type FootPlan, type Gait } from "./gait.ts";
@@ -98,8 +98,6 @@ const RAGE_ARM: ArmParams = [0.12, 0.14, 0.12, -0.55, 0.25, 0, 1];
 const STAND_ARM: ArmParams = [0.5, 0, 0, 0.1, 0.3, 0, 0];
 /** Gliding on the Hoverboard: out from the sides to balance, the elbows a little bent. */
 const GLIDE_ARM: ArmParams = [0.15, 0.15, 0, 0.35, 0.3, 0, 0];
-/** m/s the lean into a turn is reckoned at gliding (it stands, so ground() leans as standing does): the board's speed. */
-const GLIDE_LEAN = 4;
 
 // Turning on the spot the feet step round: the stride runs on as if the feet walked PIVOT m per radian turned, and a
 // planted foot turns back against the body as it moves under it, so it stands still on the ground.
@@ -185,7 +183,7 @@ function ground(body: Body, d: Ground, g: Gait): Record<Side, Plant> {
 
 /** Standing on the Hoverboard: the arms out to balance, the upper body leaning into a turn as at the board's speed. */
 function glide(body: Body, turning: number) {
-  const [roll, lead] = intoTurn(GLIDE_LEAN, turning);
+  const [roll, lead] = intoTurn(BOARD_SPEED, turning); // it stands, so ground() leans as standing: at the board's speed
   body.turns.spine = mul(axisAngle(Y, 0.6 * roll), mul(axisAngle(Z, 0.4 * lead), body.turns.spine));
   body.turns.chest = mul(axisAngle(Y, 0.4 * roll), mul(axisAngle(Z, 0.6 * lead), body.turns.chest));
   for (const [sign, lr] of SIDES) arm(body, sign, lr, ...GLIDE_ARM);
