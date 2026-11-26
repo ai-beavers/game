@@ -54,10 +54,10 @@ src/anim/          how it moves: Motion in, Pose out, pure maths
 src/player/        input, the capsule and its mover, camera
 src/world/         ground, pond, sky, things to carry
 src/props/         trees, rocks, sticks: loads assets/props.glb
-src/features/      dam building, the trading post, the shop, the canoe, its race, the Hoverboard, multiplayer, controls, HUD, wildlife, the bear, the river kit, weather, audio, effects, photo mode and tour
+src/features/      dam building, the trading post, the shop, the canoe, its race, the Hoverboard, multiplayer, controls, HUD, wildlife, the river kit, weather, audio, effects, photo mode and tour
 server.ts          the game and its multiplayer server on Bun, for a local network
 worker.ts          the same multiplayer on Cloudflare: a Worker and a Durable Object
-assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), bear.glb (from tools/blender/bear.py), kit.glb (from tools/comfyui and tools/blender/kit.py), logo.png
+assets/            beaver.glb (from tools/blender/build.py), props.glb (from tools/blender/props.py), kit.glb (from tools/comfyui and tools/blender/kit.py), logo.png
 tools/blender/     the models, built in Blender from code
 tools/comfyui/     animal models from pictures: the ComfyUI workflow and how to run it
 ```
@@ -70,11 +70,9 @@ fixed steps of 1/60 s. `?debug` in the address draws the colliders.
 Models are rebuilt with Blender, headless:
 `/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/build.py -- assets/beaver.glb`
 
-`/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/bear.py -- assets/bear.glb`
-
 ## Licence
 
-MIT (`LICENSE`) for the code and for the models. `beaver.glb`, `props.glb` and `bear.glb` are built from code
+MIT (`LICENSE`) for the code and for the models. `beaver.glb` and `props.glb` are built from code
 (`tools/blender/`). `kit.glb` is made from a picture that ChatGPT drew for us, with the open models that
 `tools/comfyui/README.md` names.
 

@@ -1,6 +1,6 @@
 // The real player on the real ground colliders, swimming towards the shore: it climbs out anywhere along it, at the
 // low pond, half risen and full; the lodge and a rock on the shore still stop it, and swimming along the shore it
-// stays in the water. And a toss over the meadow. Only what a player sees: afloat or on foot, and where. bun test src/player/shore
+// stays in the water. Only what a player sees: afloat or on foot, and where. bun test src/player/shore
 import { beforeAll, describe, expect, test } from "bun:test";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
@@ -10,10 +10,8 @@ import { createPhysics, hull, loadHavok, type Physics } from "../physics.ts";
 import type { Stage } from "../engine.ts";
 import { groundAt, groundColliders, POND, WATER_LEVEL } from "../world/terrain.ts";
 import { POND_RISE } from "../features/build/rules.ts";
-import { TOSS_SPEED, TOSS_UP } from "../features/bear/rules.ts";
 import { createPlayerControls, type PlayerControls } from "./index.ts";
 import type { Input } from "./input.ts";
-import { SLAP_HIT, SLAP_TIME } from "./state.ts";
 
 const dt = 1 / 60;
 const LOW = WATER_LEVEL - POND_RISE, FULL = WATER_LEVEL;
@@ -143,75 +141,5 @@ describe("swimming to the shore", () => {
       }
     }
     expect(left).toEqual([]);
-  });
-});
-
-// A toss (src/features/bear: the Bear's Swipe) on the same ground: the beaver flies in a low arc and stands again.
-describe("tossed over the meadow", () => {
-  test("it flies a few metres the way it was thrown, lands on its feet and walks on", () => {
-    const w = setUp(FULL), x = 0, z = 24;
-    w.player.teleport(x, groundAt(x, z), z);
-    w.run(0.5);
-    w.player.toss(TOSS_SPEED, 0, TOSS_UP);
-    let top = 0, air = 0;
-    w.run(2, undefined, () => { top = Math.max(top, w.player.feet.y - groundAt(w.player.feet.x, w.player.feet.z)); air += dt; return air > 0.1 && w.player.motion.grounded; });
-    expect(w.player.motion.grounded).toBe(true);
-    expect(w.player.feet.x - x).toBeGreaterThan(2);
-    expect(w.player.feet.x - x).toBeLessThan(3.2);
-    expect(Math.abs(w.player.feet.z - z)).toBeLessThan(0.1);
-    expect(top).toBeGreaterThan(0.35);
-    expect(top).toBeLessThan(0.8);
-    // Landed, the throw is over: it stands, and walks where it is told.
-    const landed = w.player.feet.x;
-    w.run(0.5);
-    expect(Math.abs(w.player.feet.x - landed)).toBeLessThan(0.05);
-    w.run(1, { x: 0, z: 1 });
-    expect(w.player.feet.z - z).toBeGreaterThan(0.3);
-  });
-});
-
-// A tail slap at a foe (src/features/bear: the Bear while they fight) on the same ground: a leap, once round in the air.
-describe("the leaping tail slap", () => {
-  /** Slaps once and follows the slap to its end: how high it got, how long it was in the air, and how far round
-   *  from `heading` the body was drawn as the tail struck and at the end, radians. */
-  function slapOnce(w: ReturnType<typeof setUp>, heading: number) {
-    let key = true, top = 0, air = 0, struck: number | undefined, began = false;
-    w.player.keys.add({ read(into: Input) { into.slap = key; return into; } });
-    const round = () => { w.player.update(dt, 1); return Math.atan2(Math.sin(w.player.node.rotation.y - heading), Math.cos(w.player.node.rotation.y - heading)); };
-    w.run(2, undefined, () => {
-      const m = w.player.motion;
-      began ||= m.actionProgress > 0;
-      if (began) key = false;
-      top = Math.max(top, w.player.feet.y - groundAt(w.player.feet.x, w.player.feet.z));
-      if (began && !m.grounded) air += dt;
-      if (struck === undefined && m.actionProgress >= SLAP_HIT) struck = round();
-      return began && m.actionProgress === 0;
-    });
-    return { top, air, struck: struck!, end: round() };
-  }
-
-  test("with a foe it leaps and faces it, its back is turned to it as the tail strikes, and it lands facing it", () => {
-    const w = setUp(FULL), x = 0, z = 24;
-    w.player.teleport(x, groundAt(x, z), z, Math.PI / 2); // looking along x
-    w.run(0.5);
-    w.player.foe = { x, z: z + 2 }; // ahead along z: heading 0
-    const { top, air, struck, end } = slapOnce(w, 0);
-    expect(top).toBeGreaterThan(1.1);
-    expect(top).toBeLessThan(1.5);
-    expect(air).toBeGreaterThan(SLAP_HIT * SLAP_TIME + 0.2); // still up well after the tail struck
-    expect(air).toBeLessThan(SLAP_TIME);
-    expect(Math.abs(struck)).toBeGreaterThan(Math.PI - 0.2); // half round: the tail towards the foe
-    expect(Math.abs(end)).toBeLessThan(0.05);
-    expect(w.player.motion.grounded).toBe(true);
-    expect(Math.hypot(w.player.feet.x - x, w.player.feet.z - z)).toBeLessThan(0.3);
-  });
-
-  test("with no foe the tail slap stays what it was: on its feet, not turning", () => {
-    const w = setUp(FULL), x = 0, z = 24;
-    w.player.teleport(x, groundAt(x, z), z, 0);
-    w.run(0.5);
-    const { top, air, struck, end } = slapOnce(w, 0);
-    expect([air, Math.abs(struck) < 0.01, Math.abs(end) < 0.01]).toEqual([0, true, true]);
-    expect(top).toBeLessThan(0.05);
   });
 });

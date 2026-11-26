@@ -73,7 +73,6 @@ export const hoverboarding = (kit: Kit): Station[] => {
       const stoppedAt = player.feet.clone(), off = after("boardOff");
       await tap("act");
       await until(off, 2, "pressed E on the hoverboard, the beaver never stepped off");
-      expect(last.boardOff!.outcome === "step", `stepping off with E it came off "${last.boardOff!.outcome}"`);
       expect(!player.riding && !board.riding, "stepped off, but the player still rides");
       await until(() => player.motion.grounded && !player.afloat, 1.5, `off the hoverboard, but not standing on dry ground (afloat: ${player.afloat})`);
       const left = board.place;

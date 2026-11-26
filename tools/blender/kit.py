@@ -5,7 +5,7 @@
 The hide (mesh, colour and relief of the fur) is tools/blender/kit-hide.glb, made by tools/comfyui from the kit's
 reference picture alone (river-kit/target.png, single.py) and cut to game size by hide.py: the reference's own
 animal, with its eyes, nose, mouth, claws and scaly tail. Everything that moves is from here: 38 bones laid into it
-(the bear's sixteen, two for the tail and five digits on each paw), its skin bound to them, and the clips, each a pose
+(sixteen for the body, two for the tail and five digits on each paw), its skin bound to them, and the clips, each a pose
 as a function of time.
 Added to the hide: glossy eyeballs, whiskers, cards of long hair, and the fur shader's mask; its lips cut apart, so that
 the jaw opens the mouth, with a dark lining inside and orange incisors.
@@ -159,7 +159,7 @@ for (fore, side), ((a, b, c, d), names) in legs.items():
         bones[name] = tuple(knuckle), tuple(tip_at), names[2]
         digits[name] = fore, side, i, wrist, axis, length
 print("kit:", len(digits), "digits")
-# The poses are the bear's (tools/blender/bear.py), whose hip stands .92 m high: every length in them times M.
+# The poses were written for an animal whose hip stands .92 m high: every length in them times M.
 M = HIP[2]/.92
 WALK, RUN = 1.5*M, 2.4*M
 SHAKE = .65  # rad its head rolls to each side when it shakes itself dry
@@ -173,9 +173,9 @@ STIRS = {"rub": 3, "stretch": 2.5, "nuzzle": 2, "peep": 1.5}
 ARMS = -.4, 2.9, 1.5  # rad, on its haunches or its feet: arm, forearm and paw, held close to its body
 SPREAD = .35  # rad the outer digits turn apart, spread
 DRAPE = .6, .4, -.4  # rad the upper fore and hind legs lie down over it, and the lower ones are lifted along the ground
-RAISED = .1  # of the bear's hip height, its hips up from where they are when it lies on its belly: on its side it is narrower
+RAISED = .1  # of that hip height, its hips up from where they are when it lies on its belly: on its side it is narrower
 # Asleep, its head lies on its cheek and its back curls a little towards its belly (rad: the head's turn down to the
-# ground, its nose down, its back's curl), and its fore paws are curled at its chest (m of the bear's, ahead of the
+# ground, its nose down, its back's curl), and its fore paws are curled at its chest (m at that size, ahead of the
 # shoulder: the upper paw and the lower, tucked under it; rad the paws are bent in).
 REST = {"head": -.4, "nose": -.6, "curl": -.15, "paws": (-.1, -.25), "bent": 1.0}
 RUBBING = 1.3, 2.3, 2.0  # rad: its arm, forearm and paw at its face, as the groom has them

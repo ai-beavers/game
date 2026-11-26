@@ -2,14 +2,14 @@
 // path near the spawn, a soft glow under it. With empty paws beside it, on land, E offers "Step on": the beaver stands
 // upright on it and the move keys glide it over the land at BOARD_SPEED (Player.ride on land: up and down the ground,
 // round trees and rocks, stopped at the shore, never over the water). E again offers "Step off": onto the ground beside
-// it, and the board stays where it was left. A bear's Swipe knocks the beaver off, and the board stays there too.
+// it, and the board stays where it was left.
 // place.ts says where it lies and where the beaver goes.
 //
 //   import { create as hoverboard } from "./features/hoverboard/index.ts";   after canoe in FEATURES (it shares E)
 //
 // The board is the player's own (docs/adr/0003, as the canoe): one per browser, never sent, never saved: back by the
 // spawn after a reload. Others see a beaver standing upright and gliding (Motion.glide), not the board. Events boardOn
-// and boardOff { outcome: "step" | "knocked" }.
+// and boardOff.
 //
 // Debug, for bun shot --eval (window.hoverboard): hoverboard.place (its middle and heading now) · hoverboard.home
 // (where it lies after a reload) · hoverboard.hover (m its top floats over the ground) · hoverboard.riding ·
@@ -98,7 +98,7 @@ export const create: CreateFeature = (game) => {
     player.ride(undefined);
     player.teleport(out.x, world.heightAt(out.x, out.z) + STEP_DOWN, out.z, player.facing);
     leave();
-    events.emit("boardOff", { place: player.feet.clone(), outcome: "step" });
+    events.emit("boardOff", { place: player.feet.clone() });
   };
 
   Object.assign(window, {
@@ -123,11 +123,7 @@ export const create: CreateFeature = (game) => {
   let time = 0;
   return {
     step() {
-      if (riding && !player.riding) { // off without E: knocked off (a Swipe tosses it), or put somewhere else
-        const knocked = !player.motion.grounded;
-        leave();
-        if (knocked) events.emit("boardOff", { place: player.feet.clone(), outcome: "knocked" });
-      }
+      if (riding && !player.riding) leave(); // off without E: put somewhere else
       if (riding) follow();
       const now = wants;
       wants = undefined;

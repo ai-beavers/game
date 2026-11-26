@@ -28,7 +28,7 @@ export interface GameEvents {
   action: { place: Vector3; action: Exclude<Action, "none"> };
   /** The tail comes down: a crack on the water (water true) or a thump on land; place is at the feet. remote:
    *  another player's (src/features/net/remote.ts). */
-  tailSlap: { place: Vector3; water: boolean; remote?: boolean; air?: boolean };
+  tailSlap: { place: Vector3; water: boolean; remote?: boolean };
   /** Animals that noticed a tail slap and fled (src/features/life); count: how many. */
   startled: { place: Vector3; count: number };
   // From the build feature (src/features/build). `tree` is the index in World.trees.
@@ -55,9 +55,9 @@ export interface GameEvents {
   canoeIn: { place: Vector3 };
   canoeOut: { place: Vector3; outcome: "bank" | "water" };
   /** From the hoverboard feature (src/features/hoverboard): the beaver stepped onto its Hoverboard, and off it again:
-   *  with E onto the ground beside it ("step"), or knocked off by a bear's Swipe ("knocked"). */
+   *  with E onto the ground beside it. */
   boardOn: { place: Vector3 };
-  boardOff: { place: Vector3; outcome: "step" | "knocked" };
+  boardOff: { place: Vector3 };
   /** From the mushrooms feature (src/features/mushrooms): the beaver bends down and eats a mushroom here. */
   munch: { place: Vector3 };
   /** From the race feature (src/features/race), the local player's own race only: the canoe crossed the start line,
@@ -88,10 +88,6 @@ export interface GameEvents {
   /** From src/features/net: a piece of his voice as the server sends it, for the line begun last: 16-bit samples at
    *  rate Hz, one channel. */
   oldBeaverVoice: { pcm: ArrayBuffer; rate: number };
-  /** From the bear feature (src/features/bear), about the local player's own Bear: it notices the beaver and growls;
-   *  a tail slap landed on it (health: what it has left, 0: driven off). place: where the bear is. */
-  bearNotices: { place: Vector3 };
-  bearSlapped: { place: Vector3; health: number };
   /** From the river kit feature (src/features/river-kit), about the local player's own kit: it calls (left: the anxious
    *  call of one left behind; caught: the chirp when it has caught up; doze: a soft squeak in its sleep), and it
    *  begins to shake itself dry, for `seconds`. place: the middle of its trunk. */
@@ -132,8 +128,7 @@ export function watch(motion: Motion, feet: Vector3, events: Events) {
     // A stick built into the dam leaves the hand too, but is not dropped.
     if (before.carrying && !motion.carrying && motion.action !== "build" && before.action !== "build") events.emit("drop", { place });
     if (motion.action !== before.action && motion.action !== "none") events.emit("action", { place, action: motion.action });
-    // air: struck in a leap (at the Bear), off the ground: no thump, no dust.
-    if (slapHits(before, motion)) events.emit("tailSlap", { place, water: motion.swimming >= 0.5, air: !motion.grounded && motion.swimming < 0.5 });
+    if (slapHits(before, motion)) events.emit("tailSlap", { place, water: motion.swimming >= 0.5 });
     // One footstep per half stride, counted in the stride the animator uses at this speed.
     if (motion.grounded) steps += (motion.distance - before.distance) / (gait(motion.speed, motion.anger).cycle / 2);
     if (steps >= 1) {

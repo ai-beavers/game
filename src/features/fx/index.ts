@@ -36,7 +36,6 @@ const BUDGET = { low: { pool: 500, rate: 0.35 }, medium: { pool: 1200, rate: 0.6
 const CAPACITY = BUDGET.high.pool;
 const MOTES = 90; // at high quality
 const SPRAY = new Color3(0.8, 0.86, 0.88);
-const FLASH = new Color3(1.5, 1.4, 1.15), FUR = new Color3(0.3, 0.19, 0.12); // a blow landing on the Bear, and its fur
 const DUST = new Color3(0.5, 0.42, 0.31), WOOD = new Color3(0.62, 0.42, 0.22), WATER = new Color3(0.72, 0.8, 0.82);
 const LEAF_COLORS = [0x6f7a2a, 0x8c7a2a, 0x9a6a26, 0x5f6b26].map((c) => hex(c));
 
@@ -264,8 +263,7 @@ export const create: CreateFeature = (game) => {
 
   // A tail slap: on the water a tall splash and rings running far out, the alarm seen across the pond; on land a
   // low puff of dust (or grass flung up) round the tail.
-  events.on("tailSlap", ({ place, water, air }) => {
-    if (air) return; // a leap's slap meets no ground
+  events.on("tailSlap", ({ place, water }) => {
     if (water && inWater(place)) {
       splash(place, 1.4);
       for (let i = 0; i < 3; i++) ring(place.x, place.z, 0.4, 2.2 + i * 1.3, 1.8 + i * 0.5, 0.55 - i * 0.1);
@@ -274,24 +272,6 @@ export const create: CreateFeature = (game) => {
     const at = new Vector3(place.x, world.heightAt(place.x, place.z), place.z), ground = surface(at.x, at.z);
     puff(at, Color3.Lerp(dustColor(ground.color), DUST, 0.3), 7, 0.7, 0.22, 1.1);
     if (ground.grass) { facing(); kickGrass(at, ground.color); }
-  });
-
-  // A tail slap landed on the Bear: where the tail met it, between the two and chest high, a pale burst, tufts of
-  // fur flying and dust knocked out of its coat.
-  events.on("bearSlapped", ({ place }) => {
-    const dx = player.feet.x - place.x, dz = player.feet.z - place.z, d = Math.hypot(dx, dz) || 1;
-    const at = new Vector3(place.x + dx / d * 0.7, Math.max(place.y, player.feet.y) + 1.1, place.z + dz / d * 0.7);
-    puff(at, FLASH, 5, 1.6, 0.5, 0.35);
-    puff(at, DUST, 6, 0.9, 0.3, 0.9);
-    for (let i = 0; i < many(14); i++) {
-      const a = random(0, Math.PI * 2), up = random(-0.3, 1), out = random(1.5, 3.5);
-      make({
-        kind: KIND.seed, floor: FLOOR.rest, x: at.x, y: at.y, z: at.z,
-        vx: Math.cos(a) * out, vy: up * out, vz: Math.sin(a) * out,
-        gravity: 0.5, drag: 2.2, spin: random(-8, 8), life: random(0.5, 0.9), fadeIn: 0.02, fadeOut: 0.3,
-        size: 0.03, grow: 0.02, squash: 0.5, r: FUR.r, g: FUR.g, b: FUR.b, a: 0.95,
-      });
-    }
   });
 
   let dripping = 0;

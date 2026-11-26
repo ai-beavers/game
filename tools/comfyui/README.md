@@ -2,7 +2,7 @@
 
 Turns three pictures of an animal (front, side, back) into a detailed, textured 3D model on our own machine, with
 free open models. The model it makes is a sculpt of about 700,000 triangles: `tools/blender` then cuts it to game
-size, bakes its fur into maps and gives it a skeleton, as it does for the bear.
+size, bakes its fur into maps and gives it a skeleton.
 
 ```
 river-kit/front.png, side.png, back.png      our pictures of the animal, transparent ground

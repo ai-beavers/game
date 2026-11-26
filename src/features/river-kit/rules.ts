@@ -10,7 +10,7 @@
 // Its way: straight to the beaver; with something in the way, round it with the thing on one hand (as one finds the
 // way out of a maze) until it is nearer the beaver than where it met the thing.
 //
-// Nothing here is kept or sent: each player has their own (as the Bear, docs/adr/0009).
+// Nothing here is kept or sent: each player has their own.
 export interface XZ { x: number; z: number }
 
 /** m from the beaver within which it is content, and beyond which it sets off after it. */

@@ -155,7 +155,7 @@ The small wooden boat that lies on the pond's bank. The beaver gets in, sits and
 _Avoid_: boat, raft, kayak
 
 **Hoverboard**:
-The wooden plank that floats a hand's width over the ground, lying by the path near the spawn. With empty paws the beaver steps on, stands upright on it and glides over the land at twice its running speed. It stops at the shore and never goes over water. While it rides, the beaver carries, gnaws and builds nothing. It steps off wherever it likes, or a bear's swipe knocks it off, and the board stays where it was left. Each player has their own, and others see only their beaver gliding.
+The wooden plank that floats a hand's width over the ground, lying by the path near the spawn. With empty paws the beaver steps on, stands upright on it and glides over the land at twice its running speed. It stops at the shore and never goes over water. While it rides, the beaver carries, gnaws and builds nothing. It steps off wherever it likes, and the board stays where it was left. Each player has their own, and others see only their beaver gliding.
 _Avoid_: skateboard, board, scooter, vehicle
 
 **Mushroom**:
@@ -221,7 +221,7 @@ The beaver turning round on land to look straight into its own player's camera, 
 _Avoid_: AFK, idle animation, look-at
 
 **Tail slap**:
-The beaver bringing its tail down flat: a crack on the water, a thump on land. It is the alarm that sends the animals off, and on land, close to the bear, it is the beaver's only blow: each one that lands takes some of the bear's health. At the bear it is a leap: the beaver jumps, turns once round in the air and brings its tail down on the bear.
+The beaver bringing its tail down flat: a crack on the water, a thump on land. It is the alarm that sends the animals off.
 _Avoid_: attack, hit, strike, tail whip
 
 **Remote**:
@@ -233,36 +233,16 @@ A player no person drives, that joins over the network under the same rules as a
 _Avoid_: NPC, AI player
 
 **Animal**:
-A creature of the world that no player steers: ducks, fish, deer, the bear.
+A creature of the world that no player steers: ducks, fish, deer.
 _Avoid_: NPC, mob, wildlife entity
 
 **River kit**:
 The beaver's child: a small furry beaver on four legs that keeps to the player's beaver, waddles after it over the meadow, bounds to catch up and steps out of its way. Left standing it noses in the ground, looks about, sits up on its haunches, stands up on its two hind feet with its arms close to its body, grooms its muzzle, pats what is before it with a fore paw, or sits, one thing after another; with a trunk or a rock right before it, it stands up and leans its fore paws on it. Standing or sitting it looks up at the beaver. Left behind it calls after the beaver as it starts to run, and chirps when it has caught up, opening its mouth as it does; its orange incisors show under its upper lip. Beside a beaver that stays where it is it lies down and sleeps until the beaver goes; by night it dozes off at every stop. It sleeps over on its side as a seal pup dozes, eyes shut: now and then it rubs its face with a fore paw, stretches its hind feet out and spreads them, wriggles and squeaks softly in its sleep. Then it wakes with a yawn and a stretch. It swims after the beaver through the water, where it only paddles, comes out with a wet coat and, a moment after it has dry ground under it, shakes itself dry. Each player has their own, and no one else sees or hears it.
 _Avoid_: pet, companion, follower, baby beaver, cub, pup
 
-**Bear**:
-The one animal that goes for the beaver instead of fleeing from it. By day it comes running out of the far forest into the wide meadow between where the first bank stood and the bank, where it ambles about, noses and digs in the ground, looks about and sits; when it notices the player's beaver on land there, it rears up, charges and swipes at it. It never goes into the water and never comes nearer the pond than where the first bank stood. Each player has their own, and no one else sees it.
-_Avoid_: bot (a bot is a player), enemy, monster, boss, mob, predator, threat
-
-**Swipe**:
-The bear's blow with a front paw, after it has reared up. It never harms the beaver, which has no health and cannot die: it tosses the beaver a few metres, knocks the stick from its paw and leaves it furious for a while.
-_Avoid_: attack, hit, bite, damage
-
-**Health**:
-How much fight the bear has left: 100 when it comes out of the forest, less with every tail slap that lands. Only the bear has it.
-_Avoid_: HP, hit points, life, lives
-
-**Health bar**:
-The bar at the top of the HUD with the bear's name and its health, shown from when the bear goes for the player's beaver until it is driven off or gives up.
-_Avoid_: life bar, HP bar, boss bar
-
 **Stamina bar**:
 The small bar just above the hotbar with the beaver's stamina, shown only while it is not full.
-_Avoid_: energy bar, sprint bar, Health bar (that is the bear's)
-
-**Driven off**:
-What the bear is once it has no health left: it turns and runs all the way back into the far forest, in plain sight, and stays there until the next day. It is not killed; nothing in the clearing dies.
-_Avoid_: dead, killed, defeated, despawned
+_Avoid_: energy bar, sprint bar, health bar
 
 **Third-person view**, **First-person view**:
 The two ways a player can see the clearing. In the third-person view (the usual one) the camera follows behind the beaver, which is in the picture. In the first-person view the player sees through the beaver's eyes, and the beaver itself is not in the picture. Each player switches between them for their own screen only.

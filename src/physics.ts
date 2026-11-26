@@ -33,7 +33,7 @@ export { PhysicsBody, PhysicsMotionType, PhysicsShape, PhysicsShapeType };
 /** The groups. GROUND: the terrain (src/world/terrain.ts). SOLID: anything else that never moves by itself (trees,
  *  rocks, the lodge, the canoe). LOOSE: light things that roll and get carried (sticks). HEAVY: what rolls and is
  *  too heavy for that (crates, logs, a felled tree while it falls). PLAYER: the beaver's own body. CREATURE: other
- *  bodies that walk (the Bear, other players' beavers): queries and the beaver's movement meet them, nothing else
+ *  bodies that walk (other players' beavers): queries and the beaver's movement meet them, nothing else
  *  touches them. SLIPPING: a felled tree caught short of lying, for the rest of its fall: only the ground stops it. */
 export const GROUND = 1, SOLID = 2, LOOSE = 4, HEAVY = 8, PLAYER = 16, CREATURE = 32, SLIPPING = 64;
 const QUERY = 1 << 30; // every query's own group

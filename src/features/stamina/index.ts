@@ -1,7 +1,7 @@
 // The stamina bar (GLOSSARY.md): a thin bar just above the hotbar (style.ts layout.stamina) with how much running the
 // player's beaver has left (player.stamina, src/player/stamina.ts). Hidden while stamina is full; it fades in as soon
 // as it drops and out again once it is full. Tired (player.tired) it turns a dull bark colour and its edge pulses
-// slowly, so it is clear why the beaver walks. It has no name and no number: it never reads as the Bear's Health bar.
+// slowly, so it is clear why the beaver walks. It has no name and no number.
 //
 // Babylon GUI on stage.hud through Overlay; not interactive. Its native counterpart tells screen readers the stamina
 // in tenths. For the tour: window.staminaBar.shown (fading in or in view).

@@ -1,7 +1,7 @@
 // Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
-// that src/features/life shows, calling from where they are; the Bear's growl and its grunt at a tail slap (src/features/bear); the River kit's calls (src/features/river-kit); the steps and splashes of other players
+// that src/features/life shows, calling from where they are; the River kit's calls (src/features/river-kit); the steps and splashes of other players
 // (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 // The one sound not made here is the Old Beaver's Voice: the server sends it as ElevenLabs makes it, and it plays through the same mix.
 //
@@ -103,8 +103,7 @@ export const create: CreateFeature = (game) => {
   events.on("enterWater", ({ place, speed }) => play("splash", place, clamp(0.3 + speed / 5)));
   events.on("leaveWater", ({ place }) => play("shake", place, 1, "sfx", 0.2));
   // A tail slap, this beaver's or another player's (src/features/net/remote.ts emits theirs).
-  // Struck in the air (the leap at the Bear) it meets no ground: silent unless it lands on the Bear (the smack below).
-  events.on("tailSlap", ({ place, water, air }) => { if (!air) play(water ? "slap" : "thump", place); });
+  events.on("tailSlap", ({ place, water }) => play(water ? "slap" : "thump", place));
   events.on("pickup", ({ place }) => play("pickup", place));
   events.on("drop", ({ place }) => play("drop", place));
 
@@ -121,9 +120,6 @@ export const create: CreateFeature = (game) => {
   // Half the dam: a chime on the way, so the long middle of the work has a moment too.
   events.on("stickPlaced", ({ count, total }) => { if (count * 2 === total) play("chime", undefined, 1, "sfx", 0.25); });
 
-  // The Bear growls as it notices the beaver, and grunts when a tail slap lands (src/features/bear).
-  events.on("bearNotices", ({ place }) => play("growl", place));
-  events.on("bearSlapped", ({ place }) => { play("smack", place); play("grunt", place); });
   // The River kit calls after a beaver that left it behind, chirps when it has caught up, and squeaks softly in its
   // sleep, under the scene rather than over it (src/features/river-kit).
   events.on("kitCalls", ({ place, call }) => call === "doze" ? play("doze", place, 1, "ambience") : play(call === "caught" ? "chirp" : "squeak", place));

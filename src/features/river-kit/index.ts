@@ -11,8 +11,8 @@
 //
 //   import { create as riverKit } from "./features/river-kit/index.ts";
 //
-// Each player has their own: it follows only the local player's beaver, and nothing is kept or sent (as the Bear,
-// docs/adr/0009). How it decides lives in rules.ts (pure, tested), its mesh and clips in assets/kit.glb
+// Each player has their own: it follows only the local player's beaver, and nothing is kept or sent.
+// How it decides lives in rules.ts (pure, tested), its mesh and clips in assets/kit.glb
 // (tools/comfyui, tools/blender/kit.py). Its calls and its shake go out as the events kitCalls and kitShakes: the
 // audio feature sounds the calls, the fx feature flings the drops.
 //

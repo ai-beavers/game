@@ -51,11 +51,6 @@ export const TEACH: Record<Device, Record<Step, string>> = {
   touch: { move: "Drag on the left side   walk", look: "Drag on the right side   look around", use: "Use   pick up, gnaw, build", slap: "Slap   your tail on the water" },
 };
 
-/** What to do about the Bear (src/features/bear), shown as it notices the beaver. */
-export const FIGHT: Record<Device, string> = {
-  keys: "Q   slap your tail at the bear, or run home", pad: "RB   slap your tail at the bear, or run home", touch: "Slap   your tail at the bear, or run home",
-};
-
 /** Pressing and holding the context action, for the line under the goal: "press E", "hold Use". */
 export const PRESS: Record<Device, { press: string; hold: string }> = {
   keys: { press: "press E", hold: "hold E" }, pad: { press: "press X", hold: "hold X" }, touch: { press: "tap Use", hold: "hold Use" },
