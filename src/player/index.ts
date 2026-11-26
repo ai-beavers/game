@@ -1,6 +1,6 @@
 import { holdInHand, holdInView } from "./grip.ts";
 // Who steers the beaver: keyboard input, a kinematic capsule (mover.ts), carrying sticks, swimming and diving, sitting
-// and crawling, riding (sitting in a canoe someone else draws, src/features/canoe), the tail slap, the follow camera, and the Motion report the animator draws from.
+// and crawling, riding (sitting in a canoe someone else draws, src/features/canoe), the tail slap, stamina for running (stamina.ts), the follow camera, and the Motion report the animator draws from.
 //
 //   const player = createPlayer(stage, { spawn, hand: beaver.hand, sticks: world.sticks, waterLevel: world.waterLevel });
 //   beaver.root.parent = player.node;
@@ -18,6 +18,7 @@ import { SHORE_SLOPE } from "../world/terrain.ts";
 import { waterOf } from "../world/water.ts";
 import { followCamera, type FollowCamera } from "./camera.ts";
 import { createMover, type Collision } from "./mover.ts";
+import { newStamina, stepStamina } from "./stamina.ts";
 import { keyboard, newInput, type Input, type Keyboard } from "./input.ts";
 import { BREATH, CRAWL_SPEED, RIDE_SPEED, SLOPE, SWIM_SPEED, rideKeys, turnTowards, jumpStarts, newAction, newDive, newJump, newMotion, newSlap, newSteering, steer, stepAction, stepDive, stepLow, stepSlap, trackMotion, type SwimMotion } from "./state.ts";
 
@@ -173,6 +174,7 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
   let foe: PlayerControls["foe"], leaping = false, spin = 0, spinBefore = 0; // the leaping slap, and how far round it has turned, radians
   let actor: Actor | undefined, aim: number | undefined, ride: Ride | undefined; // aim: where a lasting action turns the beaver
   let hold: PlayerControls["hold"], freeing = false; // freeing: a pickup waits for the paws to be free
+  const stamina = newStamina();
   let turnTo: PlayerControls["turnTo"], turned = 0; // turned: rad turnTo turned this step
   let sitFor = 0, sitFace: number | undefined, slapAsked = false; // sit() and slap(): asked for by another part
   const desired = new Vector3(), forward = new Vector3();
@@ -350,7 +352,10 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     if (sitFor > 0) sitFor = moving || busy || input.jump || !grounded || afloat || ride ? 0 : Math.max(0, sitFor - dt);
     // On land the dive key sits and Y crawls, while held (sitting the beaver does not move: moving gets it up).
     const { low, slow } = stepLow(!!input.dive || sitFor > 0, !!input.crawl, { grounded, afloat, moving, acting: busy, jumping: vy > 0, riding: !!ride });
-    const top = ride ? RIDE_SPEED : afloat ? swimSpeed : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * Math.max(0, Math.min(1, input.run));
+    // Running on land takes stamina (stamina.ts); tired, it walks. Swimming, crawling and the canoe ask no run of it.
+    const asked = wants && !afloat && !ride && !slow ? input.run : 0;
+    const run = stepStamina(stamina, dt, asked, { onLand: grounded && !afloat && !ride, gnawing: act.action === "gnaw" });
+    const top = ride ? RIDE_SPEED : afloat ? swimSpeed : slow ? CRAWL_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * run;
     const [accel, brake] = ride ? [RIDE_ACCEL, RIDE_BRAKE] : afloat ? [SWIM_ACCEL, SWIM_ACCEL] : !grounded ? [AIR_ACCEL, AIR_ACCEL] : [ACCEL, BRAKE];
     const going = speed; // m/s before steering brakes it: a walk asked for by turnTo keeps it
     steering.facing = facing; steering.speed = speed;
@@ -471,6 +476,8 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     set swimSpeed(v: number) { swimSpeed = Number.isFinite(v) && v > 0 ? v : SWIM_SPEED; },
     get diving() { return dive.diving; },
     get breath() { return dive.breath / BREATH; },
+    get stamina() { return stamina.level; },
+    get tired() { return stamina.tired; },
     get waterLevel() { return waterLevel(); },
     get carrying() { return carried?.stick; },
     drop() { if (carried) { release(); act.carrying = false; } },

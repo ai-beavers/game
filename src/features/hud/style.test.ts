@@ -41,7 +41,10 @@ test("the hints sit low, under the middle of the picture, over the prompt and th
   const l = layout(1280, 720, none, { touch: false, live: false });
   expect(l.hints.y).toBeGreaterThan(720 * 0.7);
   expect(l.hints.x + l.hints.w / 2).toBe(640);
-  expect(l.prompt.y + l.prompt.h).toBeLessThanOrEqual(l.hotbar.y);
+  expect(l.prompt.y + l.prompt.h).toBeLessThanOrEqual(l.stamina.y); // the stamina bar just above the hotbar, under the prompt
+  expect(l.stamina.y + l.stamina.h).toBeLessThanOrEqual(l.hotbar.y);
+  expect(l.hotbar.y - (l.stamina.y + l.stamina.h)).toBeLessThanOrEqual(l.gap);
+  expect(Math.abs(l.stamina.x + l.stamina.w / 2 - 640)).toBeLessThanOrEqual(1);
   expect(Math.abs(l.hotbar.x + l.hotbar.w / 2 - 640)).toBeLessThanOrEqual(1); // on whole pixels
   expect(l.hotbar.w).toBeGreaterThanOrEqual(HOTBAR * l.slot);
   expect(l.hotbar.y + l.hotbar.h).toBe(720 - 12); // on the bottom margin

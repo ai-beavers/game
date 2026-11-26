@@ -10,7 +10,7 @@
 //   top right      the map card (hour and weather, the map,    bottom left   chat log, connection, chat row
 //                  its legend), fps
 //   bottom centre  breath or speech, hints and advice, the    bottom right  the thumbs' buttons (controls/touch.ts)
-//                  prompt, the hotbar
+//                  prompt, the stamina bar, the hotbar
 // Regions never overlap: when the top centre has no room between the sides, live its caption goes above them and the
 // Health bar and the toasts under them, in play all three under them; when the bottom centre has none, it goes beside the chat, or above the
 // chat row with the chat log above it. The breath (only in the water) and the Old Beaver's speech box (only to a
@@ -41,6 +41,8 @@ export const SLOT = { back: "rgba(255,246,228,0.06)", edge: "rgba(255,246,228,0.
 export const PLAYERS = "#7FC8F8", STICKS = "#E8D3A8", BROWN = "#8B5A2B", FLOWER = "#F29BB8";
 /** What is left of a Health bar (src/features/bear). */
 export const HEALTH = "#c8604e";
+/** What is left of the stamina bar (src/features/stamina): a leaf green, never the Health bar's red; tired, a dull bark. */
+export const STAMINA = "#a6c76a", TIRED = "#b09a80";
 /** The one shadow under HUD text, backed or not. */
 export const SHADOW = { color: "rgba(12,8,4,0.85)", blur: 4 };
 
@@ -67,6 +69,8 @@ export interface Layout {
   card: Box; map?: Box; status: Box; legend: Box; fps: Box;
   /** The hotbar under the prompt: HOTBAR square slots `slot` px wide, `gap` apart, `pad` inside its edge. */
   hotbar: Box; slot: number;
+  /** The stamina bar (src/features/stamina), a thin row just above the hotbar, under the prompt. */
+  stamina: Box;
   chat: Box; chatRow: Box; log: Box;
   breath: Box; hints: Box; prompt: Box;
   /** The Old Beaver's speech box (src/features/old-beaver): the breath's home, grown upwards; its bottom is the breath's. */
@@ -121,7 +125,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const chatBottom = thumbs ? thumbs.y - gap : B;
   const chatRow = box(L, chatBottom - rowH, chatW, live ? 0 : rowH);
   const logH = live ? 0 : Math.round(small * 1.3 * (h < 500 ? 2 : 5) + small * 2.2); // the last lines and the connection's line
-  // Bottom centre, bottom up: the hotbar, the prompt, the hints, the breath. Centred when there is room between chat
+  // Bottom centre, bottom up: the hotbar, the stamina bar, the prompt, the hints, the breath. Centred when there is room between chat
   // and thumbs, else beside the chat, else above the chat row.
   const slot = Math.round(u * (compact ? 2.6 : 3.2)), slotGap = Math.round(u * 0.35);
   const hotbarW = HOTBAR * slot + (HOTBAR + 1) * slotGap, hotbarH = slot + 2 * slotGap;
@@ -132,7 +136,10 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const bottomW = centred >= least ? Math.min(u * 36, centred) : beside ? hi - lo : R - L;
   const colX = beside ? lo : (w - bottomW) / 2;
   const hotbar = box(Math.round(colX + (bottomW - hotbarW) / 2), centreBottom - hotbarH, hotbarW, hotbarH);
-  const prompt = box(colX, hotbar.y - gap - promptH, bottomW, promptH);
+  const staminaH = compact ? 6 : Math.max(7, Math.round(u * 0.6)), staminaW = Math.round(hotbarW * 0.6);
+  const near = Math.max(2, Math.round(gap / 3)); // the thin bar keeps a third of a gap to each side: a small screen has little room
+  const stamina = box(Math.round(hotbar.x + (hotbarW - staminaW) / 2), hotbar.y - near - staminaH, staminaW, staminaH);
+  const prompt = box(colX, stamina.y - near - promptH, bottomW, promptH);
   const hints = box(prompt.x, prompt.y - gap - hintsH, bottomW, hintsH);
   const breath = box(prompt.x, hints.y - gap - breathH, bottomW, breathH);
   // The speech box: the breath's home grown upwards to a name and two rows of text, as far as there is room under the
@@ -147,7 +154,7 @@ export function layout(w: number, h: number, inset: Inset, { touch, live }: { to
   const log = box(L, logBottom - logH, chatW, logH);
   const chat = box(L, Math.min(log.y, chatRow.y), chatW, live ? 0 : chatBottom - Math.min(log.y, chatRow.y));
   return {
-    u, small, gap, pad, compact, pause, player, goals, caption, health, race, toast, card, map, status, legend, fps, hotbar, slot, chat, chatRow, log, breath, hints, prompt, speech, touch: thumbs,
+    u, small, gap, pad, compact, pause, player, goals, caption, health, race, toast, card, map, status, legend, fps, hotbar, slot, stamina, chat, chatRow, log, breath, hints, prompt, speech, touch: thumbs,
     middle: { top: middleTop, bottom: speech.y - gap },
   };
 }
@@ -163,7 +170,7 @@ export const fitType = (type: number, across: number, chars: number) =>
  *  grow into, the map's and the caption's what they take. */
 export function homes(l: Layout): [string, Box][] {
   const all: [string, Box | undefined][] = [["pause", l.pause], ["player", l.player], ["goals", { ...l.goals, h: Math.min(l.goals.h, l.u * TRACKER) }], ["caption", l.caption], ["health", l.health], ["race", l.race], ["toast", l.toast],
-    ["map card", l.card], ["fps", l.fps], ["hotbar", l.hotbar], ["chat row", l.chatRow], ["log", l.log], ["breath and speech", l.speech], ["hints", l.hints],
+    ["map card", l.card], ["fps", l.fps], ["hotbar", l.hotbar], ["stamina", l.stamina], ["chat row", l.chatRow], ["log", l.log], ["breath and speech", l.speech], ["hints", l.hints],
     ["prompt", l.prompt], ["touch", l.touch]];
   return all.filter((e): e is [string, Box] => !!e[1] && e[1].w > 0 && e[1].h > 0);
 }
