@@ -60,7 +60,7 @@ export const hoverboarding = (kit: Kit): Station[] => {
           if (leg === "path") expect(!wet(), "went into the water gliding along the path");
         }
       } finally { want.to = undefined; }
-      expect(along > ALONG, `glided ${along.toFixed(1)} m along the path, not about 15`);
+      expect(along > ALONG, `glided ${along.toFixed(1)} m along the path, not over ${ALONG}`);
       expect(top > RUN_SPEED, `glided at ${top.toFixed(2)} m/s at most, no faster than running (${RUN_SPEED} m/s)`);
       expect(hover[0]! > board.hover - OFF && hover[1]! < board.hover + OFF, `the feet were ${hover[0]!.toFixed(2)} … ${hover[1]!.toFixed(2)} m over the ground (lowest at ${low}), not about ${board.hover}`);
       if (pond) {
