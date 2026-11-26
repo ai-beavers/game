@@ -125,6 +125,10 @@ export interface Motion {
   /** The player switched the lantern off (a flash): its glass and its light dark. The lantern feature writes it into
    *  the local player's Motion; it travels to other players. Left out or false: on (bots never flash). */
   lanternOff?: boolean;
+  /** Stands upright on the Hoverboard and glides: the feet together and still, the arms a little out to balance, no
+   *  walk, bound or run cycle whatever the speed. The local player's Motion tells it on a land ride
+   *  (src/features/hoverboard); it travels to other players, the board itself does not. Left out: no glide. */
+  glide?: boolean;
   /** A Stare (GLOSSARY.md): the head turned to look along yaw and pitch, rad relative to the body (yaw 0 ahead, positive
    *  to its left; pitch positive up), by weight 0 … 1, unblinking and cocked a little to one side. The stare feature
    *  writes it into the local player's Motion each frame, so the eyes follow a moving camera. Left out: no stare

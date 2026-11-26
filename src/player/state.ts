@@ -7,7 +7,7 @@
 //   const dive = newDive();      stepDive(dive, dt, diveHeld, afloat, headUnder);              // diving, C held
 //   const { low, slow } = stepLow(diveHeld, crawlHeld, facts);                                 // sit (C) and crawl (Y)
 //   trackMotion(motion, dt, facts);                                                            // fills motion in place
-import { WALK_SPEED, type Action, type Motion } from "../contracts.ts";
+import { RUN_SPEED, WALK_SPEED, type Action, type Motion } from "../contracts.ts";
 import type { Input } from "./input.ts";
 
 export const SLOPE = 40 * Math.PI / 180; // rad: steepest ground it walks up; steeper ground it slides down
@@ -102,14 +102,16 @@ export function stepDive(s: Dive, dt: number, held: boolean, afloat: boolean, un
 export type Low = "none" | "sit" | "crawl";
 /** m/s: a crawl goes at about half the walking speed, and never runs. */
 export const CRAWL_SPEED = WALK_SPEED / 2;
-export interface LowFacts { grounded: boolean; afloat: boolean; moving: boolean; acting: boolean; jumping: boolean; riding?: boolean }
+/** riding: on a ride (Player.ride), and which: "water" sits in the canoe, "land" stands on the Hoverboard. */
+export interface LowFacts { grounded: boolean; afloat: boolean; moving: boolean; acting: boolean; jumping: boolean; riding?: "water" | "land" }
 
 /** Once per step. sit: the dive key held; crawl: Y held. Sit holds only standing still (moving, it walks); crawl
  *  wins over sit; an action (pickup, drop, gnaw, build) or a jump gets it up while it lasts, and it goes low again
  *  after if the key is still held. The tail slap is no action here: a sitting beaver slaps sitting. slow: the crawl's
  *  speed, no running. */
 export function stepLow(sit: boolean, crawl: boolean, f: LowFacts): { low: Low; slow: boolean } {
-  if (f.riding) return { low: "sit", slow: false }; // in the canoe it sits, keys or not
+  if (f.riding === "water") return { low: "sit", slow: false }; // in the canoe it sits, keys or not
+  if (f.riding === "land") return { low: "none", slow: false }; // on the Hoverboard it stands, keys or not
   const low: Low = !f.grounded || f.afloat || f.acting || f.jumping ? "none" : crawl ? "crawl" : sit && !f.moving ? "sit" : "none";
   return { low, slow: low === "crawl" };
 }
@@ -120,7 +122,10 @@ export function stepLow(sit: boolean, crawl: boolean, f: LowFacts): { low: Low; 
 // walking. In the canoe only the move keys and E count: jump, dive, crawl, run and the tail slap would tip it over.
 export const SWIM_SPEED = 0.5;
 export const RIDE_SPEED = WALK_SPEED * 1.25; // m/s
-/** The input with what does nothing in the canoe taken out: it moves (paddles and steers) and E gets it out. */
+/** m/s the Hoverboard (src/features/hoverboard) glides over the land at: twice the running speed, whatever the Class. */
+export const BOARD_SPEED = 2 * RUN_SPEED;
+/** The input with what does nothing on a ride taken out (the canoe, the Hoverboard): it moves (steers) and E gets it
+ *  off. The same keys for both. */
 export const rideKeys = (input: Input): Input => ({ ...input, move: { ...input.move }, run: 0, jump: false, slap: false, dive: false, crawl: false });
 
 // ---- motion ------------------------------------------------------------------------------------------------------
@@ -151,6 +156,8 @@ export interface StepFacts {
   low?: Low;
   /** Sitting in a canoe and paddling it: no stride, no swimming, the paddle in the right paw. */
   ride?: boolean;
+  /** Standing on the Hoverboard, gliding: no stride, however fast (Motion.glide). */
+  glide?: boolean;
 }
 
 /** Fills every field of motion in place, except anger (which belongs to whoever sets it). Afloat counts as held
@@ -159,7 +166,7 @@ export function trackMotion(m: SwimMotion, dt: number, f: StepFacts): void {
   const supported = f.grounded || f.afloat, wasSupported = m.airTime === 0;
   m.time += dt;
   m.speed = f.moved / dt;
-  if (f.grounded && !f.ride) m.distance += f.moved;
+  if (f.grounded && !f.ride && !f.glide) m.distance += f.moved;
   m.turning = f.turning;
   if (supported && !wasSupported) { m.sinceLanding = 0; m.landingSpeed = Math.max(0, -m.vertical); }
   else m.sinceLanding += dt;
@@ -177,6 +184,8 @@ export function trackMotion(m: SwimMotion, dt: number, f: StepFacts): void {
   else delete m.low;
   if (f.ride) m.paddle = true;
   else delete m.paddle;
+  if (f.glide) m.glide = true;
+  else delete m.glide;
 }
 
 // ---- steering ----------------------------------------------------------------------------------------------------

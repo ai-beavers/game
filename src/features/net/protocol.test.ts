@@ -40,7 +40,7 @@ describe("parseClient", () => {
     expect(parseClient(state({ c: 1.5 }))).toBeUndefined();
     expect(parseClient(state({ c: 10_000 }))).toBeUndefined();
     const m = packMotion(newMotion());
-    expect(parseClient(state({ m: m.slice(1) }))).toBeUndefined();
+    expect(parseClient(state({ m: m.slice(2) }))).toBeUndefined(); // shorter than any page ever sent
     expect(parseClient(state({ m: m.map((v, i) => (i === 8 ? 2 : v)) }))).toBeUndefined(); // swimming over 1
     expect(parseClient(state({ m: m.map((v, i) => (i === 9 ? 0.5 : v)) }))).toBeUndefined(); // half an action
     expect(parseClient(state({ u: [0, 0, 0] }))).toBeUndefined();
@@ -90,16 +90,28 @@ describe("motion", () => {
     expect(unpackMotion(packMotion(newMotion()), into).lanternOff).toBeFalsy();
     expect(unpackMotion(packMotion({ ...newMotion(), lanternOff: false }), into).lanternOff).toBeFalsy();
   });
+  test("a beaver gliding on its Hoverboard is seen gliding by others; one from before the Hoverboard never glides", () => {
+    const into = newMotion();
+    const gliding = { ...newMotion(), grounded: true, speed: 4, glide: true };
+    expect(unpackMotion(packMotion(gliding), into).glide).toBe(true);
+    expect(parseClient(state({ m: packMotion(gliding) }))).toBeDefined();
+    expect(unpackMotion(packMotion(newMotion()), into).glide).toBeUndefined();
+    const old = packMotion(gliding).slice(0, -1); // a page from before the Hoverboard sends one number less
+    expect(parseClient(state({ m: old }))).toBeDefined();
+    expect(unpackMotion(old, into).glide).toBeUndefined();
+  });
   test("a Stare stays with its own player: it never travels", () => {
     const staring = { ...newMotion(), grounded: true, stare: { weight: 1, yaw: 0.4, pitch: 0.2 } };
     expect(packMotion(staring)).toEqual(packMotion({ ...newMotion(), grounded: true }));
     expect(unpackMotion(packMotion(staring), newMotion()).stare).toBeUndefined();
   });
   test("the server drops a state whose lantern switch is not 0 or 1", () => {
-    const m = packMotion(newMotion()), last = m.length - 1;
-    for (const v of [0, 1]) expect(parseClient(state({ m: m.map((x, i) => i === last ? v : x) }))).toBeDefined();
-    for (const v of [2, -1, 0.5]) expect(parseClient(state({ m: m.map((x, i) => i === last ? v : x) }))).toBeUndefined();
-    expect(parseClient(state({ m: m.slice(0, last) }))).toBeUndefined(); // an old page's Motion, without it
+    const m = packMotion(newMotion());
+    for (const at of [m.length - 2, m.length - 1]) { // the lantern switch, and the glide after it
+      for (const v of [0, 1]) expect(parseClient(state({ m: m.map((x, i) => i === at ? v : x) }))).toBeDefined();
+      for (const v of [2, -1, 0.5]) expect(parseClient(state({ m: m.map((x, i) => i === at ? v : x) }))).toBeUndefined();
+    }
+    expect(parseClient(state({ m: m.slice(0, m.length - 2) }))).toBeUndefined(); // a page from before the lantern switch
   });
 });
 
