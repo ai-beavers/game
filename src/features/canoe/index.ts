@@ -69,7 +69,7 @@ export const create: CreateFeature = (game) => {
     const feet = launch(left, left.heading, world.heightAt, level());
     if (!feet) return;
     player.teleport(feet.x, level() + SEAT.height, feet.z, left.heading);
-    player.ride({ seat: SEAT.height, depth: DEPTH, bow: BOW, draft: DRAFT });
+    player.ride({ on: "water", seat: SEAT.height, depth: DEPTH, bow: BOW, draft: DRAFT });
     enable(body, false);
     riding = true;
     events.emit("canoeIn", { place: player.feet.clone() });

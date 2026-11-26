@@ -154,6 +154,10 @@ _Avoid_: skin, costume, clothes
 The small wooden boat that lies on the pond's bank. The beaver gets in, sits and paddles it across the pond, and gets out on the bank or into the water. Each player has their own.
 _Avoid_: boat, raft, kayak
 
+**Hoverboard**:
+The wooden plank that floats a hand's width over the ground, lying by the path near the spawn. With empty paws the beaver steps on, stands upright on it and glides over the land at twice its running speed. It stops at the shore and never goes over water. While it rides, the beaver carries, gnaws and builds nothing. It steps off wherever it likes, or a bear's swipe knocks it off, and the board stays where it was left. Each player has their own, and others see only their beaver gliding.
+_Avoid_: skateboard, board, scooter, vehicle
+
 **Mushroom**:
 A small red-capped mushroom growing at the foot of a tree in the clearing, which the beaver can eat. One eaten is gone until the next day's dawn. Each player has their own, and no one else sees them.
 _Avoid_: shroom, fungus, food, item

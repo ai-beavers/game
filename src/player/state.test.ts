@@ -1,6 +1,6 @@
 // Tests for the player's pure logic: jump timing, the carry sequence, diving and breath, the Motion bookkeeping. bun test src/player
 import { describe, expect, test } from "bun:test";
-import { BREATH, REFILL, RIDE_SPEED, SWIM_SPEED, rideKeys, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepLow, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
+import { BOARD_SPEED, BREATH, REFILL, RIDE_SPEED, SWIM_SPEED, rideKeys, SLAP_COOLDOWN, newDive, stepDive, TURN_ACCEL, jumpStarts, newAction, newJump, newMotion, newSlap, newSteering, slapHits, steer, stepAction, stepLow, stepSlap, trackMotion, turnTowards, type ActionState } from "./state.ts";
 import { RUN_SPEED } from "../contracts.ts";
 
 const dt = 1 / 60;
@@ -245,7 +245,7 @@ describe("riding a canoe", () => {
     expect(rideKeys(input)).toEqual({ move: { x: 0.3, y: 1 }, run: 0, jump: false, act: true, slap: false, dive: false, crawl: false });
   });
   test("it sits in the canoe whatever is held, and moving does not get it up", () => {
-    const riding = { grounded: true, afloat: false, moving: true, acting: false, jumping: false, riding: true };
+    const riding = { grounded: true, afloat: false, moving: true, acting: false, jumping: false, riding: "water" as const };
     expect(stepLow(false, false, riding).low).toBe("sit");
     expect(stepLow(true, true, riding).low).toBe("sit");
     expect(stepLow(false, true, riding).slow).toBe(false);
@@ -261,5 +261,33 @@ describe("riding a canoe", () => {
     expect(m.speed).toBeCloseTo(0.9);
     trackMotion(m, dt, { moved: 0, vertical: 0, turning: 0, grounded: true, afloat: false, act });
     expect(m.paddle).toBeUndefined();
+  });
+});
+
+describe("riding a hoverboard", () => {
+  const input = { move: { x: -0.5, y: 1 }, run: 1, jump: true, act: true, slap: true, dive: true, crawl: true };
+  test("it glides at twice the running speed", () => {
+    expect(BOARD_SPEED).toBe(4);
+  });
+  test("it stands on the board whatever is held, unlike the canoe, where it sits", () => {
+    const facts = { grounded: true, afloat: false, moving: true, acting: false, jumping: false };
+    for (const [sit, crawl] of [[false, false], [true, false], [false, true], [true, true]] as const) {
+      expect(stepLow(sit, crawl, { ...facts, riding: "land" })).toEqual({ low: "none", slow: false });
+      expect(stepLow(sit, crawl, { ...facts, riding: "water" })).toEqual({ low: "sit", slow: false });
+    }
+  });
+  test("jump, dive, crawl, run and the tail slap do nothing on it either; moving and E still work", () => {
+    expect(rideKeys(input)).toEqual({ move: { x: -0.5, y: 1 }, run: 0, jump: false, act: true, slap: false, dive: false, crawl: false });
+  });
+  test("gliding it stands: no stride, no paddle, no sitting, however fast it goes", () => {
+    const m = newMotion(), act = newAction();
+    for (let i = 0; i < 60; i++) trackMotion(m, dt, { moved: 4 * dt, vertical: 0, turning: 0, grounded: true, afloat: false, act, low: "none", glide: true });
+    expect(m.glide).toBe(true);
+    expect(m.speed).toBeCloseTo(4);
+    expect(m.distance).toBe(0); // no footsteps
+    expect(m.low).toBeUndefined();
+    expect(m.paddle).toBeUndefined();
+    trackMotion(m, dt, { moved: 0, vertical: 0, turning: 0, grounded: true, afloat: false, act });
+    expect(m.glide).toBeUndefined();
   });
 });

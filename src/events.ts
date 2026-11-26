@@ -54,6 +54,10 @@ export interface GameEvents {
    *  or into the water beside it. */
   canoeIn: { place: Vector3 };
   canoeOut: { place: Vector3; outcome: "bank" | "water" };
+  /** From the hoverboard feature (src/features/hoverboard): the beaver stepped onto its Hoverboard, and off it again:
+   *  with E onto the ground beside it ("step"), or knocked off by a bear's Swipe ("knocked"). */
+  boardOn: { place: Vector3 };
+  boardOff: { place: Vector3; outcome: "step" | "knocked" };
   /** From the mushrooms feature (src/features/mushrooms): the beaver bends down and eats a mushroom here. */
   munch: { place: Vector3 };
   /** From the race feature (src/features/race), the local player's own race only: the canoe crossed the start line,

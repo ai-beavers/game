@@ -54,6 +54,7 @@ import { sitAndCrawl } from "./stations/sit-crawl.ts";
 import { runOnAllFours } from "./stations/run.ts";
 import { shopping } from "./stations/shop.ts";
 import { canoeing } from "./stations/canoe.ts";
+import { hoverboarding } from "./stations/hoverboard.ts";
 import { racing } from "./stations/race.ts";
 import { mrsBeaver } from "./stations/mrs-beaver.ts";
 import { reading } from "./stations/reading.ts";
@@ -66,7 +67,7 @@ import { bear } from "./stations/bear.ts";
 import { riverKit } from "./stations/river-kit.ts";
 
 // ---- the stations, in order ----
-const STATIONS = [movement, runOnAllFours, dam, levels, trading, hotbar, baking, crafting, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, racing, flag, mrsBeaver, reading, mushrooms, oldBeaver, meeting, bear, riverKit, stare, skyWatch, hud, controls, views, firstSteps];
+const STATIONS = [movement, runOnAllFours, dam, levels, trading, hotbar, baking, crafting, pondPatrol, anger, hat, sitAndCrawl, shopping, canoeing, hoverboarding, racing, flag, mrsBeaver, reading, mushrooms, oldBeaver, meeting, bear, riverKit, stare, skyWatch, hud, controls, views, firstSteps];
 
 const PAUSE = 1.2; // s between stations
 const FAST = 4; // ?tour=fast: the world runs this many times faster than real time (stage.timeScale)

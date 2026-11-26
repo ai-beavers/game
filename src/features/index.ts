@@ -12,6 +12,7 @@ import { create as debug } from "./debug/index.ts";
 import { create as droppings } from "./droppings/index.ts";
 import { create as flag } from "./flag/index.ts";
 import { create as fx } from "./fx/index.ts";
+import { create as hoverboard } from "./hoverboard/index.ts";
 import { create as hud } from "./hud/index.ts";
 import { create as lantern } from "./lantern/index.ts";
 import { create as mrsBeaver } from "./mrs-beaver/index.ts";
@@ -29,4 +30,4 @@ import { create as tour } from "./tour/index.ts";
 import { create as trade } from "./trade/index.ts";
 import { create as workbench } from "./workbench/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, workbench, shop, canoe, race, flag, droppings, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, riverKit, net, audio, hud, stamina, debug, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, workbench, shop, canoe, hoverboard, race, flag, droppings, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, riverKit, net, audio, hud, stamina, debug, tour];
