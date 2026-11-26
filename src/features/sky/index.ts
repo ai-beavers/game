@@ -1,0 +1,118 @@
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import type { CreateFeature } from "../../game.ts";
+import { daylightOf, EXPOSURE, SKY_FILL, SUN_INTENSITY } from "../../light.ts";
+import { waterOf } from "../../world/water.ts";
+import { dayAt, goldenHour } from "./clock.ts";
+import { newClock, START, type Clock } from "./day.ts";
+import { createDome } from "./dome.ts";
+import { makeFireflies, makeMist, makeRain } from "./effects.ts";
+import { holdWeather, KINDS, newWeather, releaseWeather, stepWeather, type Kind } from "./weather.ts";
+
+/** The clock (day.ts): its own day, or, in a shared world, the server's (follow, set by src/features/net). */
+export interface SkyState extends Omit<Clock, "step"> {
+  dark: number;
+  /** 0 … 1: the golden hour as it shows, a low sun in clear air. */
+  golden: number;
+  weather: Kind; clouds: number; rain: number; fog: number; wind: number; wet: number;
+  setWeather(kind: Kind | "auto"): void;
+}
+
+const WHITE = Color3.White();
+const DAY_HORIZON = new Color3(0.76, 0.86, 0.92), DUSK = new Color3(0.86, 0.46, 0.26);
+const NIGHT = new Color3(0.054, 0.079, 0.155), GREY = new Color3(0.53, 0.59, 0.65), MOONLIT = new Color3(0.46, 0.58, 0.95);
+/** The clear sky's own light, which is all a shadow gets, and the air between the eye and a low sun. */
+const BLUE = new Color3(0.72, 0.87, 1.12), SUNLIT_AIR = new Color3(1, 0.84, 0.56);
+/** How much of BLUE the sky's light has at noon, and how much more in the golden hour, against the warm sun. */
+const NOON_BLUE = 0.3, GOLDEN_BLUE = 0.45;
+
+export const create: CreateFeature = game => {
+  const { scene } = game.stage;
+  const light = daylightOf(scene);
+  if (!light) return {};
+  const { sun, sky } = light;
+  const params = new URLSearchParams(location.search);
+  const hour = Number(params.get("hour") ?? START), speed = Number(params.get("speed") ?? 1);
+  const weather = newWeather(), held = params.get("weather") as Kind | null;
+  if (held && KINDS.includes(held)) holdWeather(weather, held);
+  const clock = newClock(Number.isFinite(hour) ? hour : START, Number.isFinite(speed) && speed >= 0 ? speed : 1, params.get("clock") !== "stop");
+  // Onto the clock itself, so its hour and running stay what it says.
+  const state: SkyState = Object.assign(clock, {
+    dark: 0, golden: 0, weather: weather.kind, clouds: weather.clouds, rain: weather.rain, fog: weather.fog, wind: weather.wind, wet: weather.wet,
+    setWeather(kind: Kind | "auto") { if (kind === "auto") releaseWeather(weather); else if (KINDS.includes(kind)) holdWeather(weather, kind); },
+  });
+  game.sky = state;
+  Object.assign(window, { sky: state });
+
+  const water = waterOf(scene), rain = makeRain(scene), mist = makeMist(scene), fireflies = makeFireflies(scene), dome = createDome(scene);
+  const ground = scene.getMeshByName("ground")?.material;
+  const dry = ground instanceof StandardMaterial ? ground.diffuseColor.clone() : null;
+  const horizon = new Color3(), wind = new Vector2(), drift = new Vector2(), ahead = new Vector3();
+  scene.onDisposeObservable.add(game.settings.on(({quality}) => dome.quality(quality)));
+  scene.fogMode = Scene.FOGMODE_EXP2;
+  const grade = scene.imageProcessingConfiguration, curves = new ColorCurves();
+  curves.shadowsHue = curves.midtonesHue = 228;
+  curves.highlightsHue = 36; // gold
+  grade.colorCurves = curves;
+  grade.colorCurvesEnabled = true; // on all day (neutral by day), so the shader never recompiles at dusk
+  let time = 0;
+  function update() {
+    const day = dayAt(state.hour), { clouds, fog, wet } = weather;
+    Color3.LerpToRef(DAY_HORIZON, DUSK, day.golden, horizon);
+    Color3.LerpToRef(horizon, GREY, Math.min(1, clouds * 0.8 + fog * 0.45), horizon);
+    Color3.LerpToRef(horizon, NIGHT, day.night, horizon);
+    dome.update(day, horizon, clouds, fog, Math.min(1, day.mist + fog * 0.45), drift, time);
+    // The golden hour under a clear sky: the air glows towards the low sun and layers the far trees, the shadows
+    // turn blue and the sunlit side warm.
+    const clear = (1 - clouds) * (1 - fog), golden = goldenHour(day, clouds, fog);
+    // shortcut: one fog colour for the whole picture, by where the camera looks; per pixel (a term in each shader,
+    // docs/agents/rendering.md) when a lens wide enough shows the sunlit air ending at an edge.
+    // Not under water: the pass there (src/features/post/underwater.ts) takes its brightness from this colour.
+    const eye = scene.activeCamera ?? game.stage.camera, above = eye.globalPosition.y > (water?.level ?? game.world.waterLevel) ? 1 : 0;
+    eye.getDirectionToRef(Vector3.Forward(scene.useRightHandedSystem), ahead);
+    Color3.LerpToRef(horizon, SUNLIT_AIR, above * golden * Math.max(0, Vector3.Dot(ahead, day.sun)) ** 2 * 0.5, scene.fogColor);
+    scene.fogDensity = 0.012 + fog * 0.058 + weather.rain * 0.012 + day.mist * 0.006 + golden * 0.0045;
+    sun.direction.copyFrom(day.light);
+    sun.diffuse.copyFrom(day.color);
+    sun.intensity = day.intensity / SUN_INTENSITY * 1.6 * (1 - clouds * 0.77) * (1 - fog * 0.35) * (1 + 0.37 * golden);
+    sky.intensity = (1.15 - day.night * 0.75) * (1 - clouds * 0.23);
+    Color3.LerpToRef(WHITE, MOONLIT, day.night, sky.diffuse); // a cool floor: at night nothing sinks into black
+    // The eye opens up as it gets dark. In steps of half a percent, too small to see: on every change Babylon marks
+    // each material dirty on each mesh and checks them all again (6 ms a frame, measured, M4 Max; it changed on three
+    // frames of four, now on one of a hundred).
+    const exposure = day.exposure / EXPOSURE * (1 + 0.05 * golden);
+    if (Math.abs(exposure - grade.exposure) > 0.005 * grade.exposure) grade.exposure = exposure;
+    // It sees less colour, more blue, under the moon; the highlights keep theirs, so warm points stay warm.
+    curves.shadowsSaturation = curves.midtonesSaturation = -30 * day.night;
+    curves.shadowsDensity = 100 * day.night + 22 * golden;
+    curves.highlightsDensity = 34 * golden;
+    curves.globalSaturation = 14 * golden;
+    curves.midtonesDensity = 90 * day.night;
+    Color3.LerpToRef(sky.diffuse, BLUE, (1 - day.night) * clear * NOON_BLUE + GOLDEN_BLUE * golden, sky.diffuse);
+    sky.diffuse.scaleInPlace(1 - (1 - SKY_FILL) * (1 - day.night) * (1 - clouds)); // room for the sun's shadows by day
+    if (water) Object.assign(water.sky, { rain: weather.rain, clouds, night: day.night });
+    if (dry && ground instanceof StandardMaterial) {
+      dry.scaleToRef(1 - wet * 0.32, ground.diffuseColor);
+      ground.specularColor.setAll(0.06 + wet * 0.2);
+    }
+    wind.set(0.8, 0.45).scaleInPlace(0.5 + 4 * weather.wind);
+    rain(time, weather.rain, wind, (scene.activeCamera ?? game.stage.camera).position, horizon);
+    mist(time, Math.min(1, day.mist + fog * 0.45), game.world.waterLevel, horizon);
+    fireflies(time, day.dark * (1 - weather.rain) * (1 - fog * 0.7), game.world.waterLevel);
+    Object.assign(state, { dark: day.dark, golden, weather: weather.kind, clouds, fog, rain: weather.rain, wind: weather.wind, wet });
+  }
+  update();
+  return {
+    step(dt) {
+      time += dt;
+      drift.x += dt * 0.004 * (0.4 + 3 * weather.wind); // the clouds go the way the rain is blown (wind below), slower
+      drift.y += dt * 0.0022 * (0.4 + 3 * weather.wind);
+      clock.step(dt);
+      stepWeather(weather, dt, Math.random);
+    },
+    update,
+  };
+};

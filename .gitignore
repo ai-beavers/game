@@ -1,0 +1,9 @@
+node_modules/
+dist/
+shots/
+.DS_Store
+*.blend
+*.blend1
+recordings/
+.wrangler/
+.env*
