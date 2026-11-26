@@ -12,6 +12,7 @@ import type { Game } from "../../game.ts";
 import type { GameEvents } from "../../events.ts";
 import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
+import { REST_TIME } from "../../player/stamina.ts";
 import type { SkyState } from "../sky/index.ts";
 import { LODGE, live as standing, SLOTS, type BuildState } from "../build/rules.ts";
 import { FIRST_RIM } from "../../world/terrain.ts";
@@ -68,6 +69,8 @@ export interface Kit {
   wait(seconds: number): Promise<void>;
   /** Until done() is true; throws why (or what why() writes then) after limit s. */
   until(done: () => boolean, limit: number, why: string | (() => string)): Promise<void>;
+  /** Stands until the beaver has caught its breath (its stamina full), as a player does before a run it means to make. */
+  rest(): Promise<void>;
   /** Holds a key the tour's input has for hold s. */
   tap(key: "act" | "jump" | "slap", hold?: number): Promise<void>;
   /** A keyboard event on window, as a person's key. */
@@ -194,6 +197,8 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     }
     expect(offers(), `could not get to where E would ${action} (E would: ${player.offer()?.action ?? "nothing"}${stuck})`);
   };
+
+  const rest = () => until(() => player.stamina >= 1, REST_TIME * 1.5, () => `stood ${REST_TIME * 1.5} s, its stamina came back only to ${player.stamina.toFixed(2)}`);
 
   // ---- what happened: counts and the last of each event ----
   const count = {} as Record<EventName, number>, last: Partial<GameEvents> = {};
@@ -348,7 +353,7 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   return {
     game, player, world, stage, beaver, fast, live, requested, want,
     get usedUp() { return usedUp; },
-    frame, paint, wait, until, tap, press, key, flat, walkTo, reach, last, expect, after, hudText,
+    frame, paint, wait, until, rest, tap, press, key, flat, walkTo, reach, last, expect, after, hudText,
     build, needBuild, pond, sky, clear, standingTrees, fell, split, loose, pickUp, fetchStick, buildUpTo, regrowing, resume,
   };
 };
