@@ -24,9 +24,10 @@ import { create as race } from "./race/index.ts";
 import { create as post } from "./post/index.ts";
 import { create as shop } from "./shop/index.ts";
 import { create as sky } from "./sky/index.ts";
+import { create as stamina } from "./stamina/index.ts";
 import { create as stare } from "./stare/index.ts";
 import { create as tour } from "./tour/index.ts";
 import { create as trade } from "./trade/index.ts";
 import { create as workbench } from "./workbench/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, workbench, shop, canoe, hoverboard, race, flag, droppings, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, riverKit, net, audio, hud, debug, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, lantern, stare, post, build, trade, bakery, workbench, shop, canoe, hoverboard, race, flag, droppings, mrsBeaver, mushrooms, oldBeaver, fx, life, bear, riverKit, net, audio, hud, stamina, debug, tour];

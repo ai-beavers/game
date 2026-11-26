@@ -53,6 +53,7 @@ export const riverKit = (tools: Kit): Station[] => {
       // Left standing, it finds something of its own to do.
       await until(() => kit.doing !== "stand", IDLE + 2, `left standing ${IDLE + 2} s, the kit still only stands`);
       // The beaver runs: the kit runs too, and is beside it again.
+      await tools.rest();
       let fastest = 0;
       const pace = () => { fastest = Math.max(fastest, kit.speed); };
       await walk(kit, 8, { run: 1, arrived: () => { pace(); return false; } }, pace);

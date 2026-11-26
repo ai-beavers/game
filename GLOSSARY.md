@@ -197,8 +197,12 @@ The beaver going low on all fours on land, slower than walking, for as long as t
 _Avoid_: crouch, sneak, prone
 
 **Bound**:
-How the beaver runs on land: down on all fours, long and low, the hind feet pushing off together and the front paws landing between, the back humping and stretching with each stride. Walking it stays upright; it drops into a bound as it speeds up and rises again as it slows. Carrying a stick it runs upright.
+How the beaver runs on land: down on all fours, long and low, the hind feet pushing off together and the front paws landing between, the back humping and stretching with each stride. Walking it stays upright; it drops into a bound as it speeds up and rises again as it slows. Carrying a stick it runs upright. Running takes stamina.
 _Avoid_: gallop, sprint, dash
+
+**Stamina**:
+How long the beaver can keep running on land. It drains while the beaver runs, and when it is gone the beaver can only walk until a third of it has come back. It comes back whenever the beaver is not running, three times as fast while it gnaws a tree, eating its wood. Swimming, crawling and paddling never use it. Each player has their own, for the visit only.
+_Avoid_: energy, endurance, sprint meter, breath
 
 **Dizzy**:
 What a player's view becomes for a while after the beaver eats too many mushrooms too quickly: colours slowly drift and the picture gently sways and waves, with no flashing. Only that player's own screen changes; steering does not, and the HUD stays steady.
@@ -251,6 +255,10 @@ _Avoid_: HP, hit points, life, lives
 **Health bar**:
 The bar at the top of the HUD with the bear's name and its health, shown from when the bear goes for the player's beaver until it is driven off or gives up.
 _Avoid_: life bar, HP bar, boss bar
+
+**Stamina bar**:
+The small bar just above the hotbar with the beaver's stamina, shown only while it is not full.
+_Avoid_: energy bar, sprint bar, Health bar (that is the bear's)
 
 **Driven off**:
 What the bear is once it has no health left: it turns and runs all the way back into the far forest, in plain sight, and stays there until the next day. It is not killed; nothing in the clearing dies.
@@ -307,7 +315,7 @@ The engine, scene, camera, HUD texture and physics world every part and feature 
 _Avoid_: context, app, renderer
 
 **HUD**:
-Everything drawn over the world for the player: the player card, the quest tracker, the map, hints, the hotbar, menus, touch controls.
+Everything drawn over the world for the player: the player card, the quest tracker, the map, hints, the hotbar, the stamina bar, menus, touch controls.
 _Avoid_: UI, GUI, interface
 
 **Overlay**:

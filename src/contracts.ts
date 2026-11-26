@@ -163,6 +163,10 @@ export interface Player {
   node: TransformNode;
   /** What the body is doing right now; the same object every frame, updated in place. */
   motion: Motion;
+  /** How much running on land is left, 0 … 1 (src/player/stamina.ts); full at the start of every visit. */
+  readonly stamina: number;
+  /** Its stamina ran out: it only walks until a third of it is back. */
+  readonly tired: boolean;
   /** Once per physics step, before it (run()'s `fixed`): reads the keys, moves the character. */
   step(dt: number): void;
   /** Once per frame (run()'s `frame`): places node between the last two steps, moves stage.camera. */

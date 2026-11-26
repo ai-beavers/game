@@ -12,6 +12,7 @@ export const movement = (kit: Kit): Station[] => {
       expect(steps(), "walked without a footstep");
     }, "Around the clearing"],
     ["Run", async () => {
+      await kit.rest();
       let top = 0;
       const fast = () => { top = Math.max(top, player.motion.speed); return false; };
       await walkTo(world.spawn.x + 4, world.spawn.z + 1, { run: 1, arrived: fast });

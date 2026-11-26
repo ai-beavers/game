@@ -4,7 +4,7 @@
 // the dam's next slot, once the dam holds swim it out to the lodge, and once the lodge stands dive it down to the
 // food cache on the bed and wedge it in (one bot at the pile at a time, the others wait their turn afloat nearby).
 // It walks, runs, swims, dives and turns as a player does (player/state.ts steer and stepDive: the same speeds, the
-// same breath, up again when it runs out), follows the ground and the dam, steers round other beavers and the crates
+// same breath, up again when it runs out; the same stamina, player/stamina.ts), follows the ground and the dam, steers round other beavers and the crates
 // where the host says they are, stands a moment when it meets another head-on, and its Motion shows what it does
 // (gnaw, pickup, build, drop, the slap; a dive in its depth and vertical speed), so browsers animate it. Between
 // jobs it walks, swims, dives for a look at the basin, slaps its tail now and then, and looks at a real player who
@@ -22,6 +22,7 @@
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
 import { BASIN, heightAt, POND } from "../../world/terrain.ts";
 import { BREATH, DROP_TIME, newDive, newMotion, newSlap, newSteering, PICKUP_TIME, steer, stepDive, stepSlap, trackMotion, type ActionState } from "../../player/state.ts";
+import { newStamina, stepStamina } from "../../player/stamina.ts";
 import { apply, BITE_TIME, BITES_TO_SPLIT, CACHE, live, LODGE, newState, REGROW, SLOTS, STICKS, used, type BuildChange } from "../build/rules.ts";
 import { atPile, decide, milestone, overdue, yields, type Job, type Loose, type Other, type Seen, type Spot } from "./botmind.ts";
 import { heading, loadWorld, type BotWorld } from "./botworld.ts";
@@ -133,7 +134,7 @@ function workBot(n: number, world: BotWorld) {
   const others = new Map<number, Other>(), names = new Map<number, string>(), lying = new Map<number, [number, number, number]>(); // thing id → where
   const touched = new Map<number, { at: number; by: number }>(), falling = new Map<number, { since: number; mine: boolean }>(), asked = new Map<number, number>();
   const skipped = new Map<number, number>(), greeted = new Set<number>(); // stick ids (trees as -1 - i) the watchdog gave up on → until
-  const body = { x: cx + Math.cos(n * 2.1) * 1.2, z: cz + Math.sin(n * 2.1) * 1.2, y: 0, vy: 0, afloat: false, steering: newSteering(), motion: newMotion(), slap: newSlap(), dive: newDive() };
+  const body = { x: cx + Math.cos(n * 2.1) * 1.2, z: cz + Math.sin(n * 2.1) * 1.2, y: 0, vy: 0, afloat: false, steering: newSteering(), motion: newMotion(), slap: newSlap(), dive: newDive(), stamina: newStamina() };
   body.y = heightAt(body.x, body.z);
   body.steering.facing = n * 1.3;
   const act: ActionState = { action: "none", progress: 0, carrying: false };
@@ -336,7 +337,10 @@ function workBot(n: number, world: BotWorld) {
   const move = (to: Spot | undefined, face: number | undefined, run: boolean, dive: boolean) => {
     const placed = state.dam.length, gap = to ? Math.hypot(to.x - body.x, to.z - body.z) : 0, going = !!to && gap > 0.08;
     const beavers = [...others.values()].filter((o) => Number.isFinite(o.x) && Math.abs((o.y ?? body.y) - body.y) < 1).map((o) => ({ x: o.x, z: o.z, r: 0.25 }));
-    const want = going ? heading(body, to!, [...world.obstacles(state, lying), ...beavers]) : face, top = body.afloat ? SWIM_SPEED : run && gap > 3 ? RUN_SPEED : WALK_SPEED;
+    const want = going ? heading(body, to!, [...world.obstacles(state, lying), ...beavers]) : face;
+    // A run on land takes stamina as a player's does (player/stamina.ts); tired, it walks.
+    const allowed = stepStamina(body.stamina, dt, going && run && gap > 3 && !body.afloat ? 1 : 0, { onLand: !body.afloat, gnawing: act.action === "gnaw" });
+    const top = body.afloat ? SWIM_SPEED : WALK_SPEED + (RUN_SPEED - WALK_SPEED) * allowed;
     const [accel, brake] = body.afloat ? [SWIM_ACCEL, SWIM_ACCEL] : [ACCEL, BRAKE], facing = body.steering.facing;
     steer(body.steering, want, going ? Math.min(1, 0.3 + gap / 0.5) : 0, top, accel, brake, dt);
     const s = body.steering, x = body.x + Math.sin(s.facing) * s.speed * dt, z = body.z + Math.cos(s.facing) * s.speed * dt;
