@@ -71,3 +71,16 @@ Models are rebuilt with Blender, headless:
 `/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/build.py -- assets/beaver.glb`
 
 `/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/bear.py -- assets/bear.glb`
+
+## Licence
+
+MIT (`LICENSE`) for the code and for the models. `beaver.glb`, `props.glb` and `bear.glb` are built from code
+(`tools/blender/`). `kit.glb` is made from a picture that ChatGPT drew for us, with the open models that
+`tools/comfyui/README.md` names.
+
+Two files are not under it:
+
+- `assets/logo.png` is the AI Beavers logo. Use it to name this project, and for nothing else.
+- `assets/nunito.woff2` is the font Nunito, under the SIL Open Font License 1.1 (`assets/nunito-OFL.txt`).
+
+The packages in `package.json` keep their own licences: Babylon.js is Apache-2.0, Havok MIT.

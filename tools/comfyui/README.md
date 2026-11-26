@@ -108,8 +108,9 @@ hf download Comfy-Org/Pixal3D --local-dir models \
 | DINOv3 ViT-L (reads the pictures) | Meta, as repackaged by Comfy Org | Meta's DINOv3 licence |
 | ComfyUI (runs it) | Comfy Org | GPL-3; a tool only, nothing of it is in the game |
 
-No paid service and nothing that excludes the EU. Read Meta's DINOv3 licence before shipping an animal made with it:
-nobody here has yet.
+No paid service and nothing that excludes the EU. Meta's DINOv3 licence (14 August 2025) sets terms for passing on
+DINOv3 itself, which the game does not do, and none for what is made with it. It forbids military, weapons and
+nuclear uses.
 
 ## What to expect
 
