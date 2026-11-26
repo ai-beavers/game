@@ -1,12 +1,12 @@
 # Speech is made live, once for everyone who listens, by the servers we run
 
-ElevenLabs can turn text into speech and speech into text. This is the design of 2026-11-20 for using it. The Old Beaver's voice is built; dictation is not. What the two are for was worked out from the code and the wishes, not said by the maintainer: the Old Beaver gets a voice (the wish behind him asked that he "speak audio", and his spec left real words out), and a player can use dictation for a chat line. The maintainer set the rules, in these words:
+ElevenLabs can turn text into speech and speech into text. This is the design of 2026-11-20 for using it. The Old Beaver's voice is built; dictation is not. What the two are for was worked out from the code and the wishes, not said by the maintainer: the Old Beaver gets a voice (the wish behind him asked that he "speak audio", and his spec left real words out), and a player can use dictation for a chat line. The maintainer set five rules:
 
-- "we dont want to prerecord anything. it should be always live"
-- "when e.g. the old beaver is talking, it should be just one stream from and to elevenlabs. doesnt matter how many players are in front of it."
-- "the key should also only be stored on cloudflare. key never goes to the players browser"
-- "also bun dev should do the voice thing with elevenlabs"
-- "Local will also have the key."
+1. Nothing is recorded ahead of time: speech is always made live.
+2. When a creature such as the Old Beaver talks, there is one stream from and to ElevenLabs, however many players stand in front of him.
+3. The key is kept on Cloudflare only and never goes to a player's browser.
+4. `bun dev` speaks with ElevenLabs too.
+5. A developer's machine has the key as well.
 
 ## Live
 
