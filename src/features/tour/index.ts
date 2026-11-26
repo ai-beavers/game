@@ -226,8 +226,15 @@ export const create: CreateFeature = (game) => {
     }
   })();
 
+  let beat = 0; // performance.now() of the last sign of life
   return {
     update(dt) {
+      // In a frame (the stream's /main page): a sign of life once a second, also while paused. A page that stops
+      // sending hangs (a loop without end), and the page round it can replace it.
+      if (window.parent !== window && performance.now() - beat >= 1000) {
+        beat = performance.now();
+        window.parent.postMessage({ tour: tour.clock }, "*");
+      }
       // Photo mode pauses the world but not the tour; the pause menu holds both.
       if (stage.paused && !document.body.classList.contains("photo")) return;
       if (!stage.paused) tour.clock = clock += dt;
