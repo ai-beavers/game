@@ -23,7 +23,7 @@
 //   camera.zoom(scale)                distance times scale, kept in 2 … 8 m (eased in the picture)
 //   camera.touched                    rises with every turn, zoom and press on the picture by the player
 //   camera.invertY = true             mouse drag up and down turned round (settings.invertY; the controls feature sets it)
-//   camera.room                       how far it may stand along a way, for things without a collider (the live tour's).
+//   camera.room                       how far it may stand along a way, for things without a collider (the Clear view's: the bank's backdrop leaves).
 //   camera.view                       "third-person" or "first-person"; V switches it, except while paused (a menu,
 //                                     photo mode).
 //   camera.eyes                       where the beaver sees from (Beaver.eyes), for the first-person view.
@@ -45,7 +45,7 @@ import { RUN_SPEED, WALK_SPEED } from "../contracts.ts";
 import type { Stage } from "../engine.ts";
 import { ball as ballShape } from "../physics.ts";
 
-const LOOK_HEIGHT = 0.7; // m above the feet
+export const LOOK_HEIGHT = 0.7; // m above the feet
 const MIN_DISTANCE = 2, MAX_DISTANCE = 8;
 const MIN_PITCH = -0.05, MAX_PITCH = 1.35; // rad above the horizon: even at 8 m the camera stays above the feet
 const UNDER_PITCH = -0.7; // rad: diving, the camera may go below the beaver and look up at the surface

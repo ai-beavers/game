@@ -268,6 +268,10 @@ _Avoid_: dead, killed, defeated, despawned
 The two ways a player can see the clearing. In the third-person view (the usual one) the camera follows behind the beaver, which is in the picture. In the first-person view the player sees through the beaver's eyes, and the beaver itself is not in the picture. Each player switches between them for their own screen only.
 _Avoid_: camera mode, POV, cockpit view
 
+**Clear view**:
+In the third-person view, the leaves of a tree, bush or reed that hide the beaver, or that the camera stands in, turn see-through for as long as they are in the way and come back after, so the camera keeps its distance instead of pulling in. Only leaves do this; trunks, rocks, crates and the ground still bring the camera in. Each player's clear view is on their own screen only: everyone else sees the leaves whole.
+_Avoid_: x-ray, occlusion fade, hiding foliage
+
 **Experience**:
 The points a player earns by building with sticks, one for each stick built in, and spends at the shop.
 _Avoid_: XP, coins, money, score (the player card writes "XP" only as the unit after its numbers: "12 / 30 XP")
