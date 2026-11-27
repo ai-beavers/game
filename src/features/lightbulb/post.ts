@@ -18,8 +18,9 @@ import { cylinder } from "../../physics.ts";
 import { material } from "../../world/models.ts";
 import { FRONT, POST } from "./place.ts";
 
-/** The glass's warm white, unlit and lit. */
+/** The glass switched off: dull, uncoloured. */
 const GLASS = new Color3(0.58, 0.58, 0.56);
+/** The glass's glow when lit, scaled by glow() each picture: plain warm white, not one of the shop's colours. */
 export const WARM_WHITE = new Color3(1, 0.9, 0.72);
 /** m the pull string gives at the height of a tug. */
 const GIVE = 0.07;
@@ -106,10 +107,8 @@ export function createPost(stage: Stage, world: World) {
   physics.fixed(cylinder(scene, H / 2, POST.radius + 0.03, { x: POST.x, y: ground + H / 2, z: POST.z }), undefined, 0.9);
 
   return {
-    root,
     glass,
     /** The pull string drawn down by a paw, k 0 (at rest) … 1 (the lowest of the tug). */
     tug(k: number) { pull.position.y = -GIVE * k; },
   };
 }
-export type Post = ReturnType<typeof createPost>;

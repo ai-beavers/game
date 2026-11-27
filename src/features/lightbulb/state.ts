@@ -5,6 +5,9 @@
 //   bulb = stepBulb(bulb, dt)      once a frame: the tug plays out
 //   glow(bulb.on, sky.dark)        the glass's brightness, 0 (off) … GLOW.night
 
+// The night factor is the shop's (its café lamps' and bulbs'), so the clearing's glowing glass comes on at one dusk.
+import { lampNight } from "../shop/rules.ts";
+
 export interface Bulb {
   readonly on: boolean;
   /** s left of the tug under way; 0: none, the cord can be pulled. */
@@ -26,9 +29,8 @@ export const stepBulb = (bulb: Bulb, dt: number): Bulb =>
   bulb.pulling > 0 ? { on: bulb.on, pulling: Math.max(0, bulb.pulling - dt) } : bulb;
 
 /** How brightly the glass shines: nothing off; lit, from GLOW.day to GLOW.night as the sky's dark (0 … 1) deepens, by
- *  the same night factor as the shop's café lamps (src/features/shop/building.ts). */
+ *  the same night factor as the shop's café lamps. */
 export function glow(on: boolean, dark: number): number {
   if (!on) return 0;
-  const night = Math.min(1, Math.max(0, (dark - 0.08) / 0.4));
-  return GLOW.day + (GLOW.night - GLOW.day) * night;
+  return GLOW.day + (GLOW.night - GLOW.day) * lampNight(dark);
 }

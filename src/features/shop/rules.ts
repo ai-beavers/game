@@ -8,6 +8,7 @@
 //   levelOf(state.earned)                             { level: 2, into: 5, need: 30 }: the player card's LV and bar
 //   choose(state, "gnawer")                           true: the beaver's class now (free, any time); false: no such class
 //   classEffect(state)                                { biteTime: 0.4, swimSpeed: 0.5 }: what the class makes better
+//   lampNight(sky.dark)                               0 … 1: how far into the night the shop's lights glow
 //
 // The state is plain JSON, kept in localStorage beside the build feature's saved game.
 
@@ -116,3 +117,7 @@ export function classEffect(s: ShopState): ClassEffect {
   const c = beaverClass(s.class) ?? PLAIN;
   return { biteTime: c.biteTime, swimSpeed: c.swimSpeed };
 }
+
+/** 0 by day … 1 at night: how far the shop's bulbs and café lamps are into their night glow, by the sky's dark (0 … 1).
+ *  The Lightbulb at the workbench glows by it too (src/features/lightbulb/state.ts). */
+export const lampNight = (dark: number) => Math.min(1, Math.max(0, (dark - 0.08) / 0.4));

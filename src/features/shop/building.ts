@@ -23,6 +23,7 @@ import type { Stage } from "../../engine.ts";
 import { box as boxShape, cylinder, hull as hullOf, SOLID, type PhysicsShape } from "../../physics.ts";
 import { mergeStatic } from "../../world/models.ts";
 import { RADIUS, SIGN } from "./place.ts";
+import { lampNight } from "./rules.ts";
 
 const WALL = 2.1, THICK = 0.14, LOW = 0.95; // m: wall height, thickness, the lower part always shown
 const WALL_SOLID = 0.95; // m the walls' colliders reach up: over the beaver's reach, under the camera's look
@@ -312,7 +313,7 @@ export function buildShop(stage: Stage, world: World, spot: { x: number; z: numb
     update(dt: number, dark: number, isInside: boolean, lively: boolean) {
       time += dt;
       if (shown === isInside) { shown = !isInside; for (const n of roofParts) n.setEnabled(shown); }
-      const night = Math.min(1, Math.max(0, (dark - 0.08) / 0.4));
+      const night = lampNight(dark);
       // The bulbs chase round, brighter at night; by day they show their colour softly.
       bulbs.forEach((b, c) => {
         const on = 0.5 + 0.5 * Math.sin(time * 4 - c * Math.PI / 2);
