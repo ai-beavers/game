@@ -74,6 +74,10 @@ _Avoid_: bread item, food, snack
 The tree-stump bench in the open beside the trading post, where the beaver makes a new good from goods in its backpack, using them up. It takes no sticks. The bench is the same for everyone; what is made on it is each player's own.
 _Avoid_: crafting table, crafting station, forge, trading post
 
+**Lightbulb**:
+The bare bulb that hangs on a cord from a crooked post beside the workbench. The beaver pulls the cord to switch it on, and pulls it again to switch it off. It glows softly by day and brightly at night, but lights nothing around it. Each visit it starts switched off. Each player has their own, and no one else sees it switched.
+_Avoid_: lamp (those hang in the shop's café), lantern, light, bulb (alone, the shop's ring of bulbs)
+
 **Recipe**:
 The goods the workbench needs for one good it makes: a feather and a shell for a charm. The bench says it when the goods are missing.
 _Avoid_: pattern, formula, blueprint
