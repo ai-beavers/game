@@ -7,7 +7,7 @@ import { placeAll, SPAWN } from "../../world/place.ts";
 import { SHOP, SHOP_CLEAR } from "../shop/place.ts";
 import { footprint as tradingPost, spotFor, standAt, FRONT as POST_FRONT } from "../trade/place.ts";
 import { footprint as bakery, STAND as OVEN, FRONT as OVEN_FRONT } from "../bakery/place.ts";
-import { atBench, BENCH, FRONT as BENCH_FRONT, STAND as BENCH_STAND, footprint as bench } from "../workbench/place.ts";
+import { ALONG as BENCH_ALONG, atBench, BENCH, FRONT as BENCH_FRONT, STAND as BENCH_STAND, footprint as bench } from "../workbench/place.ts";
 import { PLACE as OLD_BEAVER } from "../old-beaver/rules.ts";
 import { FLOWER, HIDING, TRACKS, wayHome } from "../mrs-beaver/rules.ts";
 import { SPOTS as MUSHROOMS } from "../mushrooms/rules.ts";
@@ -77,5 +77,13 @@ test("where the cord is in reach, E does nothing else: not the bench, not the tr
     if (!atCord(x, z)) continue;
     expect(atBench(x, z), `at the bench too at ${x.toFixed(2)}, ${z.toFixed(2)}`).toBe(false);
     expect(spotFor(x, z), `at the trading post too at ${x.toFixed(2)}, ${z.toFixed(2)}`).toBeUndefined();
+  }
+});
+
+test("walking up to the bench from its working side never comes within reach of the cord", () => {
+  // The strip a beaver crosses on its last steps to the bench, as wide as it may stray from the straight way up.
+  for (let out = 0; out <= 2; out += 0.05) for (let side = -0.45; side <= 0.45; side += 0.05) {
+    const x = BENCH_STAND.x + BENCH_FRONT.x * out + BENCH_ALONG.x * side, z = BENCH_STAND.z + BENCH_FRONT.z * out + BENCH_ALONG.z * side;
+    expect(atCord(x, z), `the cord in reach on the way to the bench at ${x.toFixed(2)}, ${z.toFixed(2)}`).toBe(false);
   }
 });
