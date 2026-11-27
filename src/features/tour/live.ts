@@ -14,7 +14,7 @@ export interface Moment {
 
 /** The activities the newest features added, and the day each came (UTC). A feature with an activity of its own
  *  enters it here; the beaver is curious about it for FRESH days. Drop an entry once it is older. */
-const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18", Canoeing: "2026-11-18", "Find Mrs. Beaver": "2026-11-19", "Left alone": "2026-11-19", "Burn the flag": "2026-11-20", "Visit the Old Beaver": "2026-11-19", "Hold a good": "2026-11-20", "Canoe race": "2026-11-20", Mushrooms: "2026-11-19", Baking: "2026-11-20", Crafting: "2026-11-21", "Meet a beaver": "2026-11-20", Hoverboarding: "2026-11-26" };
+const NEW: Record<string, string> = { "Wears a hat": "2026-11-18", Trading: "2026-11-18", "Sit and crawl": "2026-11-18", "Shopping": "2026-11-18", Canoeing: "2026-11-18", "Find Mrs. Beaver": "2026-11-19", "Left alone": "2026-11-19", "Burn the flag": "2026-11-20", "Visit the Old Beaver": "2026-11-19", "Hold a good": "2026-11-20", "Canoe race": "2026-11-20", Mushrooms: "2026-11-19", Baking: "2026-11-20", Crafting: "2026-11-21", "Meet a beaver": "2026-11-20", Hoverboarding: "2026-11-26", "Switch on the lightbulb": "2026-11-27" };
 const FRESH = 7; // days
 export const fresh = (activity: string, m: Moment) => {
   const since = m.day === undefined || !NEW[activity] ? NaN : (m.day - Date.parse(NEW[activity]!)) / 86_400_000;
@@ -36,6 +36,7 @@ export function weight(activity: string, m: Moment): number {
     case "Around the clearing": return 0.7;
     case "Mushrooms": return 0.6; // now and then: the stream is not often dizzy
     case "Left alone": return 0.3; // a real minute of standing still: now and then, not often
+    case "Switch on the lightbulb": return DUSK(hour) || NIGHT(hour) ? 2 : 0.6; // a glow shows best in the dark
     default: return 1;
   }
 }
@@ -71,6 +72,7 @@ export function reason(activity: string, m: Moment): string {
     case "Crafting": return "A feather and a shell. I could tie those together.";
     case "Meet a beaver": return "Someone's at the pond. Say hello.";
     case "Hoverboarding": return "Long way to go. Board it is.";
+    case "Switch on the lightbulb": return DUSK(hour) || NIGHT(hour) ? "Dark out. Let's switch on the bulb." : "Let's pull the cord by the bench.";
     default: return activity;
   }
 }
