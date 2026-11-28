@@ -6,6 +6,7 @@
 //
 //   BOARD                  its middle on the ground, the way its face looks (yaw, as Player.facing: 0 is +z), its size
 //   FRONT · ALONG          unit vectors on the ground: out of its face, and along it
+//   READ_AT                m out in front of its face where a beaver stands to read it
 //   footprint()            circles over its length, for steering
 /** x, z: m; yaw: radians; width and height of the face, and its lower edge over the ground, m. */
 export const BOARD = { x: 0.0, z: 1.45, yaw: -0.8, width: 1.4, height: 1.2, lift: 0.4 };
@@ -13,6 +14,8 @@ export const FRONT = { x: Math.sin(BOARD.yaw), z: Math.cos(BOARD.yaw) };
 export const ALONG = { x: FRONT.z, z: -FRONT.x };
 /** m from the face to the back of the posts: the board's depth on the ground. */
 export const DEPTH = 0.16;
+/** m out in front of the face where a beaver stands to read it. */
+export const READ_AT = 2.6;
 
 /** Circles over the board along its width, for whatever steers round it. */
 export const footprint = () => [-1, -0.5, 0, 0.5, 1].map((d) => ({

@@ -3,7 +3,7 @@
 // where the world needs it next (the dam, the lodge or the cache), and sees its name on the board with one more. It
 // plays in the tour's own world, whose tally is its own: nothing here counts on the players' board.
 import { LODGE, SLOTS, STICKS } from "../../build/rules.ts";
-import { BOARD, FRONT } from "../../top-ten/place.ts";
+import { BOARD, FRONT, READ_AT } from "../../top-ten/place.ts";
 import type { TopRow } from "../../top-ten/rules.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
@@ -16,7 +16,7 @@ export const topTen = (kit: Kit): Station[] => {
   const { player, live, until, walkTo, wait, expect, needBuild, buildUpTo, stockUpTo } = kit;
   /** To the board's front, the last steps towards it, and the camera turned to it, as a player looks to read it. */
   const lookAtBoard = async () => {
-    await walkTo(BOARD.x + FRONT.x * 2.6, BOARD.z + FRONT.z * 2.6, { near: 0.5, hop: true, limit: 60 });
+    await walkTo(BOARD.x + FRONT.x * READ_AT, BOARD.z + FRONT.z * READ_AT, { near: 0.5, hop: true, limit: 60 });
     await walkTo(BOARD.x + FRONT.x * 1.7, BOARD.z + FRONT.z * 1.7, { near: 0.3, limit: 15 });
     player.camera.yaw = BOARD.yaw; // from behind the beaver, looking at the face
   };

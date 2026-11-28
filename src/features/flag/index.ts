@@ -30,7 +30,6 @@ import type { Actor, Offer } from "../../player/index.ts";
 import { material } from "../../world/models.ts";
 import { fxOf, WIND } from "../fx/index.ts";
 import { dawnCame, POLE, raised, stepFlag, type Flag } from "./state.ts";
-export { POLE };
 
 /** The cloth, m: along the wind, top to bottom, and where its top edge hangs on the pole. */
 const CLOTH = { width: 1.2, height: 0.75, top: 2.05 };
