@@ -6,34 +6,85 @@ import { RUN_SPEED } from "../contracts.ts";
 const dt = 1 / 60;
 
 describe("jump", () => {
+  // In the air for n steps after a stay on the ground, without pressing.
+  const offEdge = (n: number) => { const s = newJump(); jumpStarts(s, dt, true, false, true); for (let i = 0; i < n; i++) jumpStarts(s, dt, false, false, true); return s; };
+  const press = (s: ReturnType<typeof newJump>, grounded = false, allowed = true, afloat = false) => { jumpStarts(s, dt, grounded, false, allowed, afloat); return jumpStarts(s, dt, grounded, true, allowed, afloat); };
   test("starts in the step the key goes down, once per press", () => {
     const s = newJump();
-    expect(jumpStarts(s, dt, true, false, true)).toBe(false);
-    expect(jumpStarts(s, dt, true, true, true)).toBe(true);
-    expect(jumpStarts(s, dt, true, true, true)).toBe(false); // held: no second jump
+    expect(jumpStarts(s, dt, true, false, true)).toBeUndefined();
+    expect(jumpStarts(s, dt, true, true, true)).toBe("jump");
+    expect(jumpStarts(s, dt, true, true, true)).toBeUndefined(); // held: no second jump
   });
-  test("coyote time: 0.1 s after leaving the ground, not later", () => {
-    const s = newJump();
-    jumpStarts(s, dt, true, false, true);
-    for (let i = 0; i < 5; i++) jumpStarts(s, dt, false, false, true);
-    expect(jumpStarts(s, dt, false, true, true)).toBe(true); // 6 steps = 0.1 s
-    const late = newJump();
-    jumpStarts(late, dt, true, false, true);
-    for (let i = 0; i < 7; i++) jumpStarts(late, dt, false, false, true);
-    expect(jumpStarts(late, dt, false, true, true)).toBe(false);
+  test("coyote time: 0.1 s after leaving the ground it is a jump, later a double jump", () => {
+    const s = offEdge(5);
+    expect(jumpStarts(s, dt, false, true, true)).toBe("jump"); // 6 steps = 0.1 s
+    const late = offEdge(7);
+    expect(jumpStarts(late, dt, false, true, true)).toBe("double");
   });
-  test("buffer: a press up to 0.1 s before landing jumps on landing", () => {
-    const s = newJump();
-    expect(jumpStarts(s, dt, false, true, true)).toBe(false);
+  test("buffer: a press up to 0.1 s before landing jumps on landing, never as a double jump", () => {
+    const s = offEdge(10);
+    expect(press(s)).toBe("double");
+    expect(press(s)).toBeUndefined(); // the double jump is spent: this press waits for the ground
     for (let i = 0; i < 4; i++) jumpStarts(s, dt, false, false, true);
-    expect(jumpStarts(s, dt, true, false, true)).toBe(true);
-    const early = newJump();
-    jumpStarts(early, dt, false, true, true);
+    expect(jumpStarts(s, dt, true, false, true)).toBe("jump");
+    const early = offEdge(10);
+    press(early);
+    press(early);
     for (let i = 0; i < 8; i++) jumpStarts(early, dt, false, false, true);
-    expect(jumpStarts(early, dt, true, false, true)).toBe(false);
+    expect(jumpStarts(early, dt, true, false, true)).toBeUndefined();
   });
-  test("no jump when not allowed (swimming, busy)", () => {
-    expect(jumpStarts(newJump(), dt, true, true, false)).toBe(false);
+  test("no jump when not allowed (swimming, busy, tail slap)", () => {
+    expect(jumpStarts(newJump(), dt, true, true, false)).toBeUndefined();
+    expect(press(offEdge(10), false, false)).toBeUndefined();
+  });
+});
+
+describe("double jump", () => {
+  const offEdge = (n: number) => { const s = newJump(); jumpStarts(s, dt, true, false, true); for (let i = 0; i < n; i++) jumpStarts(s, dt, false, false, true); return s; };
+  const press = (s: ReturnType<typeof newJump>, grounded = false, allowed = true, afloat = false) => { jumpStarts(s, dt, grounded, false, allowed, afloat); return jumpStarts(s, dt, grounded, true, allowed, afloat); };
+  test("a press in the air past the grace time, even without a jump before it", () => {
+    expect(press(offEdge(10))).toBe("double");
+  });
+  test("one per stay in the air", () => {
+    const s = offEdge(10);
+    expect(press(s)).toBe("double");
+    expect(press(s)).toBeUndefined();
+    expect(press(s)).toBeUndefined();
+  });
+  test("after a jump from the ground, a press in the air is the double jump", () => {
+    const s = newJump();
+    expect(press(s, true)).toBe("jump");
+    for (let i = 0; i < 20; i++) jumpStarts(s, dt, false, false, true);
+    expect(press(s)).toBe("double");
+    expect(press(s)).toBeUndefined();
+  });
+  test("a jump within the grace time, then a press later in that stay in the air is still a double jump", () => {
+    const s = offEdge(3);
+    expect(press(s)).toBe("jump");
+    for (let i = 0; i < 20; i++) jumpStarts(s, dt, false, false, true);
+    expect(press(s)).toBe("double");
+  });
+  test("landing gives it back", () => {
+    const s = offEdge(10);
+    press(s);
+    for (let i = 0; i < 20; i++) jumpStarts(s, dt, false, false, true);
+    jumpStarts(s, dt, true, false, true);
+    for (let i = 0; i < 10; i++) jumpStarts(s, dt, false, false, true);
+    expect(press(s)).toBe("double");
+  });
+  test("the water gives it back, and gives none while afloat", () => {
+    const s = offEdge(10);
+    press(s);
+    for (let i = 0; i < 20; i++) jumpStarts(s, dt, false, false, true);
+    expect(press(s, false, false, true)).toBeUndefined(); // afloat: not allowed
+    for (let i = 0; i < 10; i++) jumpStarts(s, dt, false, false, true); // out of the water, in the air again
+    expect(press(s)).toBe("double");
+  });
+  test("not when busy or slapping", () => {
+    const s = offEdge(10);
+    expect(press(s, false, false)).toBeUndefined();
+    for (let i = 0; i < 10; i++) jumpStarts(s, dt, false, false, true);
+    expect(press(s)).toBe("double"); // not spent by the press that was not allowed
   });
 });
 

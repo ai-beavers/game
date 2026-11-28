@@ -24,9 +24,11 @@ import { box as boxShape, cylinder, hull as hullOf, SOLID, type PhysicsShape } f
 import { mergeStatic } from "../../world/models.ts";
 import { RADIUS, SIGN } from "./place.ts";
 import { lampNight } from "./rules.ts";
+import { WALL_SOLID } from "../../player/index.ts";
 
 const WALL = 2.1, THICK = 0.14, LOW = 0.95; // m: wall height, thickness, the lower part always shown
-const WALL_SOLID = 0.95; // m the walls' colliders reach up: over the beaver's reach, under the camera's look
+// The walls' colliders reach up WALL_SOLID (src/player): over the beaver's reach (a jump and a Double jump), under the
+// camera's look.
 const SEGMENTS = 24, DOOR = 1; // wall pieces round the hut, and how many are left out on each side of the doorway's middle
 const ROOF = 1.15; // m from the wall's top to the roof's tip
 /** Where the counter stands (local z of its front) and how far from its front the beaver may talk to the Shopkeeper. */

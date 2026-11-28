@@ -208,6 +208,10 @@ _Avoid_: crouch, sneak, prone
 How the beaver runs on land: down on all fours, long and low, the hind feet pushing off together and the front paws landing between, the back humping and stretching with each stride. Walking it stays upright; it drops into a bound as it speeds up and rises again as it slows. Carrying a stick it runs upright. Running takes stamina.
 _Avoid_: gallop, sprint, dash
 
+**Double jump**:
+A second, smaller jump the beaver makes once while already in the air, with the same button as a jump. It comes back when the beaver lands or reaches the water. It takes the beaver a little higher than one jump, but never over a wall that keeps it out, like the shop's.
+_Avoid_: air jump, flip, hop
+
 **Stamina**:
 How long the beaver can keep running on land. It drains while the beaver runs, and when it is gone the beaver can only walk until a third of it has come back. It comes back whenever the beaver is not running, three times as fast while it gnaws a tree, eating its wood. Swimming, crawling and paddling never use it. Each player has their own, for the visit only.
 _Avoid_: energy, endurance, sprint meter, breath

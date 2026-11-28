@@ -43,6 +43,11 @@ const BOARD_ACCEL = 3, BOARD_BRAKE = 5; // m/s²: a Hoverboard gets going in abo
 const GRAVITY = 18, CUT = 3.5; // m/s², and how much harder it pulls once Space is let go on the way up
 export const JUMP_HEIGHT = 0.6;
 const JUMP_SPEED = Math.sqrt(2 * GRAVITY * JUMP_HEIGHT) + GRAVITY / 120; // the half step the fixed steps lose
+// The Double jump: once in the air, a press sets the rise (whatever the fall) to lift DOUBLE_JUMP_HEIGHT more. A jump
+// and a Double jump at its top together must stay under WALL_SOLID, the walls that keep the beaver out (the shop's,
+// src/features/shop/building.ts): lower DOUBLE_JUMP_HEIGHT rather than raise them, their height is set by the camera.
+export const DOUBLE_JUMP_HEIGHT = 0.25, WALL_SOLID = 0.95; // m
+const DOUBLE_JUMP_SPEED = Math.sqrt(2 * GRAVITY * DOUBLE_JUMP_HEIGHT) + GRAVITY / 120;
 const MAX_FALL = 20;
 // Water: afloat once the feet are FLOAT_DEPTH deep, then held at HOLD_DEPTH, where the animator's swimming pose
 // has head and back above the surface; back on foot when it touches ground there.
@@ -377,7 +382,9 @@ export function createPlayerControls(stage: Stage, options: PlayerOptions): Play
     else if (land) afloat = false; // over the land: it stops before the water
     else if (!afloat && (depth > FLOAT_DEPTH || overDeep)) { afloat = true; vy = Math.max(vy, -DIVE_SPEED); } // the water stops a fall: off the basin's drop-off it would sink a metre
     else if (afloat && grounded && depth < FLOAT_DEPTH - 0.02 && !overDeep) afloat = false;
-    if (jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0)) { vy = JUMP_SPEED; grounded = false; }
+    const jumped = jumpStarts(jump, dt, grounded, input.jump, !afloat && !busy && slap.progress === 0, afloat);
+    if (jumped === "jump") { vy = JUMP_SPEED; grounded = false; }
+    else if (jumped === "double") vy = DOUBLE_JUMP_SPEED;
     const diving = stepDive(dive, dt, !!input.dive && act.action !== "gnaw" && (act.action !== "build" || under) && slap.progress === 0, afloat, under);
     if (water) { /* no gravity: the canoe holds it */ }
     else if (afloat) {
