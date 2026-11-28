@@ -24,10 +24,14 @@ import { brightness, dances, lit, loudness, onFloor, stepStill } from "./rules.t
 const held = () => (window as { trade?: { held?: string } }).trade?.held;
 /** The lit tiles' glow over a beat: a little brighter on it, fading to the next. */
 const PULSE = 0.25;
+// Cost per frame: the lit pattern of 25 tiles and the glow (a few numbers); the tiles' colours uploaded only when the
+// pattern changes, about twice a second. settings.quality low uploads them once: the tiles hold still and only glow.
 
 export const create: CreateFeature = (game) => {
-  const { stage, world, player } = game, motion = player.motion;
+  const { stage, world, player, settings } = game, motion = player.motion;
   const floor = createFloor(stage, world);
+  let lively = true;
+  stage.scene.onDisposeObservable.add(settings.on(({ quality }) => { lively = quality !== "low"; }));
   let still = 0, dancing = false;
 
   Object.assign(window, {
@@ -62,7 +66,7 @@ export const create: CreateFeature = (game) => {
     },
     update() {
       const beats = motion.time * DANCE_BPM / 60;
-      floor.show(lit(beats));
+      floor.show(lit(lively ? beats : 0)); // the same pattern each frame on low: shown once, never uploaded again
       const glow = brightness(game.sky?.dark ?? 0) * (1 - PULSE + PULSE * Math.exp(-4 * (beats % 1)));
       floor.material.emissiveColor.setAll(glow);
     },

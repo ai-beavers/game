@@ -15,10 +15,9 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { World } from "../../contracts.ts";
 import type { Stage } from "../../engine.ts";
 import { hex } from "../../world/color.ts";
-import { FLOOR, TILE } from "./place.ts";
+import { FLOOR, TILE, TILE_COLOURS } from "./place.ts";
 
-/** The tiles' colours, in turn along the rows: not the Shop's purple and gold. */
-const COLOURS = [0xff3d8b, 0x2fd4ff, 0xffd23a, 0x5cff6a, 0xff7a2a, 0xb06bff].map((c) => hex(c));
+const COLOURS = TILE_COLOURS.map((c) => hex(c));
 /** How much of its colour a dark tile keeps. */
 const DIM = 0.2;
 /** The plate under the tiles and its rim: nearly black, so it never glows much. */
