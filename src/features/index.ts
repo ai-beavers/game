@@ -31,5 +31,6 @@ import { create as trade } from "./trade/index.ts";
 import { create as workbench } from "./workbench/index.ts";
 import { create as lightbulb } from "./lightbulb/index.ts";
 import { create as danceFloor } from "./dance-floor/index.ts";
+import { create as topTen } from "./top-ten/index.ts";
 
-export const FEATURES: CreateFeature[] = [controls, sky, danceFloor, lantern, stare, post, build, trade, bakery, workbench, lightbulb, shop, canoe, hoverboard, race, flag, droppings, mrsBeaver, mushrooms, oldBeaver, fx, life, riverKit, net, audio, hud, stamina, clearView, debug, tour];
+export const FEATURES: CreateFeature[] = [controls, sky, danceFloor, lantern, stare, post, build, trade, bakery, workbench, lightbulb, shop, topTen, canoe, hoverboard, race, flag, droppings, mrsBeaver, mushrooms, oldBeaver, fx, life, riverKit, net, audio, hud, stamina, clearView, debug, tour];

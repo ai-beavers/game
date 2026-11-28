@@ -21,7 +21,9 @@
 //
 // With ?tour the page plays in the tour's own world (protocol.ts TOUR_WORLD), which the server keeps beside the
 // players': there the tour may start the world afresh (window.net.reset()). window.net.drawn(id) tells the tour where a
-// Remote is drawn and which way it faces.
+// Remote is drawn and which way it faces; window.net.name is the name the server knows this player by.
+//
+// The room's Top-ten board rows come in welcome and in "top", and go to the board as the topTen event.
 //
 // The day is the server's too: on every welcome the sky follows the hour it sends (game.sky.follow), and when the
 // connection drops it goes on alone. A page opened with ?hour, ?clock or ?speed keeps its own day, for pictures; so does the
@@ -104,10 +106,15 @@ export const create: CreateFeature = (game) => {
   const remotes = new Map<number, Remote & { holding: number; push?: { u: [number, number, number, number]; at: number } }>();
   let socket: WebSocket | undefined, me = -1, host = -1, tries = 0, connected = false, askingName = false, named = "";
   let carried = -1, pushing: [number, number, number, number] | undefined, sendAll = true, sinceFull = 0, time = 0;
+  let known = ""; // the name the server knows this player by (its Top-ten row): the one sent, or as it changed it
   let address = info.addresses[0] ?? location.href, full = ""; // full: what the server said when it had no room
   const pending: BuildChange[] = []; // made here and not yet sent: at once, or while not connected on the next welcome
 
-  const send = (m: ClientMessage) => { if (connected && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(m)); };
+  const send = (m: ClientMessage) => {
+    if (!connected || socket?.readyState !== WebSocket.OPEN) return;
+    if (m.t === "name") known = m.name;
+    socket.send(JSON.stringify(m));
+  };
   /** Changes made in one go (a tree's last bite, its fall and its rest) leave as one message. */
   const flush = () => { if (connected && socket?.readyState === WebSocket.OPEN && pending.length) send({ t: "build", c: pending.splice(0) }); };
   const nameOf = (id: number) => remotes.get(id)?.name ?? "Someone";
@@ -211,12 +218,13 @@ export const create: CreateFeature = (game) => {
         ui.status();
         role();
         join(m);
+        events.emit("topTen", { rows: m.top ?? [] }); // none from a server before the board
         if (named !== settings.values.name) { send({ t: "name", name: settings.values.name }); named = settings.values.name; }
         return;
       case "join": addRemote(m.id, m.name); ui.line(`${m.name} joined`); return;
       case "leave": { const name = nameOf(m.id); removeRemote(m.id); ui.line(`${name} left`); return; }
       case "name": {
-        if (m.id === me) { ui.me(m.name); return; } // someone else had the name: the server added a number
+        if (m.id === me) { ui.me(m.name); known = m.name; return; } // someone else had the name: the server added a number
         const r = remotes.get(m.id);
         if (r && r.name !== m.name) { ui.line(`${r.name} is now ${m.name}`); r.name = m.name; ui.rename(m.id, m.name); }
         return;
@@ -247,6 +255,7 @@ export const create: CreateFeature = (game) => {
       case "world": shared.epoch = m.epoch; adopt(m.build); return;
       case "epoch": shared.epoch = m.epoch; shared.have = m.n; return; // the same world, its changes numbered anew
       case "lore": events.emit("oldBeaverTold", { told: m }); return;
+      case "top": events.emit("topTen", { rows: m.top }); return;
       case "full": full = `Server full (${m.players}/${m.max}), playing alone`; return;
       case "reset": if (building) reload(); return;
     }
@@ -257,7 +266,7 @@ export const create: CreateFeature = (game) => {
     const ws = socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${PATH}?${WORLD}`);
     ws.binaryType = "arraybuffer"; // the one binary message: a piece of the Old Beaver's voice
     ws.onopen = () => {
-      named = settings.values.name;
+      named = known = settings.values.name;
       ws.send(JSON.stringify({ t: "hello", name: named, ...(shared.epoch ? { epoch: shared.epoch, have: shared.have } : {}) } satisfies ClientMessage));
     };
     ws.onmessage = (e) => {
@@ -301,7 +310,7 @@ export const create: CreateFeature = (game) => {
   let started = false;
   const collision = new Vector3(), eye = new Vector3();
   Object.assign(window, { net: {
-    things, remotes, history, shared, get me() { return me; }, get host() { return host; }, get connected() { return connected; }, ui,
+    things, remotes, history, shared, get me() { return me; }, get name() { return known; }, get host() { return host; }, get connected() { return connected; }, ui,
     /** The tour's world only: starts it afresh for everyone in it (the server tells every page to load again). False: not connected. */
     reset() { send({ t: "reset" }); return connected; },
     /** For the tour: where a Remote is drawn on this screen and which way it faces (radians, as Player.facing), and how

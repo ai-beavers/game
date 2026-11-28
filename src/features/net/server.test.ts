@@ -1,7 +1,7 @@
 // Tests for the rules the room keeps toward strangers, against both servers that run it, each on a free port: the Bun
 // server (server.ts) and the Worker (worker.ts) in wrangler's local runtime, which needs no account and no network.
 // Sockets per client address, the hello timeout, a full server, the same hour, the world kept over a restart, the
-// build id, the origin of a socket, the tour's world beside the players'. Only server.ts has a file to break or to
+// build id, the origin of a socket, the tour's world beside the players', the Top-ten board's tally. Only server.ts has a file to break or to
 // age; only the Worker has /net/reset.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -229,7 +229,7 @@ for (const kind of ["server.ts", "worker.ts"] as const) describe(kind, () => {
     // server.ts writes it at once on SIGTERM. Nothing tells the Worker that it ends: what is older than SAVE_AFTER is kept.
     if (!bun) await Bun.sleep(SAVE_AFTER + 500);
     await stop();
-    if (bun) expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ epoch: first.epoch, build: work });
+    if (bun) expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ epoch: first.epoch, build: work, top: [] });
 
     ({ port } = await start(env));
     expect(await info(port)).toMatchObject({ epoch: first.epoch, build: work });
@@ -304,6 +304,57 @@ for (const kind of ["server.ts", "worker.ts"] as const) describe(kind, () => {
       await stop();
       age();
     }
+  }, 30000);
+
+  test("counts each name's sticks built in for the Top-ten board, not a refused one nor a bot's, and keeps them over a restart", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "beaver-")), "world.json"), env = { WORLD_FILE: file };
+    let { port } = await start(env);
+    const enter = async (name: string, bot = false) => {
+      const c = client(port);
+      await c.opened;
+      c.ws.send(JSON.stringify({ t: "hello", name, ...(bot ? { bot } : {}) }));
+      return { ...c, welcome: await c.next("welcome") as Extract<ServerMessage, { t: "welcome" }> };
+    };
+    /** Sends one build change and waits for what the room answers to it: the next message of type `t`. */
+    const place = async (c: Awaited<ReturnType<typeof enter>>, stick: string, t = "top") => {
+      c.messages.length = 0;
+      c.ws.send(JSON.stringify({ t: "build", c: [{ type: "place", slot: 0, stick }] }));
+      return c.next(t);
+    };
+    const a = await enter("Biber");
+    expect(a.welcome.top).toEqual([]);
+    expect(await place(a, "w0")).toEqual({ t: "top", top: [{ place: 1, name: "Biber", sticks: 1 }] });
+    expect(await place(a, "w0", "world")).toMatchObject({ t: "world" }); // built in already: refused
+    a.ws.send(JSON.stringify({ t: "name", name: "biber" }));
+    expect(await place(a, "w1")).toEqual({ t: "top", top: [{ place: 1, name: "biber", sticks: 2 }] }); // one row, as last written
+    const bot = await enter("Robo", true);
+    expect(bot.welcome.top).toEqual([{ place: 1, name: "biber", sticks: 2 }]);
+    expect(await place(bot, "w2", "build")).toMatchObject({ c: [{ type: "place", stick: "w2" }] }); // taken, not counted
+    expect((await enter("Later")).welcome.top).toEqual([{ place: 1, name: "biber", sticks: 2 }]);
+    if (!bun) await Bun.sleep(SAVE_AFTER + 500);
+    await stop();
+    ({ port } = await start(env));
+    expect((await enter("Back")).welcome.top).toEqual([{ place: 1, name: "biber", sticks: 2 }]);
+  }, 60000);
+
+  test("the tour's world keeps a Top-ten tally of its own, which its reset clears", async () => {
+    const { port } = await start();
+    const enter = async (world: string) => {
+      const c = client(port, undefined, world);
+      await c.opened;
+      c.hello();
+      return { ...c, welcome: await c.next("welcome") as Extract<ServerMessage, { t: "welcome" }> };
+    };
+    const tour = await enter("?world=tour"), player = await enter("");
+    tour.ws.send(JSON.stringify({ t: "build", c: [{ type: "place", slot: 0, stick: "w0" }, { type: "place", slot: 1, stick: "w1" }] }));
+    player.ws.send(JSON.stringify({ t: "build", c: [{ type: "place", slot: 0, stick: "w0" }] }));
+    expect(await tour.next("top")).toEqual({ t: "top", top: [{ place: 1, name: "Tester", sticks: 2 }] });
+    expect(await player.next("top")).toEqual({ t: "top", top: [{ place: 1, name: "Tester", sticks: 1 }] });
+    tour.messages.length = 0;
+    tour.ws.send(JSON.stringify({ t: "reset" }));
+    expect(await tour.next("top")).toEqual({ t: "top", top: [] });
+    expect((await enter("?world=tour")).welcome.top).toEqual([]);
+    expect((await enter("")).welcome.top).toEqual([{ place: 1, name: "Tester", sticks: 1 }]);
   }, 30000);
 
   test("opens the socket only for pages from here", async () => {

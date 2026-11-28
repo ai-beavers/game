@@ -5,7 +5,7 @@ import { heightAt, POND, SITE, WATER_LEVEL } from "../../world/terrain.ts";
 import { placeAll, SPAWN } from "../../world/place.ts";
 import { SHOP, SHOP_CLEAR } from "../shop/place.ts";
 import { footprint as post } from "../trade/place.ts";
-const POLE = { x: -1.4, z: 7.3 }; // the Flag (src/features/flag/index.ts: its module builds the HUD)
+import { POLE } from "../flag/state.ts"; // the Flag
 import { PLACE as OLD_BEAVER } from "../old-beaver/rules.ts";
 import { FLOWER, HIDING, TRACKS, wayHome } from "../mrs-beaver/rules.ts";
 import { SPOTS as MUSHROOMS } from "../mushrooms/rules.ts";

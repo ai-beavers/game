@@ -101,6 +101,11 @@ function draw(texture: DynamicTexture, w: CalendarWeek) {
   texture.update(true);
 }
 
+/** A light board face's own light by the sky's dark (0 … 1): a touch by day, none at night, where the brightened
+ *  exposure would make it a white blob; then the scene's moonlight shows it, as it does the sign's wood. The Top-ten
+ *  board's face takes the same (src/features/top-ten/board.ts). */
+export const faceLight = (dark: number) => 0.22 * (1 - Math.min(1, Math.max(0, (dark - 0.08) / 0.3)));
+
 export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, now: Date) {
   const scene: Scene = stage.scene;
   const node = new TransformNode("shop-calendar", scene);
@@ -170,8 +175,6 @@ export function calendarBoard(stage: Stage, shop: ReturnType<typeof buildShop>, 
       const inv = node.getWorldMatrix().clone().invert(), l = Vector3.TransformCoordinates(new Vector3(p.x, at.y, p.z), inv);
       return { x: l.x, z: l.z };
     },
-    /** By the sky's dark (0 … 1): a touch of its own light by day, none at night, where the brightened exposure would
-     *  make its light face a white blob; then the scene's moonlight shows it, as it does the sign's wood. */
-    update(dark: number) { faceMat.emissiveColor.setAll(0.22 * (1 - Math.min(1, Math.max(0, (dark - 0.08) / 0.3)))); },
+    update(dark: number) { faceMat.emissiveColor.setAll(faceLight(dark)); },
   };
 }

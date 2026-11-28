@@ -9,6 +9,7 @@ import { gait } from "./anim/index.ts";
 import type { Action, Motion } from "./contracts.ts";
 import type { BuildChange } from "./features/build/rules.ts";
 import type { Told } from "./features/old-beaver/rules.ts";
+import type { TopRow } from "./features/top-ten/rules.ts";
 import { slapHits } from "./player/state.ts";
 
 export interface GameEvents {
@@ -85,6 +86,9 @@ export interface GameEvents {
   /** From src/features/net: what the room's Old Beaver tells now, for everyone in the world. told absent: the room
    *  is gone, and he tells this page's player alone again. */
   oldBeaverTold: { told?: Told };
+  /** From src/features/net: the Top-ten board's rows as the room tells them, on joining and whenever a stick built
+   *  in anywhere in the world changed them (src/features/top-ten). */
+  topTen: { rows: TopRow[] };
   /** From src/features/net: a piece of his voice as the server sends it, for the line begun last: 16-bit samples at
    *  rate Hz, one channel. */
   oldBeaverVoice: { pcm: ArrayBuffer; rate: number };
