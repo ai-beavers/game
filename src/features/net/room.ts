@@ -9,6 +9,9 @@
 //   room.info(addresses, withBuild)                   what GET /net/info answers
 //   room.reset() · room.save()                        the world afresh; the world kept now (before the process ends)
 //
+// It counts the sticks each player builds in for the Top-ten board (src/features/top-ten/rules.ts), and tells every
+// page the ten rows: in welcome, and in "top" whenever a stick changed them.
+//
 // The Old Beaver tells his lores once for the whole world (src/features/old-beaver/telling.ts): the pages say how near
 // their players are, the room tells them what he says, and with `speak` it sends them his voice as binary messages.
 //
@@ -18,6 +21,7 @@
 // The room is the trust boundary: every message is checked by parseClient (protocol.ts), each socket is rate limited,
 // a player only ever speaks as itself, and only the host may move the loose things.
 import { newState, type BuildChange } from "../build/rules.ts";
+import { add, keep as keepTally, newTally, readTally, top } from "../top-ten/rules.ts";
 import { newTelling } from "../old-beaver/telling.ts";
 import type { Speak } from "../old-beaver/voice.ts";
 import {
@@ -69,6 +73,10 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false, spea
     compact(work); // kept from before the room compacted
   }
 
+  // The Top-ten board's tally (docs/adr/0012): one stick for the sender's name with each "place" change taken, but a
+  // bot's. Kept beside the work, and left alone when the log is compacted; a tally that cannot be read starts empty.
+  let tally = kept ? readTally(saved) : newTally();
+
   // Where the loose things lie, as the host last said. A host that followed nobody (the first in, or the only player
   // after a reload) is told, so the wood lies where it was left. In memory only: after a restart it lies where the
   // world puts it.
@@ -79,7 +87,7 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false, spea
   function save() {
     clearTimeout(saving);
     saving = undefined;
-    keep?.(JSON.stringify({ epoch: work.epoch, build: work.log }));
+    keep?.(JSON.stringify({ epoch: work.epoch, build: work.log, top: keepTally(tally) }));
   }
   // At most one write per SAVE_AFTER while players build, the first change of a quiet world written SAVE_AFTER later.
   const changed = () => { if (keep) saving ??= setTimeout(save, SAVE_AFTER); };
@@ -91,7 +99,11 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false, spea
     const taken = changes.filter((c) => admit(work.world, c, Date.now(), sandbox)), n = work.log.length;
     if (taken.length) {
       work.log.push(...taken);
-      everyone({ t: "build", id: conn.peer!.id, n, c: taken });
+      const peer = conn.peer!;
+      everyone({ t: "build", id: peer.id, n, c: taken });
+      let ranked = false;
+      if (!peer.bot) for (const c of taken) if (c.type === "place") ranked = add(tally, peer.name) || ranked;
+      if (ranked) everyone({ t: "top", top: top(tally) });
       if (compact(work)) everyone({ t: "epoch", epoch: work.epoch, n: work.log.length });
       changed();
     }
@@ -101,8 +113,10 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false, spea
   /** Starts the world afresh: every player's page starts again in it. */
   function reset() {
     Object.assign(work, { epoch: newEpoch(), world: newState(), log: [] });
+    tally = newTally();
     places.clear();
     everyone({ t: "reset" });
+    everyone({ t: "top", top: [] }); // a page without the build feature does not load again
     changed();
     console.log("The world is reset.");
   }
@@ -178,7 +192,7 @@ export function newRoom({ version, publicUrl, saved, keep, sandbox = false, spea
       const { epoch, log } = work, from = m.epoch === epoch && m.have! <= log.length ? m.have! : 0;
       send(conn, {
         t: "welcome", id: me.id, host: host ? peers.get(host)!.id : -1, players, addresses: conn.addresses, carried, epoch, from, build: log.slice(from), version,
-        hour: hourAt(START, dayFrom, performance.now()),
+        hour: hourAt(START, dayFrom, performance.now()), top: top(tally),
       });
       if (name !== m.name) send(conn, { t: "name", id: me.id, name }); // the name it is known by
       others(conn, { t: "join", id: me.id, name: me.name });

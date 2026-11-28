@@ -1,6 +1,6 @@
 // Dam work: fell a tree, gnaw it into wood, watch it grow back, carry a stick, build the dam, the lodge, the food cache.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { CACHE, LODGE, moundHeight, REGROW, SLOTS, SPROUT, STICKS } from "../../build/rules.ts";
+import { LODGE, moundHeight, REGROW, SLOTS, SPROUT, STICKS } from "../../build/rules.ts";
 import { DAWN } from "../../flag/state.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
@@ -11,7 +11,7 @@ interface DroppingsDebug { count: number; most: number; text: string }
 const BATCH = 3; // sticks built per visit, live and plain; fast builds to the next half of the dam, then the lodge
 
 export const dam = (kit: Kit): Station[] => {
-  const { player, world, fast, live, requested, want, wait, until, walkTo, tap, expect, after, last, hudText, needBuild, standingTrees, fell, split, fetchStick, buildUpTo, regrowing, reach, sky } = kit;
+  const { player, world, fast, live, requested, wait, until, walkTo, tap, expect, after, last, needBuild, standingTrees, fell, split, fetchStick, buildUpTo, stockUpTo, regrowing, reach, sky } = kit;
   let felled = -1;
   return [
     ["Fell a tree", async () => {
@@ -151,27 +151,9 @@ export const dam = (kit: Kit): Station[] => {
         if (!requested.includes("Stock the cache")) return skip("the lodge does not stand yet");
         b.fill(SLOTS + LODGE);
       }
-      const n = b.state.dam.length, depth = () => (player.waterLevel ?? 0) - player.feet.y;
+      const n = b.state.dam.length;
       if (n >= STICKS) return skip("the cache is stocked");
-      for (const upTo = fast ? STICKS : Math.min(STICKS, n + BATCH); b.state.dam.length < upTo;) {
-        await fetchStick();
-        const at = b.dam.cacheAt;
-        await walkTo(at.x, at.z, { near: 0.5, limit: 40, hop: true });
-        expect(player.afloat && !!player.carrying, "swam out over the cache, yet not afloat with a stick");
-        const placed = after("stickPlaced"), k = b.state.dam.length + 1;
-        want.dive = true;
-        try {
-          await until(() => player.offer()?.action === "build", 8, `dived by the cache (${depth().toFixed(1)} m deep), E would ${player.offer()?.action ?? "do nothing"}`);
-          expect(player.offer()!.text === "Wedge into cache", `E offers "${player.offer()!.text}" by the cache`);
-          await tap("act");
-          await until(placed, 3, "pressed E by the cache, no stick wedged in");
-        } finally { want.dive = false; }
-        expect(b.state.dam.length === k && last.stickPlaced!.place.y < (player.waterLevel ?? 0) - 2, `the cache holds ${b.state.dam.length - SLOTS - LODGE} sticks, not ${k - SLOTS - LODGE}, or not on the bed`);
-        const line = `Stock the food cache: ${k - SLOTS - LODGE} of ${CACHE}`;
-        await until(() => hudText("goals").includes(line), 2, `the goals do not say "${line}"`);
-        if (k === STICKS) await until(() => hudText("announcement").startsWith("The cache is stocked!"), 2, "the cache's last stick went in, no \"The cache is stocked!\" on screen");
-        await until(() => !player.diving && depth() < 0.45, 6, "let go of C, it never came up");
-      }
+      await stockUpTo(fast ? STICKS : Math.min(STICKS, n + BATCH));
       if (live && b.state.dam.length >= STICKS) await wait(10); // the cache stocked, before the world starts anew
     }, "Dam work"],
   ];

@@ -5,6 +5,10 @@
 //
 // flag.burnt is how far the fire has climbed the cloth, 0 (whole) … 1 (a charred rag at the top).
 
+/** Where the pole stands: on dry ground north-west of the building site, above the pond's highest level, clear of the
+ *  dam, the way from the site to the Shop and the one from the spawn to the trading post. */
+export const POLE = { x: -1.4, z: 7.3, height: 2.15, radius: 0.035 };
+
 export type FlagState = "whole" | "burning" | "charred";
 export interface Flag { readonly state: FlagState; readonly burnt: number }
 
