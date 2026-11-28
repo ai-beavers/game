@@ -14,7 +14,7 @@ import type { Offer } from "../../player/index.ts";
 import { newInput, type Input } from "../../player/input.ts";
 import { REST_TIME } from "../../player/stamina.ts";
 import type { SkyState } from "../sky/index.ts";
-import { LODGE, live as standing, SLOTS, type BuildState } from "../build/rules.ts";
+import { CACHE, LODGE, live as standing, SLOTS, STICKS, type BuildState } from "../build/rules.ts";
 import { FIRST_RIM } from "../../world/terrain.ts";
 import type { BiteReport } from "../build/tree.ts";
 import { isEnabled } from "../../physics.ts";
@@ -106,6 +106,8 @@ export interface Kit {
   pickUp(): Promise<void>;
   fetchStick(): Promise<void>;
   buildUpTo(upTo: number, lodge: boolean): Promise<void>;
+  /** Wedges sticks into the food cache (dived for, by its pile) until the dam, lodge and cache hold `upTo`. */
+  stockUpTo(upTo: number): Promise<void>;
   regrowing(): { i: number; what: "stands" | "lies" | "sapling" } | undefined;
   /** For index.ts only: lets every waiter go on with this frame's dt. */
   resume(dt: number): void;
@@ -331,6 +333,28 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
       if (n === SLOTS) expect(finished(), "the dam's last stick went in, the dam never finished");
     }
   };
+  const stockUpTo = async (upTo: number) => {
+    const b = needBuild(), depth = () => (player.waterLevel ?? 0) - player.feet.y;
+    while (b.state.dam.length < upTo) {
+      await fetchStick();
+      const at = b.dam.cacheAt;
+      await walkTo(at.x, at.z, { near: 0.5, limit: 40, hop: true });
+      expect(player.afloat && !!player.carrying, "swam out over the cache, yet not afloat with a stick");
+      const placed = after("stickPlaced"), k = b.state.dam.length + 1;
+      want.dive = true;
+      try {
+        await until(() => player.offer()?.action === "build", 8, `dived by the cache (${depth().toFixed(1)} m deep), E would ${player.offer()?.action ?? "do nothing"}`);
+        expect(player.offer()!.text === "Wedge into cache", `E offers "${player.offer()!.text}" by the cache`);
+        await tap("act");
+        await until(placed, 3, "pressed E by the cache, no stick wedged in");
+      } finally { want.dive = false; }
+      expect(b.state.dam.length === k && last.stickPlaced!.place.y < (player.waterLevel ?? 0) - 2, `the cache holds ${b.state.dam.length - SLOTS - LODGE} sticks, not ${k - SLOTS - LODGE}, or not on the bed`);
+      const line = `Stock the food cache: ${k - SLOTS - LODGE} of ${CACHE}`;
+      await until(() => hudText("goals").includes(line), 2, `the goals do not say "${line}"`);
+      if (k === STICKS) await until(() => hudText("announcement").startsWith("The cache is stocked!"), 2, "the cache's last stick went in, no \"The cache is stocked!\" on screen");
+      await until(() => !player.diving && depth() < 0.45, 6, "let go of C, it never came up");
+    }
+  };
   /** What regrows: a tree grown back standing (to fell), or lying (to gnaw into wood), else a sapling on a stump. */
   const regrowing = () => {
     const b = build();
@@ -354,6 +378,6 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     game, player, world, stage, beaver, fast, live, requested, want,
     get usedUp() { return usedUp; },
     frame, paint, wait, until, rest, tap, press, key, flat, walkTo, reach, last, expect, after, hudText,
-    build, needBuild, pond, sky, clear, standingTrees, fell, split, loose, pickUp, fetchStick, buildUpTo, regrowing, resume,
+    build, needBuild, pond, sky, clear, standingTrees, fell, split, loose, pickUp, fetchStick, buildUpTo, stockUpTo, regrowing, resume,
   };
 };

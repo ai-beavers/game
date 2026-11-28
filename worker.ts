@@ -27,7 +27,7 @@ import { kvEvents } from "./src/features/shop/events.ts";
  *  HOUSE_OF_AI_FEED (--var): another iCal address for the House of AI events than Luma's (the tests' fixture). */
 interface Env { WORLD: DurableObjectNamespace<World>; EVENTS: KVNamespace; GIT_SHA?: string; RESET_TOKEN?: string; HOUSE_OF_AI_FEED?: string; ELEVENLABS_API_KEY?: string }
 
-const KEPT = "world"; // the key the world's work is kept under, as the text server.ts keeps in WORLD_FILE
+const KEPT = "world"; // the key the world's work (and the Top-ten board's tally) is kept under, as the text server.ts keeps in WORLD_FILE
 const NOT_FOUND = () => new Response("not found", { status: 404 });
 /** The House of AI events in KV; made at the first call, which brings the environment. */
 let events: ReturnType<typeof kvEvents> | undefined;

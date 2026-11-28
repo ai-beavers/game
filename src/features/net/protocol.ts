@@ -14,6 +14,7 @@
 import type { Action, Motion } from "../../contracts.ts";
 export { DAY_SECONDS, hourAt, START } from "../sky/day.ts";
 import { NEARS, type Told } from "../old-beaver/rules.ts";
+import type { TopRow } from "../top-ten/rules.ts";
 import { apply, BITES_TO_SPLIT, bitesToFell, live, newState, REGROW, STICKS, type BuildChange, type BuildState, type TreeState } from "../build/rules.ts";
 
 export const PATH = "/net", INFO_PATH = "/net/info";
@@ -123,9 +124,10 @@ export interface PlayerInfo { id: number; name: string }
 
 export type ServerMessage =
   /** epoch: names the server's world (new at each reset); build: its changes from number `from` on. version: the
-   *  server's build (GIT_SHA), "" in development. hour: the shared day's hour as this is sent, 0 to under 24. */
+   *  server's build (GIT_SHA), "" in development. hour: the shared day's hour as this is sent, 0 to under 24. top: the
+   *  Top-ten board's rows (src/features/top-ten/rules.ts). */
   | { t: "welcome"; id: number; host: number; players: PlayerInfo[]; addresses: string[]; carried: [player: number, stick: number][];
-      epoch: string; from: number; build: BuildChange[]; version: string; hour: number }
+      epoch: string; from: number; build: BuildChange[]; version: string; hour: number; top: TopRow[] }
   /** No room: the server closes the socket after this one; try again much later. */
   | { t: "full"; players: number; max: number }
   | { t: "join"; id: number; name: string }
@@ -142,6 +144,8 @@ export type ServerMessage =
   | { t: "need" }
   /** Build changes the server took, numbered from n in its list; to everyone, the sender (id) too. */
   | { t: "build"; id: number; n: number; c: BuildChange[] }
+  /** The Top-ten board's rows, to everyone, after a stick built in changed them (or the world was reset). */
+  | { t: "top"; top: TopRow[] }
   /** The server's whole world, to a player whose change it refused: take this one. */
   | { t: "world"; epoch: string; build: BuildChange[] }
   /** The server shortened its list (compact): the same world, from now on n changes long under this epoch. */
@@ -300,7 +304,8 @@ export function replay(changes: BuildChange[], now = Date.now()): BuildState {
   return s;
 }
 
-/** The world's work as server.ts keeps it in its file ({ epoch, build }), read back through the same checks as live
+/** The world's work as server.ts keeps it in its file ({ epoch, build }, and the tally of the Top-ten board in `top`,
+ *  which src/features/top-ten/rules.ts reads), read back through the same checks as live
  *  changes: undefined when it is not that. Changes that do not fit (a broken file, or rules.ts changed since) are
  *  left out; whole false then, and the server takes a new epoch, since the players' copies of the old one differ. */
 export function restore(text: string): { epoch: string; world: BuildState; log: BuildChange[]; whole: boolean } | undefined {

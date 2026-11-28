@@ -98,6 +98,10 @@ _Avoid_: store, House of AI (that is only its sign), disco, trading post (that i
 The big board beside the shop that shows the real week, Monday to Sunday, in which the viewer's own today falls, with today marked, the hours of each day from morning to midnight, Build Fridays and the House of AI events, as a desktop calendar's week view does. It counts real days and hours on the viewer's own clock, not the clearing's days.
 _Avoid_: billboard, calendar sign, schedule, week board
 
+**Top-ten board**:
+The board at the edge of the building site that ranks the ten players who have built the most sticks into the dam, the lodge and the cache since the world began, each by the name they built under, with their count. Everyone sees the same board. Bots are not on it, and a reset of the world clears it.
+_Avoid_: leaderboard, ranking list, high score, scoreboard, Experience (it counts sticks built in this world, not what a player's browser keeps)
+
 **Build Fridays**:
 The weekly event on the Calendar board: every Friday from 16:00 to 23:00, by the viewer's own clock.
 _Avoid_: build day, Friday event

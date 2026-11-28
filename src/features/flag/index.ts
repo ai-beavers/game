@@ -29,11 +29,8 @@ import type { CreateFeature } from "../../game.ts";
 import type { Actor, Offer } from "../../player/index.ts";
 import { material } from "../../world/models.ts";
 import { fxOf, WIND } from "../fx/index.ts";
-import { dawnCame, raised, stepFlag, type Flag } from "./state.ts";
+import { dawnCame, POLE, raised, stepFlag, type Flag } from "./state.ts";
 
-/** Where the pole stands: on dry ground north-west of the building site, above the pond's highest level, clear of the
- *  dam, the way from the site to the Shop and the one from the spawn to the trading post. */
-export const POLE = { x: -1.4, z: 7.3, height: 2.15, radius: 0.035 };
 /** The cloth, m: along the wind, top to bottom, and where its top edge hangs on the pole. */
 const CLOTH = { width: 1.2, height: 0.75, top: 2.05 };
 /** m from the pole within which the feet can light it. */

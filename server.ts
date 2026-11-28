@@ -20,8 +20,8 @@
 //   PUBLIC_URL=https://beaver.example/   the address players are told to share, instead of this machine's; pages
 //                                        from there may open the socket too (else only those from the Host asked)
 //   TRUST_PROXY=cloudflare | fly         the client's address comes from that proxy's header (for the per-address limit)
-//   WORLD_FILE=/data/world.json          keeps the world's work there over restarts (the tour's world beside it,
-//                                        in /data/world.json.tour)
+//   WORLD_FILE=/data/world.json          keeps the world's work there over restarts, with the Top-ten board's tally
+//                                        (the tour's world beside it, in /data/world.json.tour)
 //   GIT_SHA=<commit>                     the build; a page from another build reloads once when it reconnects
 // The Old Beaver speaks with ElevenLabs only when the server is told to and holds the key; `bun dev` tells it:
 //   VOICE=1                              he says his lores in his voice (src/features/old-beaver/voice.ts), with
