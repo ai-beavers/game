@@ -55,8 +55,9 @@ export function stickId(name: string): number | undefined {
 
 export const ACTIONS: Action[] = ["none", "pickup", "drop", "gnaw", "build"];
 const BIG = 1e7; // s or m: more than any session reaches
-/** How low the beaver is (Motion.low), as its index: 0 standing (left out), 1 sitting, 2 crawling. */
-export const LOWS = [undefined, "sit", "crawl"] as const;
+/** How low the beaver is (Motion.low), as its index: 0 standing (left out), 1 sitting, 2 crawling, 3 dancing on the
+ *  Dance floor. New ones go last, so the indices of the others stay. */
+export const LOWS = [undefined, "sit", "crawl", "dance"] as const;
 /** Field, lowest, highest; booleans travel as 0 / 1, the action as its index in ACTIONS, low as its index in LOWS.
  *  New fields go last, so the positions of the others stay. */
 const MOTION: [keyof Motion, number, number][] = [

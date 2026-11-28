@@ -86,7 +86,7 @@ const BANDS: [low: number, high: number, names: string[]][] = [
   [-30, -22, ["stepGrass", "stepShore", "stepWater", "paddle"]], // under the ambience
   [-41, -22, ["owl", "deer", "cricket", "frog", "tick", "plip", "bird", "lap", "crackle", "doze"]], // the world around, far off or many, and the River kit asleep
 ];
-const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap", "underwater"];
+const SCENES = ["noonQuiet", "noon", "fell", "dam", "slap", "underwater", "dance"];
 const chrome = existsSync("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 /** How long a measured render may take: about 20 s on an idle machine, over a minute on a busy one (builders and
  *  their tours side by side). The limit ends a render that hangs; it says nothing about speed. */
@@ -116,7 +116,7 @@ test.skipIf(!chrome)("the full mix: about -16 LUFS at the default volume, peaks 
     expect(loud.peak, name).toBeLessThan(-1);
     expect(loud.clipped, name).toBe(0);
     expect(Math.abs(m.dc), name).toBeLessThan(1e-3);
-    expect(Math.abs(m.repeat), name).toBeLessThan(0.5); // the noise beds do not repeat every 2 s
+    if (name !== "dance") expect(Math.abs(m.repeat), name).toBeLessThan(0.5); // the noise beds do not repeat every 2 s (a beat's bar does)
   }
 }, LIMIT);
 

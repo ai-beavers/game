@@ -83,6 +83,9 @@ export const WALK_SPEED = 0.8, RUN_SPEED = 2.0;
 
 export type Action = "none" | "pickup" | "drop" | "gnaw" | "build";
 
+/** Beats a minute of the Dance floor's beat, of the tiles lighting up in turn and of the Dance: one tempo for all three. */
+export const DANCE_BPM = 120;
+
 export interface Motion {
   /** Speed over the ground, m/s. */
   speed: number;
@@ -117,8 +120,10 @@ export interface Motion {
    *  feature writes it into the local player's Motion; the player leaves it alone. Left out: 0 (remotes, bots). */
   reachBack?: number;
   /** Low on land, held by the player: "sit" on its haunches, tail flat on the ground; "crawl" low on all fours, the
-   *  front paws stepping with the hind feet. Left out: standing (bots never go low). */
-  low?: "sit" | "crawl";
+   *  front paws stepping with the hind feet. "dance": standing still on the Dance floor with empty paws (the dance
+   *  floor feature writes it, src/features/dance-floor), a loop to the beat of DANCE_BPM on motion.time. Left out:
+   *  standing (bots never go low). */
+  low?: "sit" | "crawl" | "dance";
   /** Sits in a canoe (with low "sit") and paddles it: the right arm strokes as the speed says, a paddle in the paw. Only
    *  the local player's own beaver tells it (src/features/canoe); left out: no paddle. */
   paddle?: boolean;

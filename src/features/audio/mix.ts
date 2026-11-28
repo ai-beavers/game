@@ -7,9 +7,12 @@
 //   rain.update(now, rain, nearWater) · night.update(now, crickets, frogs) · music.night(dark, now)
 //   mix.under(cameraUnderWater, now)         muffles the whole mix and brings up the hum of the pond
 //   mix.speech(now, until, depth)            someone speaks real words: ambience and music step back until then
+//   const beat = createBeat(ctx, mix.beat);  beat.update(now, beats, gain): the Dance floor's beat, scheduled ahead
+//   music.away(amount, now)                  the tune steps back (the beat plays): 0 not at all … 1 as far as it goes
 //   carried(distance, earshot)               how much of a talking voice is heard that far off, 0 to 1
 //
 // Lasting sounds follow the sky by gliding their gains (setTargetAtTime), never by switching.
+import { DANCE_BPM } from "../../contracts.ts";
 import { composer, pitch } from "./music.ts";
 import { noise, rand, SOUNDS } from "./sounds.ts";
 
@@ -21,6 +24,8 @@ export const LEVELS = {
   sfx: { gain: 0.7, reverb: 0.15 },
   ambience: { gain: 0.6, reverb: 0.05 },
   music: { gain: 0.16, reverb: 0.6 },
+  /** The Dance floor's beat: drums and bass want little room, or the kick washes out. */
+  beat: { gain: 0.12, reverb: 0.12 },
   drive: 7,
 };
 
@@ -126,7 +131,7 @@ export function createMix(ctx: BaseAudioContext) {
     humLevel.gain.setTargetAtTime(on ? UNDER.hum : 0, t, UNDER.ease);
     swellDepth.gain.setTargetAtTime(on ? UNDER.hum * 0.35 : 0, t, UNDER.ease);
   };
-  return { master, limiter, duck, speech, under, steps: bus(LEVELS.steps), sfx: bus(LEVELS.sfx), ambience, music };
+  return { master, limiter, duck, speech, under, steps: bus(LEVELS.steps), sfx: bus(LEVELS.sfx), ambience, music, beat: bus(LEVELS.beat) };
 }
 
 /** Under water: the master's low-pass (Hz, its resonance Q), how fast it eases (time constant: about there in 0.2 s), the hum's level. */
@@ -263,11 +268,12 @@ export function createNight(ctx: BaseAudioContext, out: AudioNode, pond: AudioNo
 /** The music: soft notes that compose themselves, and now and then a low note under them. At night (music.night)
  *  quieter and darker, and its phrases go down an octave. */
 export function createMusic(ctx: BaseAudioContext, out: AudioNode) {
-  const level = ctx.createGain(), hush = ctx.createGain(), tone = ctx.createBiquadFilter(), next = composer();
+  const level = ctx.createGain(), hush = ctx.createGain(), aside = ctx.createGain(), tone = ctx.createBiquadFilter(), next = composer();
   tone.type = "lowpass";
   tone.frequency.value = 1800;
   level.gain.value = 0;
-  tone.connect(level).connect(hush).connect(out);
+  tone.connect(level).connect(hush).connect(aside).connect(out);
+  let away = 0;
   let at = 0, count = 0, on = false, dark = 0, octave = 1;
   const voice = (freq: number, t: number, length: number, peak: number) => {
     // Stops once 60 dB down: at t + length + 3 a long note was still 20 dB down and stopped with a click.
@@ -291,6 +297,12 @@ export function createMusic(ctx: BaseAudioContext, out: AudioNode) {
       on = play;
       level.gain.setTargetAtTime(play ? 1 : 0, now, 1.2);
     },
+    /** How far the tune steps back for the Dance floor's beat, 0 … 1 (its loudness): down to a tenth beside it. */
+    away(amount: number, now: number) {
+      if (Math.abs(amount - away) < 0.01) return;
+      away = amount;
+      aside.gain.setTargetAtTime(1 - 0.9 * amount, now, 0.3);
+    },
     /** How dark it is, 0 … 1: glides the level and the tone; the octave changes only where a phrase begins. */
     night(value: number, now: number) {
       dark = value;
@@ -307,6 +319,66 @@ export function createMusic(ctx: BaseAudioContext, out: AudioNode) {
         if (count++ % 6 === 0) voice((pitch(note.degree < 4 ? 0 : 3) / 2) * octave, at, 7, 0.1);
         at += note.length;
       }
+    },
+  };
+}
+
+/** The Dance floor's beat, an upbeat loop made here at DANCE_BPM: a kick on every beat, a clap on two and four, a hat
+ *  between, a bass on the offbeats walking Am · F · C · G, a bar each, and a short chord at each bar's start. It runs
+ *  on this page's own clock (`beats`, the beat count at `now`: the animator's and the tiles' too, so the beaver and the
+ *  floor move with what is heard), never in step with another player's. Nothing is scheduled while it is silent. */
+export function createBeat(ctx: BaseAudioContext, out: AudioNode) {
+  const level = ctx.createGain();
+  level.gain.value = 0;
+  level.connect(out);
+  const EIGHTH = 30 / DANCE_BPM, AHEAD = 0.3; // s an eighth note lasts; s scheduled ahead
+  const ROOTS = [55, 43.65, 65.41, 49]; // Hz: A1, F1, C2, G1
+  const CHORDS = [[220, 261.63, 329.63], [174.61, 220, 261.63], [196, 261.63, 329.63], [196, 246.94, 293.66]];
+  let next = -1, gain = 0;
+  /** A gain that starts at `peak` at t and falls to 2 % over `decay` s, into `to`. */
+  const env = (t: number, peak: number, decay: number, attack = 0.002) => {
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + attack);
+    g.gain.setTargetAtTime(0, t + attack, decay / 4);
+    return g;
+  };
+  const kick = (t: number) => {
+    const osc = ctx.createOscillator(), g = env(t, 0.75, 0.3);
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(46, t + 0.11);
+    osc.connect(g).connect(level);
+    osc.start(t); osc.stop(t + 0.45);
+  };
+  const hiss = (t: number, type: BiquadFilterType, hz: number, q: number, peak: number, decay: number) => {
+    const src = noise(ctx), f = ctx.createBiquadFilter(), g = env(t, peak, decay, 0.001);
+    f.type = type; f.frequency.value = hz; f.Q.value = q;
+    src.connect(f).connect(g).connect(level);
+    src.start(t, rand(0, 8)); src.stop(t + decay * 1.5 + 0.02);
+  };
+  const tone = (t: number, hz: number, type: OscillatorType, peak: number, decay: number, cutoff: number) => {
+    const osc = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = env(t, peak, decay, 0.006);
+    osc.type = type; osc.frequency.value = hz;
+    f.type = "lowpass"; f.frequency.value = cutoff;
+    osc.connect(f).connect(g).connect(level);
+    osc.start(t); osc.stop(t + decay * 1.5 + 0.02);
+  };
+  /** The eighth note n of the loop (any whole number) at t. */
+  const play = (n: number, t: number) => {
+    const eighth = ((n % 32) + 32) % 32, bar = Math.floor(eighth / 8), inBar = eighth % 8;
+    if (eighth % 2 === 0) kick(t);
+    if (inBar === 2 || inBar === 6) { hiss(t, "bandpass", 1500, 0.8, 0.55, 0.14); hiss(t + 0.012, "bandpass", 1100, 1, 0.3, 0.1); }
+    if (eighth % 2 === 1) { hiss(t, "highpass", 7500, 0.7, 0.28, 0.06); tone(t, ROOTS[bar]! * 2, "sawtooth", 0.34, 0.2, 520); }
+    if (inBar === 0) for (const hz of CHORDS[bar]!) tone(t + 0.003, hz, "triangle", 0.05, 0.3, 2600);
+  };
+  return {
+    /** Each frame: the beat count at the context's time `now`, and the gain the beat should have, 0 … 1. */
+    update(now: number, beats: number, to: number) {
+      if (Math.abs(to - gain) > 0.005) { gain = to; level.gain.setTargetAtTime(to, now, 0.15); }
+      const eighths = beats * 2, first = Math.ceil(eighths), last = Math.floor(eighths + AHEAD / EIGHTH);
+      if (gain <= 0.001) { next = first; return; } // silent: nothing scheduled
+      if (next < first || next > last + 1) next = first; // late, after a pause or a jump: from now on
+      for (; next <= last; next++) play(next, now + (next - eighths) * EIGHTH);
     },
   };
 }

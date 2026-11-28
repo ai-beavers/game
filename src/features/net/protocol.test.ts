@@ -82,6 +82,13 @@ describe("motion", () => {
     }
     expect(unpackMotion(packMotion(newMotion()), into).low).toBeUndefined();
   });
+  test("a dancing beaver is seen dancing by others, and sitting and crawling keep their places in the packed Motion", () => {
+    const into = newMotion(), dancing = { ...newMotion(), grounded: true, low: "dance" as const };
+    expect(unpackMotion(packMotion(dancing), into)).toEqual(dancing);
+    expect(parseClient(state({ m: packMotion(dancing) }))).toBeDefined();
+    const at = (low: "sit" | "crawl" | "dance") => packMotion({ ...newMotion(), low })[14];
+    expect([at("sit"), at("crawl"), at("dance")]).toEqual([1, 2, 3]); // as pages from before the Dance floor send them
+  });
   test("a lantern switched off is seen dark by others, and lit again after", () => {
     const into = newMotion();
     const off = { ...newMotion(), lanternOff: true };
