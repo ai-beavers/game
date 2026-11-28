@@ -1,7 +1,8 @@
 // The player's pure logic, independent of rendering and physics so it can be tested alone: when a jump starts (coyote
-// time and jump buffer), the carry sequence (pickup → carrying → drop), and the bookkeeping that fills Motion.
+// time and jump buffer) and the Double jump, the carry sequence (pickup → carrying → drop), and the bookkeeping that
+// fills Motion.
 //
-//   const jump = newJump();      if (jumpStarts(jump, dt, grounded, input.jump, canJump)) vy = JUMP_SPEED;
+//   const jump = newJump();      const j = jumpStarts(jump, dt, grounded, input.jump, canJump, afloat);  // "jump" | "double"
 //   const act = newAction();     const event = stepAction(act, dt, actPressed, stickInReach);  // "grab" | "release"
 //   const slap = newSlap();      stepSlap(slap, dt, slapPressed, allowed);                      // the tail slap, Q
 //   const dive = newDive();      stepDive(dive, dt, diveHeld, afloat, headUnder);              // diving, C held
@@ -18,18 +19,29 @@ export const SWIM_EASE = 0.5; // s for motion.swimming to go from 0 to 1
 
 // ---- jump --------------------------------------------------------------------------------------------------------
 
-export interface Jump { sinceGround: number; sincePress: number; held: boolean }
-export const newJump = (): Jump => ({ sinceGround: Infinity, sincePress: Infinity, held: false });
+export interface Jump { sinceGround: number; sincePress: number; held: boolean; doubled: boolean }
+export const newJump = (): Jump => ({ sinceGround: Infinity, sincePress: Infinity, held: false, doubled: false });
 
-/** Once per step. True when the jump starts this step: a fresh press (or one at most BUFFER old) while on the
- *  ground (or at most COYOTE after leaving it). Each press and each stay on the ground give one jump. */
-export function jumpStarts(s: Jump, dt: number, grounded: boolean, held: boolean, allowed: boolean): boolean {
+/** Once per step. "jump" when the jump starts this step: a fresh press (or one at most BUFFER old) while on the
+ *  ground (or at most COYOTE after leaving it); each press and each stay on the ground give one. "double" for the
+ *  Double jump: a fresh press in the air past COYOTE, once per stay in the air (the ground or the water gives it
+ *  back); a buffered press never is one. allowed: not afloat, no action, no tail slap. */
+export function jumpStarts(s: Jump, dt: number, grounded: boolean, held: boolean, allowed: boolean, afloat = false): "jump" | "double" | undefined {
   s.sinceGround = grounded ? 0 : s.sinceGround + dt;
-  s.sincePress = held && !s.held ? 0 : s.sincePress + dt;
+  const fresh = held && !s.held;
+  s.sincePress = fresh ? 0 : s.sincePress + dt;
   s.held = held;
-  if (!allowed || s.sincePress > BUFFER + 1e-9 || s.sinceGround > COYOTE + 1e-9) return false;
-  s.sincePress = s.sinceGround = Infinity;
-  return true;
+  if (grounded || afloat) s.doubled = false;
+  if (!allowed) return;
+  if (s.sincePress <= BUFFER + 1e-9 && s.sinceGround <= COYOTE + 1e-9) {
+    s.sincePress = s.sinceGround = Infinity;
+    return "jump";
+  }
+  if (fresh && !grounded && !afloat && !s.doubled) {
+    s.sincePress = Infinity;
+    s.doubled = true;
+    return "double";
+  }
 }
 
 // ---- carrying ----------------------------------------------------------------------------------------------------

@@ -1,10 +1,11 @@
-// Walking, running and jumping round the clearing, over a log in the way, and a run out to its far meadow.
+// Walking, running, jumping and the Double jump round the clearing, over a log in the way, and a run out to its far meadow.
 import { placeAll } from "../../../world/place.ts";
+import { JUMP_HEIGHT, WALL_SOLID } from "../../../player/index.ts";
 import { skip, type Kit } from "../kit.ts";
 import type { Station } from "../live.ts";
 
 export const movement = (kit: Kit): Station[] => {
-  const { player, world, walkTo, expect, after, tap, wait, press } = kit;
+  const { player, world, walkTo, expect, after, since, tap, wait, until, press } = kit;
   return [
     ["Walk", async () => {
       const steps = after("footstep");
@@ -22,6 +23,30 @@ export const movement = (kit: Kit): Station[] => {
       const jumped = after("jump"), landed = after("land");
       for (let i = 0; i < 3; i++) { await tap("jump", 0.3); await wait(0.7); }
       expect(jumped() && landed(), "no jump, or no landing");
+    }, "Around the clearing"],
+    // A jump, and at its top Space again: the Double jump takes the feet higher than one jump, but never as high as
+    // the shop's walls keep it out.
+    ["Double jump", async () => {
+      await wait(0.5); // settled on the ground
+      const ground = player.feet.y, jumps = since("jump"), landed = after("land");
+      let top = 0;
+      const stop = kit.everyStep(() => { top = Math.max(top, player.feet.y - ground); });
+      const hold = async (seconds: number) => {
+        kit.want.jump = true;
+        try { await wait(seconds); } finally { kit.want.jump = false; }
+        await kit.frame(); // let go for a step: the next press is a fresh one
+      };
+      try {
+        await hold(0.3); // held: the full jump
+        await until(() => player.motion.vertical <= 0.3 || player.motion.grounded, 2, "jumped, never came near the top");
+        expect(!player.motion.grounded && !landed(), "landed before the second press");
+        await hold(0.3);
+        await until(() => player.motion.grounded, 3, () => `still in the air 3 s after the Double jump, the feet ${(player.feet.y - ground).toFixed(2)} m up`);
+      } finally { stop(); }
+      expect(jumps() === 2, `${jumps()} jump events, not 2 (a jump and a Double jump)`);
+      expect(landed(), "no landing after the two jumps");
+      expect(top > JUMP_HEIGHT + 0.05, `the feet went up only ${top.toFixed(2)} m, not over one jump's ${JUMP_HEIGHT} m`);
+      expect(top < WALL_SOLID, `the feet went up ${top.toFixed(2)} m, over the shop's walls' ${WALL_SOLID} m`);
     }, "Around the clearing"],
     // The camera follows the beaver, the mouse looks round: a look holds while the beaver stands, and walking on (W
     // and D, half away from the camera) the camera swings round behind it again.

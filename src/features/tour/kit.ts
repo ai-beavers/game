@@ -63,6 +63,8 @@ export interface Kit {
   readonly usedUp: boolean;
   /** The next frame of the world; its dt. */
   frame(): Promise<number>;
+  /** Calls look once every physics step (the fast tour takes several a frame), until the function returned is called. */
+  everyStep(look: () => void): () => void;
   /** A picture, also while paused (frame() waits for the world). */
   paint(): Promise<unknown>;
   /** Seconds of the game's time. */
@@ -87,6 +89,8 @@ export interface Kit {
   expect(ok: boolean, why: string): void;
   /** A check whether the event has happened since this call. */
   after(name: EventName): () => boolean;
+  /** How many of the event have happened since this call. */
+  since(name: EventName): () => number;
   /** The text of a HUD TextBlock by name, "" if none. */
   hudText(name: string): string;
   build(): BuildDebug | undefined;
@@ -121,8 +125,11 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
 
   // ---- what the tour wants, read once per physics step like any other device ----
   const want = { to: undefined as Vector3 | undefined, side: 0, run: 0, jump: false, act: false, slap: false, dive: false, crawl: false };
+  const lookers = new Set<() => void>();
+  const everyStep = (look: () => void) => { const mine = () => look(); lookers.add(mine); return () => void lookers.delete(mine); };
   player.keys.add({
     read(into: Input) {
+      for (const look of lookers) look();
       Object.assign(into, newInput(), { run: want.run, jump: want.jump, act: want.act, slap: want.slap, dive: want.dive, crawl: want.crawl });
       if (!want.to) return into;
       const d = new Vector3(want.to.x - player.feet.x, 0, want.to.z - player.feet.z);
@@ -209,7 +216,8 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
     events.on(name, (e) => { count[name]++; (last as Record<string, unknown>)[name] = e; });
   }
   const expect = (ok: boolean, why: string) => { if (!ok) throw new Error(why); };
-  const after = (name: EventName) => { const n = count[name]; return () => count[name] > n; };
+  const since = (name: EventName) => { const n = count[name]; return () => count[name] - n; };
+  const after = (name: EventName) => { const n = since(name); return () => n() > 0; };
   const hudText = (name: string) => (stage.hud.getControlByName(name) as TextBlock | null)?.text ?? "";
 
   // ---- dam work, in parts the stations share: fell a tree, gnaw it into wood, pick up a stick, build it in ----
@@ -377,7 +385,7 @@ export const createKit = (game: Game, mode: string, requested: string[]): Kit =>
   return {
     game, player, world, stage, beaver, fast, live, requested, want,
     get usedUp() { return usedUp; },
-    frame, paint, wait, until, rest, tap, press, key, flat, walkTo, reach, last, expect, after, hudText,
+    frame, everyStep, paint, wait, until, rest, tap, press, key, flat, walkTo, reach, last, expect, after, since, hudText,
     build, needBuild, pond, sky, clear, standingTrees, fell, split, loose, pickUp, fetchStick, buildUpTo, stockUpTo, regrowing, resume,
   };
 };

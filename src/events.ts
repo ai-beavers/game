@@ -119,12 +119,19 @@ export function createEvents(): Events {
   };
 }
 
+/** m/s: a rise in vertical speed in the air this big is a Double jump (it sets about 3 m/s up). */
+const DOUBLE_RISE = 1.5;
+
 /** Returns a function to call once per physics step, after the player's step. */
 export function watch(motion: Motion, feet: Vector3, events: Events) {
   let before = { ...motion }, steps = 0, side: "L" | "R" = "L";
   return () => {
     const place = feet.clone();
     if (before.grounded && !motion.grounded && motion.vertical > 0.5) events.emit("jump", { place });
+    // The Double jump: in the air (off the ground, out of the water, not on a ride) gravity only ever slows a rise or
+    // speeds a fall, so a clear rise in vertical speed between two steps is the beaver going up a second time.
+    else if (before.airTime > 0 && motion.airTime > 0 && !motion.glide && !motion.paddle
+      && motion.vertical > DOUBLE_RISE && motion.vertical - before.vertical > DOUBLE_RISE) events.emit("jump", { place });
     if (!before.grounded && motion.grounded && motion.swimming < 0.5) events.emit("land", { place, speed: motion.landingSpeed });
     if (before.swimming < 0.5 && motion.swimming >= 0.5) events.emit("enterWater", { place, speed: Math.abs(before.vertical) });
     if (before.swimming >= 0.5 && motion.swimming < 0.5) events.emit("leaveWater", { place });
