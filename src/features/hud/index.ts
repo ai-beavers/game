@@ -29,6 +29,7 @@ const build = () => (window as { build?: BuildView }).build;
 const shop = () => (window as { shop?: { place: { x: number; z: number } } }).shop;
 const bakery = () => (window as { bakery?: { place: { x: number; z: number } } }).bakery;
 const workbench = () => (window as { workbench?: { place: { x: number; z: number } } }).workbench;
+const danceFloor = () => (window as { danceFloor?: { place: { x: number; z: number } } }).danceFloor;
 type Page = "start" | "pause" | "players" | "settings" | "controls";
 // The line under the goal at hand: what to do for it; then the key cap of the Use button (held where it says "hold"),
 // on touch "tap Use" or "hold Use" in words.
@@ -536,7 +537,7 @@ export const create: CreateFeature = game => {
       }
       map.paint({centre:large ? {x:0,z:0} : at, span:large ? 2*EXTENT : 26, beaver:at, facing:player.facing, yaw:player.camera.yaw,
         sticks:world.sticks.filter(s => isEnabled(s.body)).map(s => s.mesh.position), trees:world.trees?.filter((_,i) => b?.state.trees[i]?.fell===undefined).map(t => t.place),
-        dam, objective, level:world.waterLevel, lodge:b && b.state.dam.length>=SLOTS ? b.dam.lodgeAt : undefined, shop:shop()?.place, bakery:bakery()?.place, workbench:workbench()?.place,
+        dam, objective, level:world.waterLevel, lodge:b && b.state.dam.length>=SLOTS ? b.dam.lodgeAt : undefined, shop:shop()?.place, bakery:bakery()?.place, workbench:workbench()?.place, danceFloor:danceFloor()?.place,
         players:n ? [...n.remotes.values()].filter(r => r.node.isEnabled()).map(r => ({x:r.feet.x,z:r.feet.z,name:r.name})) : [] },mapSize);
     },
   };

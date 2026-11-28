@@ -110,6 +110,10 @@ _Avoid_: build day, Friday event
 The real events of the House of AI in Hamburg, the place the shop's sign is named after, as its public Luma calendar lists them; the Calendar board shows those of its week beside Build Fridays, each at its real moment on the viewer's own clock.
 _Avoid_: Luma events, meetups, shop events
 
+**Dance floor**:
+The open square of coloured tiles out in the far meadow, near the bank and away from the pond, whose tiles light up in turn, brighter from dusk to dawn, and from which a dance beat sounds, heard only near it. A beaver standing still on it dances. Everyone sees the same floor; each hears the beat on their own.
+_Avoid_: disco, club, party, stage (that is the engine's), Shop (that is the disco-like hut with the café)
+
 **Shopkeeper**:
 The female beaver behind the shop's counter who sells outfits. No player steers her and, unlike an animal, she never leaves her place or flees.
 _Avoid_: NPC, vendor, merchant
@@ -203,6 +207,10 @@ _Avoid_: crouch, rest, kneel
 **Crawl**:
 The beaver going low on all fours on land, slower than walking, for as long as the player holds it there.
 _Avoid_: crouch, sneak, prone
+
+**Dance**:
+The beaver moving to the beat while it stands still on the dance floor with empty paws: a sway, a hop, a paw raised, a turn, over and over. Moving ends it. Other players see it dance.
+_Avoid_: emote, groove, party
 
 **Bound**:
 How the beaver runs on land: down on all fours, long and low, the hind feet pushing off together and the front paws landing between, the back humping and stretching with each stride. Walking it stays upright; it drops into a bound as it speeds up and rises again as it slows. Carrying a stick it runs upright. Running takes stamina.

@@ -5,7 +5,8 @@
 //   await listen.recipe("bite")  → { rate, left, right }   base64 Float32 samples, as heard at the camera
 //   await listen.scene("rain")   → the same for a whole scene
 //   listen.recipes, listen.scenes                          the names
-import { createLapping, createMix, createMusic, createNight, createRain, createWind, type Mix } from "../src/features/audio/mix.ts";
+import { DANCE_BPM } from "../src/contracts.ts";
+import { createBeat, createLapping, createMix, createMusic, createNight, createRain, createWind, type Mix } from "../src/features/audio/mix.ts";
 import { SOUNDS, type SoundName } from "../src/features/audio/sounds.ts";
 
 const RATE = 48000;
@@ -95,12 +96,13 @@ async function recipe(name: SoundName) {
 }
 
 /** What index.ts keeps running: the ambience, the music, the birds and the owl, for the sky given by `sky(now)`. */
-function world(ctx: BaseAudioContext, mix: Mix, music: boolean) {
+function world(ctx: BaseAudioContext, mix: Mix, music: boolean, dance = 0) {
   const shore = placed(ctx, mix.ambience, 5) as PannerNode;
   shore.refDistance = 1.5;
   const wind = createWind(ctx, mix.ambience), lapping = createLapping(ctx, shore), tune = createMusic(ctx, mix.music);
   const rain = createRain(ctx, mix.ambience, shore), night = createNight(ctx, mix.ambience, shore);
   tune.set(music, 0);
+  const beat = createBeat(ctx, mix.beat);
   let bird = 3, owl = 4;
   const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   return (now: number, dt: number, sky: { dark: number; rain: number; wind: number; evening?: boolean }) => {
@@ -111,6 +113,8 @@ function world(ctx: BaseAudioContext, mix: Mix, music: boolean) {
     night.update(now, smooth(0.4, 0.85, dark) * (1 - 0.7 * wet), sky.evening ? Math.sin(Math.PI * smooth(0.15, 0.95, dark)) * (1 - 0.5 * wet) : 0);
     tune.night(dark, now);
     tune.update(now);
+    tune.away(dance, now);
+    beat.update(now, now * DANCE_BPM / 60, dance);
     const birds = (1 - smooth(0.2, 0.6, dark)) * (1 - 0.8 * wet);
     if ((bird -= dt * birds) <= 0) {
       bird = 4 + Math.random() * 7;
@@ -126,6 +130,8 @@ function world(ctx: BaseAudioContext, mix: Mix, music: boolean) {
 type Play = (name: SoundName, t: number, amount?: number, distance?: number) => void;
 interface Scene {
   seconds: number; music?: boolean; sky?: (now: number) => { dark: number; rain: number; wind: number; evening?: boolean }; events?: (play: Play) => void;
+  /** The Dance floor's beat, as loud as rules.ts loudness says for where the beaver stands: 1 on the floor. */
+  dance?: number;
   /** Seconds from … to: the camera under water (mix.under). */
   under?: [number, number];
 }
@@ -197,6 +203,8 @@ export const SCENES: Record<string, Scene> = {
   chimes: { seconds: 16, events: (play) => { play("chime", 3, 1, 0); play("chime", 6, 1, 0); play("fanfare", 9, 1, 0); } },
   /** Running about: steps as fast as the gait makes them, a jump and a landing. */
   run: { seconds: 12, events: (play) => { walk(play, 1, 10, 0.2); play("jump", 5); play("land", 5.6, 0.8); } },
+  /** Dancing on the Dance floor at noon: the beat in full, the tune stepped back, the meadow around. */
+  dance: { seconds: 20, dance: 1, events: (play) => walk(play, 0.5, 3) },
   /** Only the music. */
   music: { seconds: 30, sky: () => ({ dark: 0, rain: 0, wind: 0 }) },
 };
@@ -206,7 +214,7 @@ async function scene(name: string) {
   if (!s) throw new Error(`no scene ${name}`);
   seed(11);
   const { ctx, mix } = context(s.seconds), sky = s.sky ?? (() => NOON);
-  const tick = world(ctx, mix, s.music ?? true);
+  const tick = world(ctx, mix, s.music ?? true, s.dance);
   if (name === "music") mix.ambience.disconnect(); // only the tune
   const events: { t: number; go: () => void }[] = [];
   s.events?.((sound, t, amount, distance) => events.push({ t, go: () => {

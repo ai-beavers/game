@@ -8,7 +8,9 @@
 //   ground   gait (stride from motion.distance, planted feet by IK), standing (breathing, weight shift, a look
 //            around, flexing when angry), turning lean, the dip after a landing, anger
 //   low      sit (on its haunches, trunk upright, tail flat on the ground, paws at the chest, still breathing and
-//            looking round) or crawl (low on all fours, the front paws stepping with the hind feet), by motion.low
+//            looking round) or crawl (low on all fours, the front paws stepping with the hind feet), by motion.low;
+//            or the Dance on the Dance floor (low "dance"): a loop to the beat on motion.time, bouncing all through:
+//            a sway, hops, the right paw raised and pumping, a turn right round on the spot
 //   bound    running: down on all fours, long and low, the hind feet and the front paws each landing nearly together,
 //            the back humping and stretching (the crawl's pose, by speed; not carrying, low or afloat)
 //   action   pickup, drop, gnaw, build, by actionProgress; feet stay planted
@@ -22,7 +24,7 @@
 //   reach    the left paw over the shoulder to the backpack (motion.reachBack), over all of the above, left arm only
 //   stare    the head turned to look along motion.stare's aim, raised and cocked, over all of the above, head only
 // The inputs that set the stride (distance, phase) are never damped: damping them would make the feet slide.
-import { BACKPACK, WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
+import { BACKPACK, DANCE_BPM, WALK_SPEED, type Action, type Animator, type Bone, type CreateAnimator, type Motion } from "../contracts.ts";
 import { BOARD_SPEED, type SwimMotion } from "../player/state.ts";
 import { Body, X, Y, Z } from "./body.ts";
 import { FLEXES, SIDES, arm, brows_at, flexArms, leg, trunk, type Side, type Trunk } from "./clips.ts";
@@ -245,6 +247,45 @@ export function paddleStroke(phase: number, strength: number): Vec {
 }
 const STROKE = 0.9; // m the canoe goes per stroke
 
+/** Beats in the Dance's loop: four bars of four, one each for the sway, the hops, the paw raised and the turn. */
+export const DANCE_BEATS = 16;
+/** m: how deep the knees bounce on each beat, and how high a hop lifts the feet. */
+const BOUNCE = 0.03, HOP = 0.06;
+
+/** The Dance at `time` s (motion.time): the whole body set afresh, so it loops whatever came before. Every beat the
+ *  knees bounce and the head nods; its bars, eased into each other: 0 a sway from foot to foot, the arms swinging
+ *  bent; 1 a hop on every beat; 2 the right paw raised high, pumping to the beat (the left keeps the lantern); 3 a turn
+ *  right round on the spot, a quarter a beat, the feet turning with it. */
+function dance(body: Body, time: number) {
+  const beats = time * DANCE_BPM / 60, loop = beats % DANCE_BEATS, beat = beats % 1, bar = loop / 4;
+  /** How much of bar k is on now: 1 in it, easing over a quarter beat at either end (bar 0 also after bar 3). */
+  const inBar = (k: number) => {
+    const d = Math.abs(((bar - k + 2 + 4) % 4) - 2 - 0.5) - 0.5; // bars from bar k's edge, negative inside it
+    return 1 - smooth(-0.0625, 0.0625, d);
+  };
+  const swaying = inBar(0), hopping = inBar(1), raised = inBar(2);
+  const bounce = 0.5 + 0.5 * cos(TAU * beat), side = sin(PI * beats); // down on the beat; left, right, a beat each
+  const hop = hopping * HOP * max(0, sin(TAU * beat - PI * 0.15)) ** 1.5;
+  // the turn: a quarter on each beat of the last bar, eased in the beat, so 2π at its end, which is 0 again
+  const turnBeat = loop - 12, turn = turnBeat < 0 ? 0 : (PI / 2) * (Math.floor(turnBeat) + smooth(0.1, 0.7, turnBeat % 1));
+  trunk(body, {
+    lean: 0.05 + 0.06 * bounce, sway: (0.05 + 0.1 * swaying) * side, twist: 0.12 * side * (1 - raised * 0.5),
+    nod: -0.05 + 0.12 * bounce, tail_up: 0.15 + 0.2 * hop / HOP, tail_sway: 0.35 * side,
+  });
+  const q = axisAngle(UP, turn);
+  body.turns.hips = mul(q, body.turns.hips);
+  const width = 0.05 + 0.02 * swaying, shift = 0.03 * side * (1 + swaying);
+  const plant = (sign: number): Plant => ({ at: rotate(q, [sign * (FOOT_X + width), ANKLE + hop, 0]), turn: mul(q, footTurn(sign, 0.25, 0)) });
+  plantLegs(body, { L: plant(1), R: plant(-1) }, BOUNCE * bounce - hop, rotate(q, [shift, 0, -0.01]));
+  // the arms: bent, swinging against the sway; the right one up over the head in the third bar, pumping on the beat
+  for (const [sign, lr] of SIDES) arm(body, sign, lr, 0.55 + 0.25 * hopping, 0.55 + 0.35 * sign * side, 0, 1.1, 0.5 + 0.3 * bounce, 0.1, 0.6);
+  if (raised > 0.001) {
+    const up = new Body().copy(body), placed = up.fk();
+    reachArm(up, placed, "R", onChest(placed, [-0.1, 0.42 + 0.05 * bounce, 0.06 + 0.04 * bounce]), [-1, 0, -0.3], 1);
+    body.blend(up, raised, RIGHT_ARM);
+  }
+}
+
 const SIT_DROP = 0.1, SIT_FEET = 0.12, SIT_TAIL = -0.2, SIT_TIP = -0.2; // m, m, rad, rad
 
 /** On all fours: the trunk pitched forward and low, the head up to look ahead, the hind feet on their plans, the front
@@ -428,7 +469,7 @@ export const createAnimator: CreateAnimator = (): Animator => {
   const offsets = [0, 0.5, 0.5, 1]; // in strides behind the left hind foot: right hind foot, left and right front paw
   let speed = 0, anger = 0, first = true, wasGrounded = true;
   const turning$ = new Ease(-Infinity, Infinity); // eased, not damped: a damped rate jumps in its first frame
-  const sit$ = new Ease(), crawl$ = new Ease(), bound$ = new Ease(), air$ = new Ease(), leap$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease(), paddle$ = new Ease(), glide$ = new Ease();
+  const sit$ = new Ease(), crawl$ = new Ease(), dance$ = new Ease(), bound$ = new Ease(), air$ = new Ease(), leap$ = new Ease(), acting$ = new Ease(), swimming$ = new Ease(), carrying$ = new Ease(), flexing$ = new Ease(), diving$ = new Ease(), paddle$ = new Ease(), glide$ = new Ease();
   const pitch$ = new Ease(-Infinity, Infinity);
   let shown: Action = "none", progress = 0, vertical = 0;
   return {
@@ -509,6 +550,8 @@ export const createAnimator: CreateAnimator = (): Animator => {
       body.reset();
       const standOn = ground(body, { speed, pivot, feet, phase, anger, turning, dip: m.grounded ? dip : 0, time: m.time, flex: flexing }, g);
       if (sitting > 0.001) { sit(layer.copy(body), m.time); body.blend(layer, sitting); }
+      const dancing = ease(dance$, m.low === "dance" ? 1 : 0, 0.4);
+      if (dancing > 0.001) { dance(layer.copy(body), m.time); body.blend(layer, dancing); }
       const gliding = ease(glide$, m.glide ? 1 : 0, 0.3);
       if (gliding > 0.001) { glide(layer.copy(body), turning); body.blend(layer, gliding); }
       const fours = max(crawling, bounding);

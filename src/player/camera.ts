@@ -27,6 +27,9 @@
 //   camera.view                       "third-person" or "first-person"; V switches it, except while paused (a menu,
 //                                     photo mode).
 //   camera.eyes                       where the beaver sees from (Beaver.eyes), for the first-person view.
+//   camera.steady = true              another part (src/features/dance-floor) moves the body about on the spot: the
+//                                     first-person view eases to where the eyes were when it began and stays there,
+//                                     looking the player's way, until it is let go (false) and eases back to the eyes.
 //   camera.hold = point               another part (src/features/stare) holds the camera: it keeps its place across,
 //                                     stops following the feet, eases its height to the point's and looks at it.
 //                                     undefined: let go; it eases back behind the beaver on the usual spring. Only in
@@ -57,6 +60,7 @@ const TILT = 5; // 1/s, how fast it changes angle for that
 const BALL = 0.18; // m, radius of the cast ball: keeps the near plane out of walls
 // The player's framing.
 export const FOV = Math.PI / 4; // rad, vertical, as engine.ts sets it
+const STEADY_EASE = 0.25; // s: how fast the first-person view goes over to its steady place and back (camera.steady)
 const MIN_WIDE = 0.95, MAX_FOV = 1.15; // rad: a tall phone opens the view to see this much across, but not wider than this
 const LOW = 0.2, LEFT = 0; // the look point this far below and left of the middle (fractions of half the screen): centred across
 const LAG = 7, LAG_UP = 3, LAG_DOWN = 5; // 1/s: the look point follows the feet sideways, up and down (jumps barely move it), and so diving
@@ -229,6 +233,9 @@ export function followCamera(stage: Stage, blocks: number) {
   let seen: View = "third-person", eyes: TransformNode | undefined, eyeChain: TransformNode[] = [];
   // The hold: the point it looks at, where the camera stands for it, how far it is held (0 … 1, on a spring).
   let hold = false, held = 0, heldV = 0;
+  // Steady: the eyes' place from the feet when it began, and how far the view stands there (0 … 1, eased).
+  let steady = false, steadied = 0;
+  const steadyAt = new Vector3(), eyesAt = new Vector3();
   const heldAt = new Vector3(), heldLook = new Vector3(), following = new Vector3();
   const pitchRange = (pitch: number) => seen === "first-person"
     ? Math.max(-EYE_PITCH, Math.min(EYE_PITCH, pitch)) : Math.max(lowest(rig), Math.min(MAX_PITCH, pitch));
@@ -272,6 +279,8 @@ export function followCamera(stage: Stage, blocks: number) {
       if (point) heldLook.copyFrom(point);
       hold = !!point;
     },
+    get steady() { return steady; },
+    set steady(on: boolean) { steady = on; },
     get eyes() { return eyes; },
     set eyes(node: TransformNode | undefined) {
       eyes = node; eyeChain = [];
@@ -291,7 +300,11 @@ export function followCamera(stage: Stage, blocks: number) {
       if (seen === "first-person" && eyes) {
         // At the eyes as the bones were just posed (the world matrices from the beaver's root down, recomputed once).
         for (const node of eyeChain) node.computeWorldMatrix(true);
-        camera.position.copyFrom(eyes.getAbsolutePosition());
+        eyesAt.copyFrom(eyes.getAbsolutePosition()).subtractInPlace(feet);
+        if (steady && steadied <= 0.001) steadyAt.copyFrom(eyesAt); // the eyes as they are when the body starts to move about
+        steadied += ((steady ? 1 : 0) - steadied) * (1 - Math.exp(-dt / STEADY_EASE));
+        Vector3.LerpToRef(eyesAt, steadyAt, steadied, camera.position);
+        camera.position.addInPlace(feet);
         camera.fov = lens(engine.getAspectRatio(camera) || 16 / 9).fov;
         state.pitch = pitchRange(state.pitch);
         camera.setTarget(gaze(state.yaw, state.pitch).addInPlace(camera.position));

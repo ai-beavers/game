@@ -10,6 +10,8 @@ import { hex as colorFromHex } from "../../world/color.ts";
 // North up, fixed: up on the map is +z, the way the camera looks at the start, so right is -x.
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { pathAt } from "../../world/terrain.ts";
+// The floor's tile colours, from its plain-numbers placement: the mark shows the tiles a player sees.
+import { TILE_COLOURS } from "../dance-floor/place.ts";
 import { FONT, GOLD, INK, PANEL, PAPER, PLAYERS, STICKS } from "./style.ts";
 
 /** Half the width of the mapped square around the middle of the clearing, m, and metres per pixel. */
@@ -40,6 +42,8 @@ export interface MapView {
   shop?: Point;
   /** The bakery (src/features/bakery): a little roof with a chimney. */
   bakery?: Point;
+  /** The Dance floor (src/features/dance-floor): a square of four coloured tiles. */
+  danceFloor?: Point;
   /** The workbench (src/features/workbench): a stump seen from above, its rings. */
   workbench?: Point;
   players?: (Point & { name: string })[];
@@ -155,6 +159,16 @@ export function createMap(heightAt: (x: number, z: number) => number, waterLevel
         g.beginPath();
         g.arc(x, y, Math.max(1.8 * unit, r * 0.3), 0, Math.PI * 2);
         g.fillStyle = "#e8eef5"; g.fill();
+      }
+      if (view.danceFloor) {
+        // Four tiles in a dark square, as the floor is seen from above.
+        const [x, y] = at(view.danceFloor), r = Math.max(4.5 * unit, 2 * k), t = r * 0.8;
+        g.fillStyle = "#141418"; g.strokeStyle = "rgba(14,14,18,0.9)";
+        g.fillRect(x - r, y - r, 2 * r, 2 * r); g.strokeRect(x - r, y - r, 2 * r, 2 * r);
+        TILE_COLOURS.slice(0, 4).forEach((c, i) => {
+          g.fillStyle = `#${c.toString(16).padStart(6, "0")}`;
+          g.fillRect(x - t + (i % 2) * t + t * 0.08, y - t + Math.floor(i / 2) * t + t * 0.08, t * 0.84, t * 0.84);
+        });
       }
       if (view.bakery) {
         // A chimney mark: a gable roof, its chimney standing up on the right, a puff over it.

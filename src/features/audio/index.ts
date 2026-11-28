@@ -1,7 +1,7 @@
 // Sound for the game, all synthesised with Web Audio: the beaver's steps, jumps, splashes, tail slaps, swimming and work (bites,
 // a tree creaking, crashing and cracking, sticks knocked into the dam, a fanfare when it holds, a chime per goal); wind,
 // rain, birds, crickets, frogs, an owl and water around it, placed in space around the camera; the owl and the deer
-// that src/features/life shows, calling from where they are; the River kit's calls (src/features/river-kit); the steps and splashes of other players
+// that src/features/life shows, calling from where they are; the Dance floor's beat near it (src/features/dance-floor), the tune stepping back; the River kit's calls (src/features/river-kit); the steps and splashes of other players
 // (src/features/net); the Old Beaver's murmur (src/features/old-beaver); and a quiet tune that composes itself. With the camera under water all of it is muffled.
 // The one sound not made here is the Old Beaver's Voice: the server sends it as ElevenLabs makes it, and it plays through the same mix.
 //
@@ -19,7 +19,9 @@ import { gait } from "../../anim/index.ts";
 import { RUN_SPEED, WALK_SPEED } from "../../contracts.ts";
 import type { CreateFeature } from "../../game.ts";
 import { findWater, groundAt } from "./ground.ts";
-import { carried, createLapping, createMix, createMusic, createNight, createRain, createWind, SPEECH } from "./mix.ts";
+import { carried, createBeat, createLapping, createMix, createMusic, createNight, createRain, createWind, SPEECH } from "./mix.ts";
+import { DANCE_BPM } from "../../contracts.ts";
+import { loudness } from "../dance-floor/rules.ts";
 import { rand, SOUNDS, type SoundName } from "./sounds.ts";
 
 export const played: Partial<Record<string, number>> = {};
@@ -50,8 +52,8 @@ export const create: CreateFeature = (game) => {
     const shore = panner(mix.ambience, 0, world.waterLevel, 0);
     shore.refDistance = 1.5;
     const wind = createWind(ctx, mix.ambience), lapping = createLapping(ctx, shore), music = createMusic(ctx, mix.music);
-    const rain = createRain(ctx, mix.ambience, shore), night = createNight(ctx, mix.ambience, shore);
-    return { ctx, mix, panner, shore, wind, lapping, music, rain, night, paused: false };
+    const rain = createRain(ctx, mix.ambience, shore), night = createNight(ctx, mix.ambience, shore), beat = createBeat(ctx, mix.beat);
+    return { ctx, mix, panner, shore, wind, lapping, music, rain, night, beat, paused: false };
   }
 
   const apply = () => {
@@ -271,6 +273,11 @@ export const create: CreateFeature = (game) => {
       night.update(now, smooth(0.4, 0.85, dark) * (1 - 0.7 * wet), evening ? Math.sin(Math.PI * smooth(0.15, 0.95, dark)) * (1 - 0.5 * wet) : 0);
       music.night(dark, now);
       music.update(now);
+      // The Dance floor's beat, by how far the beaver is from the floor (src/features/dance-floor/rules.ts loudness):
+      // it is music, so the music setting silences it; the tune steps back as far as the beat is heard.
+      const dance = settings.values.music ? loudness(at.x, at.z) : 0;
+      music.away(dance, now);
+      live.beat.update(now, motion.time * DANCE_BPM / 60, dance);
       // Birds now and then, somewhere around and above, by day and fewer in rain; sometimes a second one answers.
       const birds = (1 - smooth(0.2, 0.6, dark)) * (1 - 0.8 * wet);
       if ((bird -= dt * birds) <= 0) {

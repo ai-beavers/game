@@ -18,6 +18,7 @@ import type { Stage } from "../engine.ts";
 import { HEAVY, LOOSE, PhysicsMotionType, box, cylinder, hull, type PhysicsBody, type PhysicsShape } from "../physics.ts";
 import { daylight } from "../light.ts";
 import { buildGrass } from "./grass.ts";
+import { FLOOR } from "../features/dance-floor/place.ts";
 import { placeAll, SPAWN, type Spot } from "./place.ts";
 import { bushes, standInProps } from "./props.ts";
 import { instance, vertices, bounds, meshes } from "./models.ts";
@@ -197,7 +198,9 @@ export const createWorld: CreateWorld = async (stage: Stage, given?: Props) => {
   const solid = [...layout.tree.map((s) => ({ s, r: 0.5 })), ...layout.rock.map((s) => ({ s, r: 0.55 * s.scale })),
     ...layout.stump.map((s) => ({ s, r: 0.4 })), ...layout.log.map((s) => ({ s, r: 1.2 })),
     ...layout.stick.map((s) => ({ s, r: 0.3 }))]; // a trampled spot around each stick, so it can be found
-  const grass = buildGrass(stage, (x, z) => solid.some(({ s, r }) => Math.hypot(s.x - x, s.z - z) < r), ground.material as StandardMaterial);
+  // No grass through the Dance floor's tiles, nor on its rim.
+  const onFloor = (x: number, z: number) => Math.abs(x - FLOOR.x) < FLOOR.half + 0.2 && Math.abs(z - FLOOR.z) < FLOOR.half + 0.2;
+  const grass = buildGrass(stage, (x, z) => onFloor(x, z) || solid.some(({ s, r }) => Math.hypot(s.x - x, s.z - z) < r), ground.material as StandardMaterial);
 
   let time = 0;
   return {

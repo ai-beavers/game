@@ -13,6 +13,7 @@
 // against the ground as it was then (FIRST_RIM), and the ring's things come after it from a random of their own.
 import { fbm, seeded } from "./noise.ts";
 import { SHOP, SHOP_CLEAR } from "../features/shop/place.ts"; // the ring keeps clear of the Shop, which stands in the meadow
+import { FLOOR, FLOOR_CLEAR } from "../features/dance-floor/place.ts"; // and of the Dance floor, out by the bank
 import { BASIN, FIRST_RIM, HILL, POND, RIM, SITE, WATER_LEVEL, heightAt as groundNow, pondRatio, shape, slopeAt as slopeNow, sunsetGap } from "./terrain.ts";
 
 /** The ground the first clearing's things were placed on: its bank started at FIRST_RIM. */
@@ -147,5 +148,22 @@ export function placeAll(seed = 42): Layout {
   stump.push(...spread(RING.stump, 0.7, (x, z) => meadowNow(x, z, 0.3)).map((p) => ringSpot(p, 0.9 + ring() * 0.3, 2)));
   log.push(...spread(RING.log, 1.4, (x, z) => meadowNow(x, z, 0.2)).map((p) => ringSpot(p, 1, 2)));
   rock.push(...spread(RING.rock, 0.7, (x, z) => meadowNow(x, z, 0.6)).map((p) => ringSpot(p, 0.7 + ring() * 0.7, 3)));
+
+  // The Dance floor came after the ring: what the ring put on it moves off it, each to a place of its own random, so
+  // every list keeps its order and a saved game's tree i is the same tree (only those that stood on the floor move).
+  const off = seeded(seed + 3), radius = new Map<Spot[], number>([[tree, 2.6], [stump, 0.7], [log, 1.4], [rock, 0.7]]);
+  const steepest = new Map<Spot[], number>([[tree, 0.45], [stump, 0.3], [log, 0.2], [rock, 0.6]]);
+  const onFloor = (x: number, z: number) => dist(FLOOR, x, z) <= FLOOR_CLEAR;
+  for (const [list, r] of radius) for (const s of list) {
+    if (!onFloor(s.x, s.z)) continue;
+    const own = solid.findIndex((o) => o.x === s.x && o.z === s.z);
+    if (own >= 0) solid.splice(own, 1);
+    for (let i = 0; i < 400; i++) {
+      const a = off() * Math.PI * 2, d = Math.sqrt(inRing.from ** 2 + off() * (inRing.to ** 2 - inRing.from ** 2));
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (!onFloor(x, z) && meadowNow(x, z, steepest.get(list)!) && free(x, z, r)) { s.x = x; s.z = z; break; }
+    }
+    solid.push({ x: s.x, z: s.z, r });
+  }
   return { tree, stump, log, rock, reed, crate, stick, bush, farTree, bedRock, sunkenLog };
 }
